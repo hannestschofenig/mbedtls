@@ -3819,7 +3819,6 @@ void ssl_tls1_3_key_evolution( int hash_alg,
 
     ASSERT_COMPARE( secret_new, (size_t) expected->len,
                     expected->x, (size_t) expected->len );
->>>>>>> development
 }
 /* END_CASE */
 
