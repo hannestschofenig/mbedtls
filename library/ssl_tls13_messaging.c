@@ -2708,6 +2708,30 @@ read_record_header:
     return( 0 );
 }
 
+
+/*
+ * Send pending fatal alerts or warnings.
+ */
+int mbedtls_ssl_handle_pending_alert( mbedtls_ssl_context *ssl )
+{
+    int ret;
+
+    /* Send alert if requested */
+    if( ssl->send_alert != 0 )
+    {
+        ret = mbedtls_ssl_send_alert_message( ssl,
+                                              ssl->send_alert,
+                                              ssl->alert_type );
+        if( ret != 0 )
+            return( ret );
+    }
+
+    ssl->send_alert = 0;
+    ssl->alert_type = 0;
+    return( 0 );
+}
+
+
 int mbedtls_ssl_send_fatal_handshake_failure( mbedtls_ssl_context *ssl )
 {
     int ret;

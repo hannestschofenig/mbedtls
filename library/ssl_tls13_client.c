@@ -4329,6 +4329,7 @@ int mbedtls_ssl_handshake_client_step( mbedtls_ssl_context *ssl )
             return( MBEDTLS_ERR_SSL_BAD_INPUT_DATA );
     }
 
+    mbedtls_ssl_handle_pending_alert( ssl );
     return( ret );
 }
 #endif /* MBEDTLS_SSL_CLI_C */

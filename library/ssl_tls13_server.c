@@ -4538,99 +4538,48 @@ int mbedtls_ssl_handshake_server_step( mbedtls_ssl_context *ssl )
         case MBEDTLS_SSL_ENCRYPTED_EXTENSIONS:
 
             ret = ssl_encrypted_extensions_process( ssl );
-
-            if( ret != 0 )
-            {
-                MBEDTLS_SSL_DEBUG_RET( 1, "ssl_encrypted_extensions_process", ret );
-                return( ret );
-            }
-
             break;
 
             /* ----- WRITE CERTIFICATE REQUEST ----*/
 
         case MBEDTLS_SSL_CERTIFICATE_REQUEST:
             ret = ssl_certificate_request_process( ssl );
-            if( ret != 0 )
-            {
-                MBEDTLS_SSL_DEBUG_RET( 1, "ssl_certificate_request_process", ret );
-                return( ret );
-            }
-
             break;
 
             /* ----- WRITE SERVER CERTIFICATE ----*/
 
         case MBEDTLS_SSL_SERVER_CERTIFICATE:
             ret = ssl_write_certificate_process( ssl );
-
-            if( ret != 0 )
-            {
-                MBEDTLS_SSL_DEBUG_RET( 1, "ssl_write_certificate_process", ret );
-                return( ret );
-            }
-
             break;
 
             /* ----- WRITE SERVER CERTIFICATE VERIFY ----*/
 
         case MBEDTLS_SSL_CERTIFICATE_VERIFY:
             ret = ssl_certificate_verify_process( ssl );
-
-            if( ret != 0 )
-            {
-                MBEDTLS_SSL_DEBUG_RET( 1, "ssl_certificate_verify_process", ret );
-                return( ret );
-            }
             break;
 
             /* ----- WRITE FINISHED ----*/
 
         case MBEDTLS_SSL_SERVER_FINISHED:
             ret = ssl_finished_out_process( ssl );
-
-            if( ret != 0 )
-            {
-                MBEDTLS_SSL_DEBUG_RET( 1, "ssl_finished_out_process", ret );
-                return( ret );
-            }
             break;
 
             /* ----- READ CLIENT CERTIFICATE ----*/
 
         case MBEDTLS_SSL_CLIENT_CERTIFICATE:
             ret = ssl_read_certificate_process( ssl );
-
-            if( ret != 0 )
-            {
-                MBEDTLS_SSL_DEBUG_RET( 1, "ssl_read_certificate_process", ret );
-                return( ret );
-            }
             break;
 
             /* ----- READ CLIENT CERTIFICATE VERIFY ----*/
 
         case MBEDTLS_SSL_CLIENT_CERTIFICATE_VERIFY:
             ret=ssl_read_certificate_verify_process( ssl );
-
-            if( ret != 0 )
-            {
-                MBEDTLS_SSL_DEBUG_RET( 1, "ssl_read_certificate_verify_process", ret );
-                return( ret );
-            }
-
             break;
 
 #if defined(MBEDTLS_ZERO_RTT)
 
         case MBEDTLS_SSL_EARLY_DATA:
-
             ret = ssl_read_end_of_early_data_process( ssl );
-            if( ret != 0 )
-            {
-                MBEDTLS_SSL_DEBUG_RET( 1, "mbedtls_ssl_parse_end_of_early_data", ret );
-                return ( ret );
-            }
             break;
 #endif /* MBEDTLS_ZERO_RTT */
 
@@ -4741,6 +4690,7 @@ int mbedtls_ssl_handshake_server_step( mbedtls_ssl_context *ssl )
             return( MBEDTLS_ERR_SSL_BAD_INPUT_DATA );
     }
 
+    mbedtls_ssl_handle_pending_alert( ssl );
     return( ret );
 }
 
