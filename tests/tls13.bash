@@ -16,17 +16,17 @@ ulimit -f 20971520
 # default values, can be overriden by the environment
 if [ -n "${OS:-}" ]; then
 if [ "$OS" = "Windows_NT" ]; then
-: ${P_SRV:=../visualc/VS2010/Debug/tls13_server.exe}
-: ${P_CLI:=../visualc/VS2010/Debug/tls13_client.exe}
+: ${P_SRV:=../visualc/VS2010/Debug/ssl_server2.exe}
+: ${P_CLI:=../visualc/VS2010/Debug/ssl_client2.exe}
 : ${P_PXY:=../visualc/VS2010/Debug/udp_proxy.exe}
 else # OS other than Windows
-: ${P_SRV:=../programs/ssl/tls13_server}
-: ${P_CLI:=../programs/ssl/tls13_client}
+: ${P_SRV:=../programs/ssl/ssl_server2}
+: ${P_CLI:=../programs/ssl/ssl_client2}
 : ${P_PXY:=../programs/test/udp_proxy}
 fi
 else # No OS set
-: ${P_SRV:=../programs/ssl/tls13_server}
-: ${P_CLI:=../programs/ssl/tls13_client}
+: ${P_SRV:=../programs/ssl/ssl_server2}
+: ${P_CLI:=../programs/ssl/ssl_client2}
 : ${P_PXY:=../programs/test/udp_proxy}
 fi
 

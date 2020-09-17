@@ -556,7 +556,7 @@ int mbedtls_ssl_parse_new_session_ticket_server(
 
 */
 
-__attribute__((unused)) /* TODO: Guard appropriately */
+//__attribute__((unused)) /* TODO: Guard appropriately */
 static int ssl_calc_binder( mbedtls_ssl_context *ssl, unsigned char *psk,
                             size_t psk_len, const mbedtls_md_info_t *md,
                             const mbedtls_ssl_ciphersuite_t *suite_info,

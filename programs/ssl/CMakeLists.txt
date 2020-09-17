@@ -24,8 +24,6 @@ set(executables
     ssl_mail_client
     ssl_server
     ssl_server2
-    tls13_client
-    tls13_server
 )
 
 foreach(exe IN LISTS executables)
@@ -36,8 +34,6 @@ endforeach()
 
 target_sources(ssl_client2 PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../test/query_config.c)
 target_sources(ssl_server2 PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../test/query_config.c)
-target_sources(tls13_client PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../test/query_config.c)
-target_sources(tls13_server PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../test/query_config.c)
 
 if(THREADS_FOUND)
     add_executable(ssl_pthread_server ssl_pthread_server.c $<TARGET_OBJECTS:mbedtls_test>)

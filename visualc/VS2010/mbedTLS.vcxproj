@@ -360,7 +360,6 @@
     <ClCompile Include="..\..\library\ssl_tls13_generic.c" />
     <ClCompile Include="..\..\library\ssl_tls13_messaging.c" />
     <ClCompile Include="..\..\library\ssl_tls13_server.c" />
-    <ClCompile Include="..\..\library\hkdf-tls.c" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

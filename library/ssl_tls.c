@@ -4867,7 +4867,7 @@ void mbedtls_ssl_conf_dhm_min_bitlen( mbedtls_ssl_config *conf,
 }
 #endif /* MBEDTLS_DHM_C && MBEDTLS_SSL_CLI_C */
 
-#if defined(MBEDTLS_KEY_EXCHANGE_WITH_CERT_ENABLED) && !defined(MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL)
+#if defined(MBEDTLS_KEY_EXCHANGE_WITH_CERT_ENABLED) 
 /*
  * Set allowed/preferred hashes for handshake signatures
  */
@@ -4881,7 +4881,7 @@ void mbedtls_ssl_conf_sig_hashes( mbedtls_ssl_config *conf,
 #endif /* MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL */
 
 }
-#endif /* MBEDTLS_KEY_EXCHANGE_WITH_CERT_ENABLED && !MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL */
+#endif /* MBEDTLS_KEY_EXCHANGE_WITH_CERT_ENABLED */
 
 #if defined(MBEDTLS_ECP_C)
 /*
