@@ -4158,7 +4158,7 @@ static int ssl_finished_in_postprocess( mbedtls_ssl_context* ssl )
 #if defined(MBEDTLS_SSL_CLI_C)
     if( ssl->conf->endpoint == MBEDTLS_SSL_IS_CLIENT )
     {
-        /* Compute hash over transcript of all messages sent up to the Finish message 
+        /* Compute hash over transcript of all messages sent up to the Finished message 
          * sent by the server and store it in the digest variable of the handshake state. 
          * This digest will be needed later when computing the application traffic secrets. 
          */
