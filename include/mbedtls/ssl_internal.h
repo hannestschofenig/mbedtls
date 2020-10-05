@@ -664,7 +664,7 @@ struct mbedtls_ssl_handshake_params
     /* Buffer holding the digest up to, and including, 
      * the Finished message sent by the server. 
      */
-    unsigned char digest[MBEDTLS_MD_MAX_SIZE];
+    unsigned char server_finished_digest[MBEDTLS_MD_MAX_SIZE];
 
     /*
      * State-local variables used during the processing

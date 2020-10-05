@@ -3160,7 +3160,8 @@ int mbedtls_ssl_generate_application_traffic_keys( mbedtls_ssl_context *ssl, mbe
     ret = mbedtls_ssl_tls1_3_derive_secret( mbedtls_md_get_type( md_info ),
                          ssl->handshake->master_secret, mbedtls_hash_size_for_ciphersuite( suite_info ),
                          MBEDTLS_SSL_TLS1_3_LBL_WITH_LEN( c_ap_traffic ),
-                         ssl->handshake->digest, mbedtls_hash_size_for_ciphersuite( suite_info ), MBEDTLS_SSL_TLS1_3_CONTEXT_HASHED,
+                         ssl->handshake->server_finished_digest, mbedtls_hash_size_for_ciphersuite( suite_info ), 
+                         MBEDTLS_SSL_TLS1_3_CONTEXT_HASHED,
                          ssl->handshake->client_traffic_secret, mbedtls_hash_size_for_ciphersuite( suite_info ) );
 
     if( ret != 0 )
@@ -3195,7 +3196,8 @@ int mbedtls_ssl_generate_application_traffic_keys( mbedtls_ssl_context *ssl, mbe
     ret = mbedtls_ssl_tls1_3_derive_secret( mbedtls_md_get_type( md_info ),
                          ssl->handshake->master_secret, mbedtls_hash_size_for_ciphersuite( suite_info ),
                          MBEDTLS_SSL_TLS1_3_LBL_WITH_LEN( s_ap_traffic ),
-                         ssl->handshake->digest, mbedtls_hash_size_for_ciphersuite( suite_info ), MBEDTLS_SSL_TLS1_3_CONTEXT_HASHED,
+                         ssl->handshake->server_finished_digest, mbedtls_hash_size_for_ciphersuite( suite_info ),
+                         MBEDTLS_SSL_TLS1_3_CONTEXT_HASHED,
                          ssl->handshake->server_traffic_secret, mbedtls_hash_size_for_ciphersuite( suite_info ) );
 
     if( ret != 0 )
@@ -3224,23 +3226,29 @@ int mbedtls_ssl_generate_application_traffic_keys( mbedtls_ssl_context *ssl, mbe
 
     MBEDTLS_SSL_DEBUG_MSG( 3, ( "-->>Calling mbedtls_ssl_tls1_3_make_traffic_keys( ) with the following parameters:" ) );
     MBEDTLS_SSL_DEBUG_MSG( 3, ( "-- Hash Algorithm: %s", mbedtls_md_get_name( md_info ) ) );
-    MBEDTLS_SSL_DEBUG_MSG( 3, ( "-- Handshake Traffic Secret Length: %d bytes", mbedtls_hash_size_for_ciphersuite( suite_info ) ) );
+    MBEDTLS_SSL_DEBUG_MSG( 3, ( "-- Handshake Traffic Secret Length: %d bytes", 
+                              mbedtls_hash_size_for_ciphersuite( suite_info ) ) );
     MBEDTLS_SSL_DEBUG_MSG( 3, ( "-- Key Length: %d bytes", transform->keylen ) );
     MBEDTLS_SSL_DEBUG_MSG( 3, ( "-- IV Length: %d bytes", transform->ivlen ) );
 
     if( ( ret = mbedtls_ssl_tls1_3_make_traffic_keys( mbedtls_md_get_type( md_info ),
                                  ssl->handshake->client_traffic_secret,
                                  ssl->handshake->server_traffic_secret,
-                                 mbedtls_hash_size_for_ciphersuite( suite_info ), transform->keylen, transform->ivlen, traffic_keys ) ) != 0 )
+                                 mbedtls_hash_size_for_ciphersuite( suite_info ),
+                                 transform->keylen, transform->ivlen, traffic_keys ) ) != 0 )
     {
         MBEDTLS_SSL_DEBUG_RET( 1, "mbedtls_ssl_tls1_3_make_traffic_keys failed", ret );
         return( ret );
     }
 
-    MBEDTLS_SSL_DEBUG_BUF( 3, "Record Type = Application Data, client_write_key:", traffic_keys->client_write_key, transform->keylen );
-    MBEDTLS_SSL_DEBUG_BUF( 3, "Record Type = Application Data, server_write_key:", traffic_keys->server_write_key, transform->keylen );
-    MBEDTLS_SSL_DEBUG_BUF( 3, "Record Type = Application Data, client_write_iv:", traffic_keys->client_write_iv, transform->ivlen );
-    MBEDTLS_SSL_DEBUG_BUF( 3, "Record Type = Application Data, server_write_iv:", traffic_keys->server_write_iv, transform->ivlen );
+    MBEDTLS_SSL_DEBUG_BUF( 3, "Record Type = Application Data, client_write_key:",
+                              traffic_keys->client_write_key, transform->keylen );
+    MBEDTLS_SSL_DEBUG_BUF( 3, "Record Type = Application Data, server_write_key:",
+                              traffic_keys->server_write_key, transform->keylen );
+    MBEDTLS_SSL_DEBUG_BUF( 3, "Record Type = Application Data, client_write_iv:",
+                              traffic_keys->client_write_iv, transform->ivlen );
+    MBEDTLS_SSL_DEBUG_BUF( 3, "Record Type = Application Data, server_write_iv:",
+                              traffic_keys->server_write_iv, transform->ivlen );
 
     MBEDTLS_SSL_DEBUG_MSG( 2, ( "<= derive application traffic keys" ) );
 
@@ -4182,8 +4190,8 @@ static int ssl_finished_in_postprocess( mbedtls_ssl_context* ssl )
     #if defined(MBEDTLS_SHA256_C)
             mbedtls_sha256_init( &sha256 );
             mbedtls_sha256_clone( &sha256, &ssl->handshake->fin_sha256 );
-            mbedtls_sha256_finish( &sha256, ssl->handshake->digest );
-            MBEDTLS_SSL_DEBUG_BUF( 3, "Transcript hash (including Server.Finished):", ssl->handshake->digest , 32 );
+            mbedtls_sha256_finish( &sha256, ssl->handshake->server_finished_digest );
+            MBEDTLS_SSL_DEBUG_BUF( 3, "Transcript hash (including Server.Finished):", ssl->handshake->server_finished_digest , 32 );
     #else
             MBEDTLS_SSL_DEBUG_MSG( 1, ( "MBEDTLS_SHA256_C not set but ciphersuite with SHA256 negotiated" ) );
             return( MBEDTLS_ERR_SSL_INTERNAL_ERROR );
@@ -4196,8 +4204,8 @@ static int ssl_finished_in_postprocess( mbedtls_ssl_context* ssl )
             mbedtls_sha512_init( &sha512 );
             mbedtls_sha512_starts( &sha512, 1 /* = use SHA384 */ );
             mbedtls_sha512_clone( &sha512, &ssl->handshake->fin_sha512 );
-            mbedtls_sha512_finish( &sha512, ssl->handshake->digest  );
-            MBEDTLS_SSL_DEBUG_BUF( 3, "Transcript hash (including Server.Finished):", ssl->handshake->digest , 48 );
+            mbedtls_sha512_finish( &sha512, ssl->handshake->server_finished_digest );
+            MBEDTLS_SSL_DEBUG_BUF( 3, "Transcript hash (including Server.Finished):", ssl->handshake->server_finished_digest , 48 );
     #else
             MBEDTLS_SSL_DEBUG_MSG( 1, ( "MBEDTLS_SHA512_C not set but ciphersuite with SHA384 negotiated" ) );
             return( MBEDTLS_ERR_SSL_INTERNAL_ERROR );
