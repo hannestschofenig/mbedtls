@@ -2302,7 +2302,7 @@ int main( int argc, char *argv[] )
         sig_alg_list[i] = SIGNATURE_NONE;
     }
         
-    mbedtls_printf("Number of signature algorithms: %d\n", i );
+    mbedtls_printf( "Number of signature algorithms: %d\n", i );
 #endif /* MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL && MBEDTLS_X509_CRT_PARSE_C */
 
     /*
@@ -2531,7 +2531,6 @@ int main( int argc, char *argv[] )
     }
 
 #if defined(MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL)
-
     mbedtls_ssl_conf_sig_hashes( &conf, ssl_sig_hashes_for_test_tls13 );
 #endif /* MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL */
 
@@ -2723,8 +2722,7 @@ int main( int argc, char *argv[] )
 #endif /* MBEDTLS_ECP_C */
 
 #if defined(MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL) && defined(MBEDTLS_X509_CRT_PARSE_C)
-    if( opt.sig_algs != NULL &&
-        strcmp( opt.sig_algs, "default" ) != 0 )
+    if( opt.sig_algs != NULL && strcmp( opt.sig_algs, "default" ) != 0 )
     {
         mbedtls_ssl_conf_signature_algorithms( &conf, sig_alg_list );
     }

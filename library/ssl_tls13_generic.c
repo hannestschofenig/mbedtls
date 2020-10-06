@@ -917,7 +917,7 @@ int ssl_parse_signature_algorithms_ext( mbedtls_ssl_context *ssl,
     /* Determine the number of signature algorithms we support. */
     if( ssl->conf->sig_hashes != NULL ) 
     {
-        for( i=0, md_cur = ssl->conf->sig_hashes; *md_cur != SIGNATURE_NONE; md_cur++, i++ ); 
+        for( i = 0, md_cur = ssl->conf->sig_hashes; *md_cur != SIGNATURE_NONE; md_cur++, i++ ); 
     }
 
     /* Store the received and compatible signature algorithms for later use. */
@@ -929,7 +929,7 @@ int ssl_parse_signature_algorithms_ext( mbedtls_ssl_context *ssl,
         return( MBEDTLS_ERR_SSL_ALLOC_FAILED );
     }
 
-    i=0; 
+    i = 0; 
 
     for( p = buf + 2; p < end; p += 2 )
     {
@@ -956,7 +956,7 @@ int ssl_parse_signature_algorithms_ext( mbedtls_ssl_context *ssl,
         return( MBEDTLS_ERR_SSL_NO_USABLE_CIPHERSUITE );
     } 
 
-    ssl->handshake->received_signature_schemes_list[i]  =SIGNATURE_NONE; 
+    ssl->handshake->received_signature_schemes_list[i] = SIGNATURE_NONE; 
 
     return( 0 );
 }
@@ -4271,7 +4271,7 @@ void mbedtls_ssl_conf_early_data( mbedtls_ssl_config *conf, int early_data, char
     if( conf != NULL )
     {
         conf->early_data = early_data;
-        if( buffer != NULL && len >0 && early_data == MBEDTLS_SSL_EARLY_DATA_ENABLED )
+        if( buffer != NULL && len > 0 && early_data == MBEDTLS_SSL_EARLY_DATA_ENABLED )
         {
             conf->early_data_buf = buffer;
             conf->early_data_len = len;
@@ -4381,7 +4381,7 @@ int ssl_parse_new_session_ticket( mbedtls_ssl_context *ssl )
 
     /* Check whether the length field is correct */
     if( ( ticket_len + ticket_nonce_len + ext_len + 13 + mbedtls_ssl_hs_hdr_len( ssl ) != ssl->in_msglen )
-        && ticket_len >0 )
+        && ticket_len > 0 )
     {
         MBEDTLS_SSL_DEBUG_MSG( 1, ( "Bad NewSessionTicket message: ticket length field incorect" ) );
         return( MBEDTLS_ERR_SSL_BAD_HS_NEW_SESSION_TICKET );
