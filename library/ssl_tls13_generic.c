@@ -3112,7 +3112,7 @@ int mbedtls_ssl_generate_application_traffic_keys( mbedtls_ssl_context *ssl, mbe
 
     transform->minlen += 1;
 
-    MBEDTLS_SSL_DEBUG_BUF( 3, "Transcript hash (including Server.Finished):",
+    MBEDTLS_SSL_DEBUG_BUF( 5, "Transcript hash (including Server.Finished):",
                               ssl->handshake->server_finished_digest, 
                               mbedtls_hash_size_for_ciphersuite( suite_info ) );
 
@@ -3193,18 +3193,18 @@ int mbedtls_ssl_generate_application_traffic_keys( mbedtls_ssl_context *ssl, mbe
      * MUST be encrypted under the application traffic key.
      */
 
-    MBEDTLS_SSL_DEBUG_MSG( 3, ( "-->> Calling mbedtls_ssl_tls1_3_make_traffic_keys( ):" ) );
-    MBEDTLS_SSL_DEBUG_MSG( 3, ( "-- Hash Algorithm: %s", mbedtls_md_get_name( md_info ) ) );
-    MBEDTLS_SSL_DEBUG_MSG( 3, ( "-- Handshake Traffic Secret Length: %d bytes", 
+    MBEDTLS_SSL_DEBUG_MSG( 5, ( "-->> Calling mbedtls_ssl_tls1_3_make_traffic_keys( ):" ) );
+    MBEDTLS_SSL_DEBUG_MSG( 5, ( "-- Hash Algorithm: %s", mbedtls_md_get_name( md_info ) ) );
+    MBEDTLS_SSL_DEBUG_MSG( 5, ( "-- Handshake Traffic Secret Length: %d bytes", 
                               mbedtls_hash_size_for_ciphersuite( suite_info ) ) );
-    MBEDTLS_SSL_DEBUG_BUF( 3, "-- Client_traffic_secret:",
+    MBEDTLS_SSL_DEBUG_BUF( 5, "-- Client_traffic_secret:",
                               ssl->handshake->client_traffic_secret,
                               mbedtls_hash_size_for_ciphersuite( suite_info ) );
-    MBEDTLS_SSL_DEBUG_BUF( 3, "-- Server_traffic_secret: ",
+    MBEDTLS_SSL_DEBUG_BUF( 5, "-- Server_traffic_secret: ",
                               ssl->handshake->server_traffic_secret,
                               mbedtls_hash_size_for_ciphersuite( suite_info ) );
-    MBEDTLS_SSL_DEBUG_MSG( 3, ( "-- Key Length: %d bytes", transform->keylen ) );
-    MBEDTLS_SSL_DEBUG_MSG( 3, ( "-- IV Length: %d bytes", transform->ivlen ) );
+    MBEDTLS_SSL_DEBUG_MSG( 5, ( "-- Key Length: %d bytes", transform->keylen ) );
+    MBEDTLS_SSL_DEBUG_MSG( 5, ( "-- IV Length: %d bytes", transform->ivlen ) );
 
     if( ( ret = mbedtls_ssl_tls1_3_make_traffic_keys( mbedtls_md_get_type( md_info ),
                               ssl->handshake->client_traffic_secret,
@@ -3216,13 +3216,13 @@ int mbedtls_ssl_generate_application_traffic_keys( mbedtls_ssl_context *ssl, mbe
         return( ret );
     }
 
-    MBEDTLS_SSL_DEBUG_BUF( 3, "Record Type = Application Data, client_write_key:",
+    MBEDTLS_SSL_DEBUG_BUF( 5, "Record Type = Application Data, client_write_key:",
                               traffic_keys->client_write_key, transform->keylen );
-    MBEDTLS_SSL_DEBUG_BUF( 3, "Record Type = Application Data, server_write_key:",
+    MBEDTLS_SSL_DEBUG_BUF( 5, "Record Type = Application Data, server_write_key:",
                               traffic_keys->server_write_key, transform->keylen );
-    MBEDTLS_SSL_DEBUG_BUF( 3, "Record Type = Application Data, client_write_iv:",
+    MBEDTLS_SSL_DEBUG_BUF( 5, "Record Type = Application Data, client_write_iv:",
                               traffic_keys->client_write_iv, transform->ivlen );
-    MBEDTLS_SSL_DEBUG_BUF( 3, "Record Type = Application Data, server_write_iv:",
+    MBEDTLS_SSL_DEBUG_BUF( 5, "Record Type = Application Data, server_write_iv:",
                               traffic_keys->server_write_iv, transform->ivlen );
 
     MBEDTLS_SSL_DEBUG_MSG( 2, ( "<= derive application traffic keys" ) );
