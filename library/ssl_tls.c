@@ -4874,12 +4874,7 @@ void mbedtls_ssl_conf_dhm_min_bitlen( mbedtls_ssl_config *conf,
 void mbedtls_ssl_conf_sig_hashes( mbedtls_ssl_config *conf,
                                   const int *hashes )
 {
-#if !defined(MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL)
     conf->sig_hashes = hashes;
-#else
-    conf->signature_schemes = hashes;
-#endif /* MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL */
-
 }
 #endif /* MBEDTLS_KEY_EXCHANGE_WITH_CERT_ENABLED */
 
@@ -7178,9 +7173,7 @@ void mbedtls_ssl_config_init( mbedtls_ssl_config *conf )
     memset( conf, 0, sizeof( mbedtls_ssl_config ) );
 }
 
-#if !defined(MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL)
-
-#if defined(MBEDTLS_KEY_EXCHANGE_WITH_CERT_ENABLED)
+#if defined(MBEDTLS_KEY_EXCHANGE_WITH_CERT_ENABLED) && !defined(MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL)
 static int ssl_preset_default_hashes[] = {
 #if defined(MBEDTLS_SHA512_C)
     MBEDTLS_MD_SHA512,
@@ -7195,59 +7188,60 @@ static int ssl_preset_default_hashes[] = {
 #endif
     MBEDTLS_MD_NONE
 };
-#endif
+#endif /* MBEDTLS_KEY_EXCHANGE_WITH_CERT_ENABLED && !MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL */
 
 static int ssl_preset_suiteb_ciphersuites[] = {
+#if defined(MBEDTLS_AES_C) && defined(MBEDTLS_GCM_C)
+#if defined(MBEDTLS_SSL_PROTO_TLS1) || defined(MBEDTLS_SSL_PROTO_TLS1_1) || \
+    defined(MBEDTLS_SSL_PROTO_TLS1_2)
+#if defined(MBEDTLS_SHA256_C)
     MBEDTLS_TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,
+#endif /* MBEDTLS_SHA256_C */
+#if defined(MBEDTLS_SHA512_C)
     MBEDTLS_TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,
+#endif /* MBEDTLS_SHA512_C */
+#endif /* MBEDTLS_SSL_PROTO_TLS1 || MBEDTLS_SSL_PROTO_TLS1_1 || \
+          MBEDTLS_SSL_PROTO_TLS1_2 */
+#if defined(MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL)
+#if defined(MBEDTLS_SHA256_C)
+    TLS_AES_128_GCM_SHA256,
+#endif /* MBEDTLS_SHA256_C */
+#if defined(MBEDTLS_SHA512_C)
+    TLS_AES_256_GCM_SHA384,
+#endif /* MBEDTLS_SHA512_C */
+#endif /* MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL */
+#endif /* MBEDTLS_AES_C && MBEDTLS_GCM_C */
     0
 };
 
 #if defined(MBEDTLS_KEY_EXCHANGE_WITH_CERT_ENABLED)
+
+#if defined(MBEDTLS_SSL_PROTO_TLS1) || defined(MBEDTLS_SSL_PROTO_TLS1_1) || \
+    defined(MBEDTLS_SSL_PROTO_TLS1_2)
 static int ssl_preset_suiteb_hashes[] = {
     MBEDTLS_MD_SHA256,
     MBEDTLS_MD_SHA384,
     MBEDTLS_MD_NONE
 };
-#endif
-#else
-static int ssl_preset_suiteb_ciphersuites[] = {
-    TLS_AES_128_GCM_SHA256,
-    TLS_AES_256_GCM_SHA384,
-    0
-};
+#endif /* MBEDTLS_SSL_PROTO_TLS1 || MBEDTLS_SSL_PROTO_TLS1_1 || \
+          MBEDTLS_SSL_PROTO_TLS1_2 */
 
-#if defined(MBEDTLS_KEY_EXCHANGE_WITH_CERT_ENABLED)
-static int ssl_preset_suiteb_signature_schemes[] = {
-#if defined(MBEDTLS_ECDSA_SECP256r1_SHA256)
+#if defined(MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL)
+static int ssl_preset_suiteb_signature_algorithms_tls13[] = {
+#if defined(MBEDTLS_SHA256_C) && defined(MBEDTLS_ECDSA_C) && defined(MBEDTLS_ECP_DP_SECP256R1_ENABLED)
     SIGNATURE_ECDSA_SECP256r1_SHA256,
 #endif
-#if defined(MBEDTLS_ECDSA_SECP384r1_SHA384)
+#if defined(MBEDTLS_SHA512_C) && defined(MBEDTLS_ECDSA_C) && defined(MBEDTLS_ECP_DP_SECP384R1_ENABLED)
     SIGNATURE_ECDSA_SECP384r1_SHA384,
 #endif
-#if defined(MBEDTLS_ECDSA_SECP521r1_SHA512)
+#if defined(MBEDTLS_SHA512_C) && defined(MBEDTLS_ECDSA_C) && defined(MBEDTLS_ECP_DP_SECP521R1_ENABLED)
     SIGNATURE_ECDSA_SECP521r1_SHA512,
 #endif
     SIGNATURE_NONE
-};
-#endif /* MBEDTLS_KEY_EXCHANGE_WITH_CERT_ENABLED   */
-
+}; 
 #endif /* MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL */
 
-#if defined(MBEDTLS_KEY_EXCHANGE_WITH_CERT_ENABLED) && defined(MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL)
-static int ssl_preset_signature_schemes[] = {
-#if defined(MBEDTLS_ECDSA_SECP256r1_SHA256)
-    SIGNATURE_ECDSA_SECP256r1_SHA256,
-#endif
-#if defined(MBEDTLS_ECDSA_SECP384r1_SHA384)
-    SIGNATURE_ECDSA_SECP384r1_SHA384,
-#endif
-#if defined(MBEDTLS_ECDSA_SECP521r1_SHA512)
-    SIGNATURE_ECDSA_SECP521r1_SHA512,
-#endif
-    SIGNATURE_NONE
-};
-#endif /* MBEDTLS_KEY_EXCHANGE_WITH_CERT_ENABLED && MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL  */
+#endif /* MBEDTLS_KEY_EXCHANGE_WITH_CERT_ENABLED */
 
 
 #if defined(MBEDTLS_ECP_C)
@@ -7376,9 +7370,12 @@ int mbedtls_ssl_config_defaults( mbedtls_ssl_config *conf,
 
 #if defined(MBEDTLS_KEY_EXCHANGE_WITH_CERT_ENABLED)
 #if !defined(MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL)
-        conf->sig_hashes = ssl_preset_suiteb_hashes;
-#else
-        conf->signature_schemes = ssl_preset_suiteb_signature_schemes;
+            /* TLS 1.3 re-interprets the signature algorithms
+             *  and therefore we cannot include both.
+             */
+            conf->sig_hashes = ssl_preset_suiteb_hashes;
+#else 
+            conf->sig_hashes = ssl_preset_suiteb_signature_algorithms_tls13;
 #endif /* MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL */
 #endif /* MBEDTLS_KEY_EXCHANGE_WITH_CERT_ENABLED */
 
@@ -7432,7 +7429,7 @@ int mbedtls_ssl_config_defaults( mbedtls_ssl_config *conf,
 #if !defined(MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL)
         conf->sig_hashes = ssl_preset_default_hashes;
 #else
-        conf->signature_schemes = ssl_preset_signature_schemes;;
+        conf->sig_hashes = ssl_preset_suiteb_signature_algorithms_tls13;
 #endif /* MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL */
 
 #endif
@@ -7671,52 +7668,26 @@ int mbedtls_ssl_check_curve( const mbedtls_ssl_context *ssl, mbedtls_ecp_group_i
 /*
  * Check if a hash proposed by the peer is in our list.
  * Return 0 if we're willing to use it, -1 otherwise.
+ * 
+ * Assumption: sig_hashes is terminated either with 
+ * SIGNATURE_NONE or with MBEDTLS_MD_NONE and both 
+ * equal 0x0. 
  */
 int mbedtls_ssl_check_sig_hash( const mbedtls_ssl_context *ssl,
                                 mbedtls_md_type_t md )
 {
     const int *cur;
 
-#if !defined(MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL)
     if( ssl->conf->sig_hashes == NULL )
         return( -1 );
 
-    for ( cur = ssl->conf->sig_hashes; *cur != MBEDTLS_MD_NONE; cur++ )
+    for( cur = ssl->conf->sig_hashes; *cur != SIGNATURE_NONE; cur++ )
         if( *cur == ( int )md )
             return( 0 );
-#else
-    if( ssl->conf->signature_schemes == NULL )
-        return( -1 );
-
-    for ( cur = ssl->conf->signature_schemes; *cur != SIGNATURE_NONE; cur++ )
-        if( *cur == ( int )md )
-            return( 0 );
-#endif /* MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL */
 
     return( -1 );
 }
 #endif /* MBEDTLS_KEY_EXCHANGE_WITH_CERT_ENABLED */
-
-#if defined(MBEDTLS_KEY_EXCHANGE_WITH_CERT_ENABLED) && defined(MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL)
-/*
-* Check if a signature scheme proposed by the peer is in our list.
-* Return 0 if we're willing to use it, -1 otherwise.
-*/
-int mbedtls_ssl_check_signature_scheme( const mbedtls_ssl_context* ssl,
-    int signature_scheme )
-{
-    const int* cur;
-
-    if( ssl->conf->signature_schemes == NULL )
-        return( -1 );
-
-    for ( cur = ssl->conf->signature_schemes; *cur != SIGNATURE_NONE; cur++ )
-        if( *cur == signature_scheme )
-            return( 0 );
-
-    return( -1 );
-}
-#endif /* MBEDTLS_KEY_EXCHANGE_WITH_CERT_ENABLED && MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL */
 
 #if defined(MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL)
 void mbedtls_ssl_write_version( int major, int minor, int transport,

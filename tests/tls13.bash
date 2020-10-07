@@ -1090,6 +1090,53 @@ run_test    "TLS_AES_128_CCM_SHA256 with ECDHE-ECDSA (server auth only) with HRR
 			-c "Verifying peer X.509 certificate... ok" \
 			-c "Key Exchange Mode is ECDHE-ECDSA"
 
+
+
+# ----------------------------------- ECDHE-ECDSA with signature algorithms ----------------------------------
+# + server_name extension
+# + configure client to initially sent incorrect group, which will be corrected with HRR from the server
+
+echo ""
+echo "*** ECDHE-ECDSA, signature algorithm tests  ***"
+echo ""
+
+		
+# - the ECDHE-ECDSA-based ciphersuite exchange is executed
+# - AES-128-CCM-8 is negotiated 
+run_test    "TLS_AES_128_CCM_8_SHA256 with ECDHE-ECDSA (mutual auth)" \
+            "$P_SRV $MBEDTLS_DEBUG_LEVEL force_version=tls1_3 auth_mode=required key_exchange_modes=ecdhe_ecdsa" \
+            "$P_CLI $MBEDTLS_DEBUG_LEVEL force_version=tls1_3 server_name=localhost force_ciphersuite=TLS_AES_128_CCM_8_SHA256 key_exchange_modes=ecdhe_ecdsa sig_algs=ecdsa_secp256r1_sha256,ecdsa_secp384r1_sha384,ecdsa_secp521r1_sha512" \
+            0 \
+			-s "Verifying peer X.509 certificate... ok" \
+			-s "subject name      : C=NL, O=PolarSSL, CN=PolarSSL Test Client 2" \
+			-c "subject name      : C=NL, O=PolarSSL, CN=localhost" \
+            -c "Protocol is TLSv1.3" \
+            -c "Ciphersuite is TLS_AES_128_CCM_8_SHA256" \
+			-c "Verifying peer X.509 certificate... ok" 
+
+# - the ECDHE-ECDSA-based ciphersuite exchange is executed
+# - AES-256-GCM is negotiated 
+run_test    "TLS_AES_256_GCM_SHA384 with ECDHE-ECDSA (mutual auth)" \
+            "$P_SRV $MBEDTLS_DEBUG_LEVEL force_version=tls1_3 auth_mode=required key_exchange_modes=ecdhe_ecdsa" \
+            "$P_CLI $MBEDTLS_DEBUG_LEVEL force_version=tls1_3 server_name=localhost force_ciphersuite=TLS_AES_256_GCM_SHA384 key_exchange_modes=ecdhe_ecdsa sig_algs=ecdsa_secp384r1_sha384" \
+            0 \
+			-s "Verifying peer X.509 certificate... ok" \
+			-s "subject name      : C=NL, O=PolarSSL, CN=PolarSSL Test Client 2" \
+			-c "subject name      : C=NL, O=PolarSSL, CN=localhost" \
+            -c "Protocol is TLSv1.3" \
+            -c "Ciphersuite is TLS_AES_256_GCM_SHA384" \
+			-c "Verifying peer X.509 certificate... ok" 
+
+# - the ECDHE-ECDSA-based ciphersuite exchange is executed
+# - AES-256-GCM is negotiated 
+run_test    "TLS_AES_256_GCM_SHA384 with ECDHE-ECDSA (mutual auth)" \
+            "$P_SRV $MBEDTLS_DEBUG_LEVEL force_version=tls1_3 auth_mode=required key_exchange_modes=ecdhe_ecdsa sig_algs=ecdsa_secp384r1_sha384" \
+            "$P_CLI $MBEDTLS_DEBUG_LEVEL force_version=tls1_3 server_name=localhost force_ciphersuite=TLS_AES_256_GCM_SHA384 key_exchange_modes=ecdhe_ecdsa sig_algs=ecdsa_secp256r1_sha256" \
+            1 \
+			-s "no signature algorithm in common" \
+			-c "fatal alert message" 
+
+
 			
 # Final report
 echo ""
