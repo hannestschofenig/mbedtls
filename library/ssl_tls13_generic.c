@@ -4486,13 +4486,13 @@ int mbedtls_ssl_conf_ticket_meta( mbedtls_ssl_config *conf,
 #endif /* MBEDTLS_SSL_NEW_SESSION_TICKET */
 
 
-#if defined(MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL) && defined(MBEDTLS_X509_CRT_PARSE_C)
+#if defined(MBEDTLS_X509_CRT_PARSE_C)
 void mbedtls_ssl_conf_signature_algorithms( mbedtls_ssl_config *conf,
                      const int* sig_algs )
 {
     conf->sig_hashes = sig_algs; 
 }
-#endif /* MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL && MBEDTLS_X509_CRT_PARSE_C */
+#endif /* MBEDTLS_X509_CRT_PARSE_C */
 
 
 #if defined(MBEDTLS_SSL_NEW_SESSION_TICKET)
