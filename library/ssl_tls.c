@@ -3112,23 +3112,11 @@ static void ssl_update_checksum_start( mbedtls_ssl_context *ssl,
 exit:;
 #if defined(MBEDTLS_SSL_DEBUG_HANDSHAKE_HASHES)
 #if defined(MBEDTLS_SHA256_C)
-    if( suite_info->mac == MBEDTLS_MD_SHA256 )
-    {
-        mbedtls_sha256_free( &sha256_debug );
-    }
-    else
+    mbedtls_sha256_free( &sha256_debug );
 #endif
 #if defined(MBEDTLS_SHA512_C)
-    if( suite_info->mac == MBEDTLS_MD_SHA384 )
-    {
-        mbedtls_sha512_free( &sha512_debug );
-    }
-    else
+    mbedtls_sha512_free( &sha512_debug );
 #endif
-    {
-        MBEDTLS_SSL_DEBUG_MSG( 1, ( "ssl_update_checksum_start: Unknow hash function." ) );
-        return;
-    }
 #endif /* MBEDTLS_SSL_DEBUG_HANDSHAKE_HASHES */
 }
 #endif /* MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL */
