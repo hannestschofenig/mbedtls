@@ -3068,6 +3068,8 @@ static void ssl_update_checksum_start( mbedtls_ssl_context *ssl,
         }
         MBEDTLS_SSL_DEBUG_BUF( 4, "Handshake hash", ( unsigned char* )
             padbuf, 32 );
+
+        mbedtls_sha256_free( &sha256_debug );
 #endif // MBEDTLS_SSL_DEBUG_HANDSHAKE_HASHES
 #endif /* MBEDTLS_SHA256_C */
 
@@ -3105,19 +3107,13 @@ static void ssl_update_checksum_start( mbedtls_ssl_context *ssl,
         }
         MBEDTLS_SSL_DEBUG_BUF( 4, "Handshake hash", ( unsigned char* )
             padbuf, 48 );
+
+        mbedtls_sha512_free( &sha512_debug );
 #endif // MBEDTLS_SSL_DEBUG_HANDSHAKE_HASHES
 #endif /* MBEDTLS_SHA512_C */
     }
 
 exit:;
-#if defined(MBEDTLS_SSL_DEBUG_HANDSHAKE_HASHES)
-#if defined(MBEDTLS_SHA256_C)
-    mbedtls_sha256_free( &sha256_debug );
-#endif
-#if defined(MBEDTLS_SHA512_C)
-    mbedtls_sha512_free( &sha512_debug );
-#endif
-#endif /* MBEDTLS_SSL_DEBUG_HANDSHAKE_HASHES */
 }
 #endif /* MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL */
 
