@@ -1353,7 +1353,6 @@ static void mbedtls_ssl_create_verify_structure(
     verify_buffer[64 + content_string_len] = 0x0;
     memcpy( verify_buffer + 64 + content_string_len + 1, transcript_hash, transcript_hash_len );
 
-    MBEDTLS_SSL_DEBUG_BUF( 3, "verify buffer construct", verify_buffer, 64 + content_string_len + 1 + transcript_hash_len );
     *verify_buffer_len = 64 + content_string_len + 1 + transcript_hash_len; 
 }
 
