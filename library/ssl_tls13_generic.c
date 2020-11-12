@@ -4643,11 +4643,13 @@ int mbedtls_ssl_parse_new_session_ticket( mbedtls_ssl_context *ssl )
     msg = ssl->in_msg + mbedtls_ssl_hs_hdr_len( ssl );
     msg_len = ( ssl->in_msg[2] << 8 ) | ssl->in_msg[3];
 
-    if( msg_len+ mbedtls_ssl_hs_hdr_len( ssl ) != ssl->in_msglen )
+    if( ssl->in_hslen == 0 || ssl->in_hslen > ssl->in_msglen )
     {
         MBEDTLS_SSL_DEBUG_MSG( 1, ( "bad new session ticket message" ) );
         return( MBEDTLS_ERR_SSL_BAD_HS_NEW_SESSION_TICKET );
     }
+
+    ssl->in_msglen -= ssl->in_hslen;
 
     /* Ticket lifetime */
     lifetime = ( msg[0] << 24 ) | ( msg[1] << 16 ) |
@@ -4717,8 +4719,8 @@ int mbedtls_ssl_parse_new_session_ticket( mbedtls_ssl_context *ssl )
     ext_len = ( msg[11+ ticket_nonce_len +ticket_len] << 8 ) | ( msg[12+ ticket_nonce_len + ticket_len] );
 
     /* Check whether the length field is correct */
-    if( ( ticket_len + ticket_nonce_len + ext_len + 13 + mbedtls_ssl_hs_hdr_len( ssl ) != ssl->in_msglen )
-        && ticket_len >0 )
+    if( ( ticket_len + ticket_nonce_len + ext_len + 13 != msg_len )
+        && ticket_len > 0 )
     {
         MBEDTLS_SSL_DEBUG_MSG( 1, ( "Bad NewSessionTicket message: ticket length field incorect" ) );
         return( MBEDTLS_ERR_SSL_BAD_HS_NEW_SESSION_TICKET );
