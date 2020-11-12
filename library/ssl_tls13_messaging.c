@@ -95,9 +95,10 @@ static int ssl_encrypt_buf( mbedtls_ssl_context *ssl )
     /*
      * Encrypt
      */
-#if defined(MBEDTLS_GCM_C) || defined(MBEDTLS_CCM_C)
+#if defined(MBEDTLS_GCM_C) || defined(MBEDTLS_CCM_C) ||  defined(MBEDTLS_CHACHAPOLY_C)
     if( mode == MBEDTLS_MODE_GCM ||
-        mode == MBEDTLS_MODE_CCM || mode == MBEDTLS_MODE_CCM_8 )
+        mode == MBEDTLS_MODE_CCM || mode == MBEDTLS_MODE_CCM_8 ||
+        mode == MBEDTLS_MODE_CHACHAPOLY )
     {
         int ret;
         size_t enc_msglen, olen;
@@ -243,7 +244,7 @@ static int ssl_encrypt_buf( mbedtls_ssl_context *ssl )
         MBEDTLS_SSL_DEBUG_BUF( 4, "Tag", enc_msg + enc_msglen, taglen );
         MBEDTLS_SSL_DEBUG_BUF( 4, "Encrypted message ( without tag ): ", enc_msg, ssl->out_msglen - taglen );
     } else
-#endif /* MBEDTLS_GCM_C || MBEDTLS_CCM_C */
+#endif /* MBEDTLS_GCM_C || MBEDTLS_CCM_C || MBEDTLS_MODE_CHACHAPOLY  */
     {
         MBEDTLS_SSL_DEBUG_MSG( 1, ( "should never happen" ) );
         return( MBEDTLS_ERR_SSL_INTERNAL_ERROR );
@@ -289,7 +290,8 @@ static int ssl_decrypt_buf( mbedtls_ssl_context *ssl )
 #if defined(MBEDTLS_GCM_C) || defined(MBEDTLS_CCM_C)
     if( mode == MBEDTLS_MODE_GCM ||
         mode == MBEDTLS_MODE_CCM ||
-        mode == MBEDTLS_MODE_CCM_8 )
+        mode == MBEDTLS_MODE_CCM_8 ||
+        mode == MBEDTLS_MODE_CHACHAPOLY )
     {
         int ret;
         size_t dec_msglen, olen;
@@ -459,7 +461,7 @@ static int ssl_decrypt_buf( mbedtls_ssl_context *ssl )
          */
     }
     else
-#endif /* MBEDTLS_GCM_C || MBEDTLS_CCM_C */
+#endif /* MBEDTLS_GCM_C || MBEDTLS_CCM_C || MBEDTLS_MODE_CHACHAPOLY */
     {
         MBEDTLS_SSL_DEBUG_MSG( 1, ( "should never happen" ) );
         return( MBEDTLS_ERR_SSL_INTERNAL_ERROR );
