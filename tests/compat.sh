@@ -1387,11 +1387,13 @@ for VERIFY in $VERIFIES; do
                             TLS_AES_128_GCM_SHA256          \
                             TLS_AES_256_GCM_SHA384          \
                             TLS_AES_128_CCM_SHA256          \
+                            TLS_CHACHA20_POLY1305_SHA256    \
                             "
                         O_CIPHERS="$O_CIPHERS               \
                             TLS_AES_128_GCM_SHA256          \
                             TLS_AES_256_GCM_SHA384          \
                             TLS_AES_128_CCM_SHA256          \
+                            TLS_CHACHA20_POLY1305_SHA256    \
                             "
                     else 
                             add_common_ciphersuites
@@ -1466,11 +1468,13 @@ for VERIFY in $VERIFIES; do
                             TLS_AES_128_GCM_SHA256          \
                             TLS_AES_256_GCM_SHA384          \
                             TLS_AES_128_CCM_SHA256          \
+                            TLS_CHACHA20_POLY1305_SHA256    \
                             "
                         O_CIPHERS="$O_CIPHERS               \
                             TLS_AES_128_GCM_SHA256          \
                             TLS_AES_256_GCM_SHA384          \
                             TLS_AES_128_CCM_SHA256          \
+                            TLS_CHACHA20_POLY1305_SHA256    \
                             "
                     else 
                             add_common_ciphersuites
