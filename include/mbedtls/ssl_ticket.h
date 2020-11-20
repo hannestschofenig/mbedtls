@@ -48,7 +48,7 @@ extern "C" {
 /**
  * \brief   Information for session ticket protection
  */
-typedef struct 
+typedef struct
 {
     unsigned char name[4];          /*!< random key identifier              */
     uint32_t generation_time;       /*!< key generation timestamp (seconds) */
@@ -59,7 +59,7 @@ mbedtls_ssl_ticket_key;
 /**
  * \brief   Context for session ticket handling functions
  */
-typedef struct 
+typedef struct
 {
     mbedtls_ssl_ticket_key keys[2]; /*!< ticket protection keys             */
     unsigned char active;           /*!< index of the currently active key  */
@@ -123,7 +123,7 @@ int mbedtls_ssl_ticket_setup( mbedtls_ssl_ticket_context *ctx,
     int (*f_rng)(void *, unsigned char *, size_t), void *p_rng,
     mbedtls_cipher_type_t cipher,
     uint32_t lifetime, mbedtls_ssl_ticket_flags flags);
-#else 
+#else
 int mbedtls_ssl_ticket_setup(mbedtls_ssl_ticket_context* ctx,
     int (*f_rng)(void*, unsigned char*, size_t), void* p_rng,
     mbedtls_cipher_type_t cipher,

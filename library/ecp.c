@@ -1016,12 +1016,12 @@ int mbedtls_ecp_tls_read_point( const mbedtls_ecp_group *grp,
         return( MBEDTLS_ERR_ECP_BAD_INPUT_DATA );
 
     data_len = ( *( *buf ) << 8 ) | *( *buf+1 );
-    *buf += 2; 
+    *buf += 2;
 
     if (data_len < 1 || data_len > buf_len - 2 )
         return(MBEDTLS_ERR_ECP_BAD_INPUT_DATA);
 
-#else 
+#else
     /*
      * We must have at least two bytes (1 for length, at least one for data)
      */
@@ -1073,7 +1073,7 @@ int mbedtls_ecp_tls_write_point( const mbedtls_ecp_group *grp, const mbedtls_ecp
     *buf++ = (unsigned char)( ( *olen ) & 0xFF );
     *olen += 2;
 
-#else 
+#else
 
     /*
      * buffer length must be at least one, for our length byte
@@ -1130,7 +1130,7 @@ int mbedtls_ecp_tls_read_group_id( mbedtls_ecp_group_id *grp,
 #if defined(MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL)
     if (len < 2)
         return(MBEDTLS_ERR_ECP_BAD_INPUT_DATA);
-#else 
+#else
     /*
      * We expect at least three bytes (see below)
      */
@@ -1181,7 +1181,7 @@ int mbedtls_ecp_tls_write_group( const mbedtls_ecp_group *grp, size_t *olen,
     // Two bytes for named curve
     buf[0] = curve_info->tls_id >> 8;
     buf[1] = curve_info->tls_id & 0xFF;
-#else 
+#else
     /*
      * We are going to write 3 bytes (see below)
      */

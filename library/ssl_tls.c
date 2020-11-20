@@ -4991,7 +4991,7 @@ void mbedtls_ssl_conf_dhm_min_bitlen( mbedtls_ssl_config *conf,
 }
 #endif /* MBEDTLS_DHM_C && MBEDTLS_SSL_CLI_C */
 
-#if defined(MBEDTLS_KEY_EXCHANGE_WITH_CERT_ENABLED) 
+#if defined(MBEDTLS_KEY_EXCHANGE_WITH_CERT_ENABLED)
 /*
  * Set allowed/preferred hashes for handshake signatures
  */
@@ -7384,7 +7384,7 @@ static int ssl_preset_suiteb_signature_algorithms_tls13[] = {
 //    SIGNATURE_ECDSA_SECP521r1_SHA512,
 #endif /* MBEDTLS_SHA512_C && MBEDTLS_ECP_DP_SECP521R1_ENABLED */
     SIGNATURE_NONE
-}; 
+};
 #endif /* MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL */
 
 #endif /* MBEDTLS_KEY_EXCHANGE_WITH_CERT_ENABLED */
@@ -7813,10 +7813,10 @@ int mbedtls_ssl_check_curve( const mbedtls_ssl_context *ssl, mbedtls_ecp_group_i
 /*
  * Check if a hash proposed by the peer is in our list.
  * Return 0 if we're willing to use it, -1 otherwise.
- * 
- * Assumption: sig_hashes is terminated either with 
- * SIGNATURE_NONE or with MBEDTLS_MD_NONE and both 
- * equal 0x0. 
+ *
+ * Assumption: sig_hashes is terminated either with
+ * SIGNATURE_NONE or with MBEDTLS_MD_NONE and both
+ * equal 0x0.
  */
 int mbedtls_ssl_check_sig_hash( const mbedtls_ssl_context *ssl,
                                 mbedtls_md_type_t md )

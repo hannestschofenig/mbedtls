@@ -1613,6 +1613,9 @@ int mbedtls_ssl_decrypt_buf( mbedtls_ssl_context const *ssl,
         else
 #endif /* MBEDTLS_SSL_PROTO_TLS1 || MBEDTLS_SSL_PROTO_TLS1_1 || \
           MBEDTLS_SSL_PROTO_TLS1_2 */
+#if defined(MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL)
+        if( transform->minor_ver != MBEDTLS_SSL_MINOR_VERSION_4 )
+#endif /* MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL */
         {
             MBEDTLS_SSL_DEBUG_MSG( 1, ( "should never happen" ) );
             return( MBEDTLS_ERR_SSL_INTERNAL_ERROR );
@@ -1710,6 +1713,9 @@ int mbedtls_ssl_decrypt_buf( mbedtls_ssl_context const *ssl,
         else
 #endif /* MBEDTLS_SSL_PROTO_TLS1 || MBEDTLS_SSL_PROTO_TLS1_1 || \
               MBEDTLS_SSL_PROTO_TLS1_2 */
+#if defined(MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL)
+        if( transform->minor_ver != MBEDTLS_SSL_MINOR_VERSION_4 )
+#endif /* MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL */
         {
             MBEDTLS_SSL_DEBUG_MSG( 1, ( "should never happen" ) );
             return( MBEDTLS_ERR_SSL_INTERNAL_ERROR );

@@ -2169,7 +2169,7 @@ MBEDTLS_MPS_STATIC int mps_retransmission_timer_check( mbedtls_mps *mps )
                              mps,
                              MBEDTLS_MPS_FLIGHT_FINALIZE,
                              MBEDTLS_MPS_FLIGHT_DONE ) );
-
+                break;
             default:
                 break;
         }
