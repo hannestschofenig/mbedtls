@@ -922,6 +922,14 @@ int mbedtls_ssl_parse_signature_algorithms_ext( mbedtls_ssl_context *ssl,
                                         size_t len )
 {
     size_t sig_alg_list_size; /* size of receive signature algorithms list */
+    sig_alg_list_size = ( ( buf[0] << 8 ) | ( buf[1] ) );
+    if( sig_alg_list_size + 2 != len ||
+        sig_alg_list_size % 2 != 0 )
+    {
+        MBEDTLS_SSL_DEBUG_MSG( 1, ( "bad signature_algorithms extension" ) );
+        return( MBEDTLS_ERR_SSL_BAD_HS_CLIENT_HELLO );
+    }
+#if defined(MBEDTLS_SSL_SRV_C)
     const unsigned char *p; /* pointer to individual signature algorithm */
     const unsigned char *end = buf + len; /* end of buffer */
     const int *md_cur; /* iterate through configured signature schemes */
@@ -930,13 +938,6 @@ int mbedtls_ssl_parse_signature_algorithms_ext( mbedtls_ssl_context *ssl,
     size_t num_supported_hashes;
     uint32_t i; /* iterature through received_signature_schemes_list */
 
-    sig_alg_list_size = ( ( buf[0] << 8 ) | ( buf[1] ) );
-    if( sig_alg_list_size + 2 != len ||
-        sig_alg_list_size % 2 != 0 )
-    {
-        MBEDTLS_SSL_DEBUG_MSG( 1, ( "bad signature_algorithms extension" ) );
-        return( MBEDTLS_ERR_SSL_BAD_HS_CLIENT_HELLO );
-    }
 
     /* Determine the number of signature algorithms we support. */
     num_supported_hashes = 0;
@@ -983,6 +984,7 @@ int mbedtls_ssl_parse_signature_algorithms_ext( mbedtls_ssl_context *ssl,
     }
 
     ssl->handshake->received_signature_schemes_list[i] = SIGNATURE_NONE;
+#endif /* MBEDTLS_SSL_SRV_C */
 
     return( 0 );
 }
