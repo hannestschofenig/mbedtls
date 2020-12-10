@@ -5087,6 +5087,7 @@ int mbedtls_ssl_get_client_ticket( const mbedtls_ssl_context *ssl, mbedtls_ssl_t
         /* store time we received the ticket */
         ticket->start = ssl->session->ticket_received;
 #endif /* MBEDTLS_HAVE_TIME */
+        ticket->flags = ssl->session->flags;
 
         return( 0 );
     }
