@@ -625,18 +625,6 @@ static const mbedtls_cipher_info_t aes_128_ccm_info = {
     16,
     &ccm_aes_info
 };
-#if defined(MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL)
-static const mbedtls_cipher_info_t aes_128_ccm_8_info = {
-    MBEDTLS_CIPHER_AES_128_CCM,
-    MBEDTLS_MODE_CCM_8,
-    128,
-    "AES-128-CCM_8",
-    8,
-    MBEDTLS_CIPHER_VARIABLE_IV_LEN,
-    16,
-    &ccm_aes_info
-};
-#endif /* !MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL */
 
 static const mbedtls_cipher_info_t aes_192_ccm_info = {
     MBEDTLS_CIPHER_AES_192_CCM,
@@ -2293,9 +2281,6 @@ const mbedtls_cipher_definition_t mbedtls_cipher_definitions[] =
 #endif
 #if defined(MBEDTLS_CCM_C)
     { MBEDTLS_CIPHER_AES_128_CCM,          &aes_128_ccm_info },
-#if defined(MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL)
-    { MBEDTLS_CIPHER_AES_128_CCM_8,          &aes_128_ccm_8_info },
-#endif /* MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL */
     { MBEDTLS_CIPHER_AES_192_CCM,          &aes_192_ccm_info },
     { MBEDTLS_CIPHER_AES_256_CCM,          &aes_256_ccm_info },
 #endif

@@ -1214,30 +1214,21 @@ int mbedtls_ssl_derive_traffic_keys( mbedtls_ssl_context *ssl, mbedtls_ssl_key_s
                            ssl->handshake->exporter_secret,
                            hash_size );
 
-    /*
-     * Compute keys to protect the handshake messages utilizing MakeTrafficKey
-     */
-
-    /* Settings for GCM, CCM, and CCM_8 */
     transform->maclen = 0;
     transform->fixed_ivlen = 4;
     transform->ivlen = cipher_info->iv_size;
     transform->keylen = cipher_info->key_bitlen / 8;
+    transform->taglen =
+            cipher_info->flags & MBEDTLS_CIPHERSUITE_SHORT_TAG ? 8 : 16;
 
     /* Minimum length for an encrypted handshake message is
      *  - Handshake header
-     *  - 1 byte for handshake type appended to the end of the message
+     *  - 1 byte for content type appended to the message
      *  - Authentication tag ( which depends on the mode of operation )
+     *
+     * Application data messages do, however, not use a handshake header.
      */
-    if( handshake->ciphersuite_info->cipher == MBEDTLS_CIPHER_AES_128_CCM_8 )
-        transform->minlen = 8;
-    else
-        transform->minlen = 16;
-
-    /* TBD: Temporarily changed to test encrypted alert messages */
-    /* transform->minlen += mbedtls_ssl_hs_hdr_len( ssl ); */
-
-    transform->minlen += 1;
+    transform->minlen = transform->taglen + 1;
 
     MBEDTLS_SSL_DEBUG_MSG( 3, ( "-->>Calling mbedtls_ssl_tls1_3_make_traffic_keys( ) with the following parameters:" ) );
     MBEDTLS_SSL_DEBUG_MSG( 3, ( "-- Hash Algorithm: %s", mbedtls_md_get_name( md_info ) ) );
@@ -1254,6 +1245,22 @@ int mbedtls_ssl_derive_traffic_keys( mbedtls_ssl_context *ssl, mbedtls_ssl_key_s
         MBEDTLS_SSL_DEBUG_RET( 1, "mbedtls_ssl_tls1_3_make_traffic_keys failed", ret );
         goto exit;
     }
+
+    MBEDTLS_SSL_DEBUG_BUF( 5, "client_write_key",
+                           traffic_keys->client_write_key,
+                           traffic_keys->key_len);
+
+    MBEDTLS_SSL_DEBUG_BUF( 5, "server_write_key",
+                           traffic_keys->server_write_key,
+                           traffic_keys->key_len);
+
+    MBEDTLS_SSL_DEBUG_BUF( 5, "client_write_iv",
+                           traffic_keys->client_write_iv,
+                           traffic_keys->iv_len);
+
+    MBEDTLS_SSL_DEBUG_BUF( 5, "server_write_iv",
+                           traffic_keys->server_write_iv,
+                           traffic_keys->iv_len);
 
     MBEDTLS_SSL_DEBUG_MSG( 2, ( "<= derive traffic keys" ) );
 
@@ -1809,8 +1816,6 @@ static int ssl_certificate_verify_write( mbedtls_ssl_context* ssl,
             &verify_buffer_len,
             ssl->conf->endpoint );
 
-    MBEDTLS_SSL_DEBUG_BUF( 5, "verify buffer structure", verify_buffer, verify_buffer_len );
-
     /*
      *  struct {
      *    SignatureScheme algorithm;
@@ -2070,8 +2075,6 @@ int mbedtls_ssl_read_certificate_verify_process( mbedtls_ssl_context* ssl )
                                      verify_buffer,
                                      &verify_buffer_len,
                                      !ssl->conf->endpoint );
-
-        MBEDTLS_SSL_DEBUG_BUF( 5, "verify buffer structure", verify_buffer, verify_buffer_len );
 
         /* Read message */
         if( ( ret = mbedtls_ssl_read_record( ssl ) ) != 0 )
@@ -3275,25 +3278,21 @@ int mbedtls_ssl_generate_application_traffic_keys(
 
     hash_size = mbedtls_hash_size_for_ciphersuite( suite_info );
 
-    /*
-     * Determine the appropriate key, IV and MAC length.
-     */
-
-    /* Settings for GCM, CCM, and CCM_8 */
     transform->maclen = 0;
     transform->fixed_ivlen = 4;
     transform->ivlen = cipher_info->iv_size;
     transform->keylen = cipher_info->key_bitlen / 8;
+    transform->taglen =
+            cipher_info->flags & MBEDTLS_CIPHERSUITE_SHORT_TAG ? 8 : 16;
 
     /* Minimum length for an encrypted handshake message is
      *  - Handshake header
-     *  - 1 byte for handshake type appended to the end of the message
+     *  - 1 byte for content type appended to the message
      *  - Authentication tag ( which depends on the mode of operation )
+     *
+     * Application data messages do, however, not use a handshake header.
      */
-    if( ssl->handshake->ciphersuite_info->cipher == MBEDTLS_CIPHER_AES_128_CCM_8 ) transform->minlen = 8;
-    else transform->minlen = 16;
-
-    transform->minlen += 1;
+    transform->minlen = transform->taglen + 1;
 
     MBEDTLS_SSL_DEBUG_BUF( 5, "Transcript hash (including Server.Finished):",
                               ssl->handshake->server_finished_digest,
@@ -3837,26 +3836,21 @@ int mbedtls_ssl_early_data_key_derivation( mbedtls_ssl_context *ssl, mbedtls_ssl
         goto exit;
     }
 
-    /* Creating the Traffic Keys */
-
-    /* Settings for GCM, CCM, and CCM_8 */
     transform->maclen = 0;
     transform->fixed_ivlen = 4;
     transform->ivlen = cipher_info->iv_size;
     transform->keylen = cipher_info->key_bitlen / 8;
+    transform->taglen =
+            cipher_info->flags & MBEDTLS_CIPHERSUITE_SHORT_TAG ? 8 : 16;
 
     /* Minimum length for an encrypted handshake message is
      *  - Handshake header
-     *  - 1 byte for handshake type appended to the end of the message
+     *  - 1 byte for content type appended to the message
      *  - Authentication tag ( which depends on the mode of operation )
+     *
+     * Application data messages do, however, not use a handshake header.
      */
-    if( ssl->handshake->ciphersuite_info->cipher == MBEDTLS_CIPHER_AES_128_CCM_8 ) transform->minlen = 8;
-    else transform->minlen = 16;
-
-    /* TBD: Temporarily changed to test encrypted alert messages */
-    /* transform->minlen += mbedtls_ssl_hs_hdr_len( ssl ); */
-
-    transform->minlen += 1;
+    transform->minlen = transform->taglen + 1;
 
     MBEDTLS_SSL_DEBUG_MSG( 3, ( "-->>Calling mbedtls_ssl_tls1_3_make_traffic_keys( ) with the following parameters:" ) );
     MBEDTLS_SSL_DEBUG_MSG( 3, ( "-- Hash Algorithm: %s", mbedtls_md_get_name( md ) ) );
@@ -4631,7 +4625,7 @@ void mbedtls_ssl_conf_early_data( mbedtls_ssl_config *conf, int early_data, char
             conf->early_data_buf = buffer;
             conf->early_data_len = len;
 #if defined(MBEDTLS_SSL_SRV_C)
-            /* Only the server uses the early data callback. 
+            /* Only the server uses the early data callback.
              * For the client this parameter is not used.
              */
             conf->early_data_callback = early_data_callback;

@@ -55,6 +55,9 @@ static const int ciphersuite_preference[] =
     MBEDTLS_TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256,
     MBEDTLS_TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256,
     MBEDTLS_TLS_DHE_RSA_WITH_CHACHA20_POLY1305_SHA256,
+#if defined(MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL)
+    TLS_CHACHA20_POLY1305_SHA256,
+#endif /* MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL */
 
     /* All AES-256 ephemeral suites */
     MBEDTLS_TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,
@@ -328,8 +331,7 @@ static const mbedtls_ssl_ciphersuite_t ciphersuite_definitions[] =
     MBEDTLS_KEY_EXCHANGE_NONE, // field not used in TLS 1.3 implementation
     MBEDTLS_SSL_MAJOR_VERSION_3, MBEDTLS_SSL_MINOR_VERSION_4,
     MBEDTLS_SSL_MAJOR_VERSION_3, MBEDTLS_SSL_MINOR_VERSION_4,
-    0 // field not used in TLS 1.3 implementation
-    },
+    0 },
 #endif /* MBEDTLS_SHA512_C */
 #if defined(MBEDTLS_SHA256_C)
     { TLS_AES_128_GCM_SHA256, "TLS_AES_128_GCM_SHA256",
@@ -337,8 +339,7 @@ static const mbedtls_ssl_ciphersuite_t ciphersuite_definitions[] =
     MBEDTLS_KEY_EXCHANGE_NONE, // field not used in TLS 1.3 implementation
     MBEDTLS_SSL_MAJOR_VERSION_3, MBEDTLS_SSL_MINOR_VERSION_4,
     MBEDTLS_SSL_MAJOR_VERSION_3, MBEDTLS_SSL_MINOR_VERSION_4,
-    0 // field not used in TLS 1.3 implementation
-    },
+    0 },
 #endif /* MBEDTLS_SHA256_C */
 #endif /* MBEDTLS_GCM_C */
 
@@ -349,21 +350,32 @@ static const mbedtls_ssl_ciphersuite_t ciphersuite_definitions[] =
     MBEDTLS_KEY_EXCHANGE_NONE, // field not used in TLS 1.3 implementation
     MBEDTLS_SSL_MAJOR_VERSION_3, MBEDTLS_SSL_MINOR_VERSION_4,
     MBEDTLS_SSL_MAJOR_VERSION_3, MBEDTLS_SSL_MINOR_VERSION_4,
-    0 // field not used in TLS 1.3 implementation
-    },
+    0 },
 
     { TLS_AES_128_CCM_8_SHA256, "TLS_AES_128_CCM_8_SHA256",
-    MBEDTLS_CIPHER_AES_128_CCM_8, MBEDTLS_MD_SHA256,
+    MBEDTLS_CIPHER_AES_128_CCM, MBEDTLS_MD_SHA256,
     MBEDTLS_KEY_EXCHANGE_NONE, // field not used in TLS 1.3 implementation
     MBEDTLS_SSL_MAJOR_VERSION_3, MBEDTLS_SSL_MINOR_VERSION_4,
     MBEDTLS_SSL_MAJOR_VERSION_3, MBEDTLS_SSL_MINOR_VERSION_4,
-    0 // field not used in TLS 1.3 implementation
-    },
+    MBEDTLS_CIPHERSUITE_SHORT_TAG },
 #endif /* MBEDTLS_SHA256_C */
 #endif /* MBEDTLS_CCM_C */
 
 #endif /* MBEDTLS_AES_C */
+
+#if defined(MBEDTLS_CHACHAPOLY_C) && \
+    defined(MBEDTLS_SHA256_C)
+    { TLS_CHACHA20_POLY1305_SHA256,
+      "TLS_CHACHA20_POLY1305_SHA256",
+      MBEDTLS_CIPHER_CHACHA20_POLY1305, MBEDTLS_MD_SHA256,
+      MBEDTLS_KEY_EXCHANGE_NONE,  // field not used in TLS 1.3 implementation
+      MBEDTLS_SSL_MAJOR_VERSION_3, MBEDTLS_SSL_MINOR_VERSION_4,
+      MBEDTLS_SSL_MAJOR_VERSION_3, MBEDTLS_SSL_MINOR_VERSION_4,
+          0 // field not used in TLS 1.3 implementation
+    },
+#endif /* MBEDTLS_CHACHAPOLY_C && MBEDTLS_SHA256_C */
 #endif /* MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL */
+
 #if defined(MBEDTLS_CHACHAPOLY_C) && \
     defined(MBEDTLS_SHA256_C) && \
     defined(MBEDTLS_SSL_PROTO_TLS1_2)

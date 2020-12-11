@@ -422,7 +422,6 @@ struct mbedtls_ssl_ciphersuite_t
     int max_major_ver;
     int max_minor_ver;
 
-    /* In TLS 1.3 we do not make use of this flags field. */
     unsigned char flags;
 };
 

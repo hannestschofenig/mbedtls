@@ -82,9 +82,10 @@ static int ssl_encrypt_buf( mbedtls_ssl_context *ssl )
     /*
      * Encrypt
      */
-#if defined(MBEDTLS_GCM_C) || defined(MBEDTLS_CCM_C)
+#if defined(MBEDTLS_GCM_C) || defined(MBEDTLS_CCM_C) ||  defined(MBEDTLS_CHACHAPOLY_C)
     if( mode == MBEDTLS_MODE_GCM ||
-        mode == MBEDTLS_MODE_CCM || mode == MBEDTLS_MODE_CCM_8 )
+        mode == MBEDTLS_MODE_CCM ||
+        mode == MBEDTLS_MODE_CHACHAPOLY )
     {
         int ret;
         size_t enc_msglen, olen;
@@ -93,10 +94,7 @@ static int ssl_encrypt_buf( mbedtls_ssl_context *ssl )
         size_t add_data_len;
         unsigned char taglen;
 
-        /* Currently there is only one cipher with a short authentication tag defined */
-        if( ssl->handshake->ciphersuite_info->cipher == MBEDTLS_CIPHER_AES_128_CCM_8 )
-            taglen = 8;
-        else taglen = 16;
+        taglen = ssl->handshake->ciphersuite_info->flags & MBEDTLS_CIPHERSUITE_SHORT_TAG ? 8 : 16;
 
 #if defined(MBEDTLS_SSL_PROTO_DTLS)
         if( ssl->conf->transport == MBEDTLS_SSL_TRANSPORT_DATAGRAM )
@@ -230,7 +228,7 @@ static int ssl_encrypt_buf( mbedtls_ssl_context *ssl )
         MBEDTLS_SSL_DEBUG_BUF( 4, "Tag", enc_msg + enc_msglen, taglen );
         MBEDTLS_SSL_DEBUG_BUF( 4, "Encrypted message ( without tag ): ", enc_msg, ssl->out_msglen - taglen );
     } else
-#endif /* MBEDTLS_GCM_C || MBEDTLS_CCM_C */
+#endif /* MBEDTLS_GCM_C || MBEDTLS_CCM_C || MBEDTLS_MODE_CHACHAPOLY  */
     {
         MBEDTLS_SSL_DEBUG_MSG( 1, ( "should never happen" ) );
         return( MBEDTLS_ERR_SSL_INTERNAL_ERROR );
@@ -276,7 +274,7 @@ static int ssl_decrypt_buf( mbedtls_ssl_context *ssl )
 #if defined(MBEDTLS_GCM_C) || defined(MBEDTLS_CCM_C)
     if( mode == MBEDTLS_MODE_GCM ||
         mode == MBEDTLS_MODE_CCM ||
-        mode == MBEDTLS_MODE_CCM_8 )
+        mode == MBEDTLS_MODE_CHACHAPOLY )
     {
         int ret;
         size_t dec_msglen, olen;
@@ -286,10 +284,7 @@ static int ssl_decrypt_buf( mbedtls_ssl_context *ssl )
         unsigned char add_data[5];
         size_t add_data_len;
 
-        /* Currently there is only one cipher with a short authentication tag defined */
-        if( ssl->handshake->ciphersuite_info->cipher == MBEDTLS_CIPHER_AES_128_CCM_8 )
-            taglen = 8;
-        else taglen = 16;
+        taglen = ssl->handshake->ciphersuite_info->flags & MBEDTLS_CIPHERSUITE_SHORT_TAG ? 8 : 16;
 
 #if defined(MBEDTLS_SSL_PROTO_DTLS)
         if( ssl->conf->transport == MBEDTLS_SSL_TRANSPORT_DATAGRAM )
@@ -446,7 +441,7 @@ static int ssl_decrypt_buf( mbedtls_ssl_context *ssl )
          */
     }
     else
-#endif /* MBEDTLS_GCM_C || MBEDTLS_CCM_C */
+#endif /* MBEDTLS_GCM_C || MBEDTLS_CCM_C || MBEDTLS_MODE_CHACHAPOLY */
     {
         MBEDTLS_SSL_DEBUG_MSG( 1, ( "should never happen" ) );
         return( MBEDTLS_ERR_SSL_INTERNAL_ERROR );
@@ -1709,7 +1704,6 @@ int mbedtls_ssl_get_record_expansion( const mbedtls_ssl_context *ssl, int direct
     {
         case MBEDTLS_MODE_GCM:
         case MBEDTLS_MODE_CCM:
-        case MBEDTLS_MODE_CCM_8:
         case MBEDTLS_MODE_STREAM:
             transform_expansion = transform->minlen;
             break;
