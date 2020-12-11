@@ -810,29 +810,6 @@ typedef enum
 } mbedtls_ssl_tls1_3_secret_type;
 #endif /* MBEDTLS_SSL_EXPORT_KEYS && MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL */
 
-/**
-* \brief  Ticket Structure
-*/
-struct mbedtls_ssl_ticket {
-#if defined(MBEDTLS_HAVE_TIME)
-    time_t start;
-#endif
-    int ciphersuite;
-    uint32_t ticket_lifetime;
-    uint32_t ticket_age_add;
-    uint8_t key_len;
-#if defined(MBEDTLS_SHA256_C) && !defined(MBEDTLS_SHA512_C)
-    unsigned char key[32];
-#else
-    unsigned char key[48];
-#endif
-
-    mbedtls_ssl_ticket_flags flags; /*!< ticket flags    */
-
-//#if defined(MBEDTLS_X509_CRT_PARSE_C)
-//    mbedtls_x509_crt* peer_cert;    /*!< entry peer_cert */
-//#endif
-};
 
 #if defined(MBEDTLS_SSL_ASYNC_PRIVATE)
 #if defined(MBEDTLS_X509_CRT_PARSE_C)
@@ -1114,35 +1091,27 @@ struct mbedtls_ssl_session
     unsigned int key_exchange; /* Indication of the key exchange algorithm being negotiated*/
     unsigned char key_exchange_modes; /*!< psk key exchange modes */
 #endif /* MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL */
-#if defined(MBEDTLS_SSL_SESSION_TICKETS) && defined(MBEDTLS_SSL_CLI_C)
-    unsigned char *ticket;      /*!< RFC 5077 session ticket */
+#if defined(MBEDTLS_SSL_SESSION_TICKETS) || defined(MBEDTLS_SSL_NEW_SESSION_TICKET)
+    unsigned char *ticket;      /*!< Ticket */
     size_t ticket_len;          /*!< session ticket length   */
     uint32_t ticket_lifetime;   /*!< ticket lifetime hint    */
-#endif /* MBEDTLS_SSL_SESSION_TICKETS && MBEDTLS_SSL_CLI_C */
+#endif /* MBEDTLS_SSL_SESSION_TICKETS && MBEDTLS_SSL_NEW_SESSION_TICKET */
 
 #if defined(MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL) && defined(MBEDTLS_SSL_NEW_SESSION_TICKET)
-
-#if defined(MBEDTLS_SSL_SRV_C)
-    mbedtls_ssl_ticket *ticket_t;  /*!< Storage of ticket info */
-    int minor_ver;                 /*!< Version information for selecting ticket format */
-#endif /* MBEDTLS_SSL_SRV_C */
-
-    unsigned char* ticket;          /*!< TLS 1.3 session ticket acting as psk identity */
-    size_t ticket_len;              /*!< Ticket length */
-
-#if defined(MBEDTLS_SSL_CLI_C)
-    uint32_t ticket_lifetime;       /*!< Ticket lifetime hint */
-    mbedtls_ssl_ticket_flags flags; /*!< Ticket flags */
+    int minor_ver;                  /*!< Version information for selecting ticket format */
+    unsigned int endpoint : 1;      /*!< 0: client, 1: server               */
+    mbedtls_ssl_ticket_flags ticket_flags; /*!< Ticket flags */
     uint32_t ticket_age_add;        /*!< Randomly generated value used to obscure the age of the ticket */
     unsigned char* ticket_nonce;    /*!< Ticket nonce value */
     uint8_t ticket_nonce_len;       /*!< Ticket nonce length */
-    uint8_t key_len;                 /*!< PSK key length */
+    uint8_t resumption_key_len;                /*!< PSK key length */
 #if defined(MBEDTLS_SHA256_C) && !defined(MBEDTLS_SHA512_C)
-    unsigned char key[32];          /*!< key (32 byte) */
+    unsigned char resumption_key[32];          /*!< key (32 byte) */
 #else /* MBEDTLS_SHA512_C */
-    unsigned char key[48];          /*!< key (48 byte) */
+    unsigned char resumption_key[48];          /*!< key (48 byte) */
 #endif /* MBEDTLS_SHA256_C && !MBEDTLS_SHA512_C */
 #if defined(MBEDTLS_HAVE_TIME)
+#if defined(MBEDTLS_SSL_CLI_C)
     time_t ticket_received;         /*!< time ticket was received */
 #endif /* MBEDTLS_HAVE_TIME */
 #endif /* MBEDTLS_SSL_CLI_C */
@@ -1332,13 +1301,6 @@ struct mbedtls_ssl_config
 #if defined(MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL)
     int key_exchange_modes; /*!< key exchange mode */
 #endif /* MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL */
-
-#if defined(MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL) && defined(MBEDTLS_SSL_NEW_SESSION_TICKET)
-    uint32_t ticket_age_add; /*!< used to obscure the age of the ticket */
-#if defined(MBEDTLS_HAVE_TIME)
-    time_t ticket_received;               /*!< time when ticket was received */
-#endif /* MBEDTLS_HAVE_TIME */
-#endif /* MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL && MBEDTLS_SSL_NEW_SESSION_TICKET */
 
 #if defined(MBEDTLS_KEY_EXCHANGE_SOME_PSK_ENABLED)
 
@@ -2978,6 +2940,7 @@ int mbedtls_ssl_session_load( mbedtls_ssl_session *session,
  *
  * \return         \c 0 if successful.
  * \return         #MBEDTLS_ERR_SSL_BUFFER_TOO_SMALL if \p buf is too small.
+ * \return.........#MBEDTLS_ERR_SSL_INTERNAL_ERROR if session is NULL.
  */
 int mbedtls_ssl_session_save( const mbedtls_ssl_session *session,
                               unsigned char *buf,

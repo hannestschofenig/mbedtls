@@ -484,15 +484,20 @@ finish_key_share_parsing:
 #endif /* MBEDTLS_ECDH_C || MBEDTLS_ECDSA_C */
 
 #if defined(MBEDTLS_SSL_NEW_SESSION_TICKET)
-int mbedtls_ssl_parse_new_session_ticket_server(
+int mbedtls_ssl_parse_psk_identity(
     mbedtls_ssl_context *ssl,
     unsigned char *buf,
-    size_t len, mbedtls_ssl_ticket *ticket )
+    size_t len,
+    uint32_t obfuscated_ticket_age )
 {
     int ret;
     unsigned char *ticket_buffer;
+#if defined(MBEDTLS_HAVE_TIME)
+    time_t now;
+    int64_t diff;
+#endif /* MBEDTLS_HAVE_TIME */
 
-    MBEDTLS_SSL_DEBUG_MSG( 2, ( "=> parse new session ticket" ) );
+    MBEDTLS_SSL_DEBUG_MSG( 2, ( "=> parse psk_identity containing ticket" ) );
 
     if( ssl->conf->f_ticket_parse == NULL ||
         ssl->conf->f_ticket_write == NULL )
@@ -509,22 +514,23 @@ int mbedtls_ssl_parse_new_session_ticket_server(
      * We do, however, need the original buffer for computing the
      * psk binder value.
      */
-    ticket_buffer = mbedtls_calloc( len,1 );
+    ticket_buffer = mbedtls_calloc( len, 1 );
     if( ticket_buffer == NULL )
     {
         MBEDTLS_SSL_DEBUG_MSG( 1, ( "buffer too small" ) );
         return ( MBEDTLS_ERR_SSL_ALLOC_FAILED );
     } else memcpy( ticket_buffer, buf, len );
 
-    ssl->session_negotiate->minor_ver = ssl->minor_ver;
-    ssl->session_negotiate->ticket_t = ticket;
-
+/*  
+    ssl->session_negotiate->ticket = ticket;
+    ssl->session_negotiate->ticket_len = len;
+*/
     if( ( ret = ssl->conf->f_ticket_parse( ssl->conf->p_ticket,
                                            ssl->session_negotiate,
                                            ticket_buffer, len ) ) != 0 )
     {
-        mbedtls_platform_zeroize( &ticket, sizeof( mbedtls_ssl_ticket ) );
         mbedtls_free( ticket_buffer );
+
         if( ret == MBEDTLS_ERR_SSL_INVALID_MAC )
             MBEDTLS_SSL_DEBUG_MSG( 3, ( "ticket is not authentic" ) );
         else if( ret == MBEDTLS_ERR_SSL_SESSION_TICKET_EXPIRED )
@@ -533,6 +539,101 @@ int mbedtls_ssl_parse_new_session_ticket_server(
             MBEDTLS_SSL_DEBUG_RET( 1, "mbedtls_ssl_ticket_parse", ret );
 
         return( ret );
+    }
+
+    /* found a match in the ticket cache; everything is OK */
+    ssl->handshake->resume = 1;
+
+    /* We have to put the resumption_master_secret into the handshake->psk.
+     *
+     * Note: The key in the ticket is already the final PSK,
+     *       i.e., the HKDF-Expand-Label( resumption_master_secret, "resumption", ticket_nonce, Hash.length )
+     *       function has already been applied.
+     */
+    mbedtls_ssl_set_hs_psk( ssl, ssl->session_negotiate->resumption_key, ssl->session_negotiate->resumption_key_len );
+    MBEDTLS_SSL_DEBUG_BUF( 5, "ticket: key", ssl->session_negotiate->resumption_key, ssl->session_negotiate->resumption_key_len );
+    mbedtls_free( ssl->session_negotiate->resumption_key );
+
+    /*
+     * A server MUST validate that the ticket age for the selected PSK identity
+     * is within a small tolerance of the time since the ticket was issued.
+     */
+
+#if defined(MBEDTLS_HAVE_TIME)
+    now = time( NULL );
+
+    /* Check #1:
+     *   Is the time when the ticket was issued later than now?
+     */
+
+    if( now < ssl->session_negotiate->start )
+    {
+        MBEDTLS_SSL_DEBUG_MSG( 3, ( "Ticket expired: now=%d, ticket.start=%d", 
+                                     now, ssl->session_negotiate->start ) );
+        ret = MBEDTLS_ERR_SSL_SESSION_TICKET_EXPIRED;
+    }
+
+    /* Check #2:
+        *   Is the ticket expired already?
+        */
+
+    if( now - ssl->session_negotiate->start > ssl->session_negotiate->ticket_lifetime )
+    {
+        MBEDTLS_SSL_DEBUG_MSG( 3, ( "Ticket expired ( now - ticket.start=%d, ticket.ticket_lifetime=%d",
+                                     now - ssl->session_negotiate->start,
+                                     ssl->session_negotiate->ticket_lifetime ) );
+        ret = MBEDTLS_ERR_SSL_SESSION_TICKET_EXPIRED;
+    }
+
+    /* Check #3:
+        *   Is the ticket age for the selected PSK identity ( computed by subtracting ticket_age_add
+        *   from PskIdentity.obfuscated_ticket_age modulo 2^32 ) within a small tolerance of the 
+        *   time since the ticket was issued?
+        */
+
+    diff = ( now - ssl->session_negotiate->start ) - ( obfuscated_ticket_age - ssl->session_negotiate->ticket_age_add );
+
+    if( diff > MBEDTLS_SSL_TICKET_AGE_TOLERANCE )
+    {
+        MBEDTLS_SSL_DEBUG_MSG( 3, ( "Ticket age outside tolerance window ( diff=%d )", diff ) );
+        ret = MBEDTLS_ERR_SSL_SESSION_TICKET_EXPIRED;
+    }
+
+#if defined(MBEDTLS_ZERO_RTT)
+    if( ssl->conf->early_data == MBEDTLS_SSL_EARLY_DATA_ENABLED )
+    {
+        if( diff <= MBEDTLS_SSL_EARLY_DATA_MAX_DELAY )
+        {
+            ssl->session_negotiate->process_early_data = MBEDTLS_SSL_EARLY_DATA_ENABLED;
+        }
+        else
+        {
+            ssl->session_negotiate->process_early_data = MBEDTLS_SSL_EARLY_DATA_DISABLED;
+            ret = MBEDTLS_ERR_SSL_SESSION_TICKET_EXPIRED;
+        }
+    }
+#endif /* MBEDTLS_ZERO_RTT */
+#endif /* MBEDTLS_HAVE_TIME */
+
+    /* TBD: check ALPN, ciphersuite and SNI as well */
+
+    /*
+        * If the check failed, the server SHOULD proceed with the handshake but
+        * reject 0-RTT, and SHOULD NOT take any other action that assumes that
+        * this ClientHello is fresh.
+        */
+
+    /* Disable 0-RTT */
+    if( ret == MBEDTLS_ERR_SSL_SESSION_TICKET_EXPIRED )
+    {
+#if defined(MBEDTLS_ZERO_RTT)
+        if( ssl->conf->early_data == MBEDTLS_SSL_EARLY_DATA_ENABLED )
+        {
+            ssl->session_negotiate->process_early_data = MBEDTLS_SSL_EARLY_DATA_DISABLED;
+        }
+#else
+        ( ( void )buf );
+#endif /* MBEDTLS_ZERO_RTT */
     }
 
     /* We delete the temporary buffer */
@@ -678,13 +779,13 @@ static int ssl_calc_binder( mbedtls_ssl_context *ssl, unsigned char *psk,
         MBEDTLS_SSL_DEBUG_MSG( 5, ( "Derive Early Secret with 'ext binder'" ) );
     }
 
-
     if( ret != 0 )
     {
         MBEDTLS_SSL_DEBUG_RET( 1, "mbedtls_ssl_tls1_3_derive_secret( ) with binder_key: Error", ret );
         return( ret );
     }
 
+    MBEDTLS_SSL_DEBUG_BUF( 5, "Binder Key", binder_key, hash_size );
 
     if( suite_info->mac == MBEDTLS_MD_SHA256 )
     {
@@ -823,23 +924,12 @@ int mbedtls_ssl_parse_client_psk_identity_ext( mbedtls_ssl_context *ssl,
     unsigned char *truncated_clienthello_end, *truncated_clienthello_start = ssl->in_msg;
     unsigned int item_array_length, item_length, sum, length_so_far;
     unsigned char server_computed_binder[MBEDTLS_MD_MAX_SIZE];
-    uint32_t obfuscated_ticket_age;
-    mbedtls_ssl_ticket ticket;
     const unsigned char *psk = NULL;
     size_t psk_len = 0;
-#if defined(MBEDTLS_HAVE_TIME)
-    time_t now;
-    int64_t diff;
-#endif /* MBEDTLS_HAVE_TIME */
+#if defined(MBEDTLS_SSL_NEW_SESSION_TICKET)
+    uint32_t obfuscated_ticket_age;
+#endif /* MBEDTLS_SSL_NEW_SESSION_TICKET */
 
-/*	if( ssl->conf->f_psk == NULL &&
-        ( ssl->conf->psk == NULL || ssl->conf->psk_identity == NULL ||
-        ssl->conf->psk_identity_len == 0 || ssl->conf->psk_len == 0 ) )
-	{
-        MBEDTLS_SSL_DEBUG_MSG( 1, ( "no pre-shared key configured" ) );
-        return( MBEDTLS_ERR_SSL_PRIVATE_KEY_REQUIRED );
-	}
-*/
     /* Read length of array of identities */
     item_array_length = ( buf[0] << 8 ) | buf[1];
 
@@ -914,101 +1004,14 @@ int mbedtls_ssl_parse_client_psk_identity_ext( mbedtls_ssl_context *ssl,
                 memcpy( ssl->session_negotiate->ticket, buf, item_length );
                 ssl->session_negotiate->ticket_len = item_length;
 
-                ret = mbedtls_ssl_parse_new_session_ticket_server( ssl, ssl->session_negotiate->ticket, item_length, &ticket );
-                if( ret == 0 )
+                /* obfuscated ticket age follows the identity field, which is item_length long, containing the ticket */
+                memcpy( &obfuscated_ticket_age, buf + item_length, 4 );
+                MBEDTLS_SSL_DEBUG_BUF( 5, "ticket: obfuscated_ticket_age", ( const unsigned char * ) &obfuscated_ticket_age, 4 );
+
+                ret = mbedtls_ssl_parse_psk_identity( ssl, ssl->session_negotiate->ticket, item_length, obfuscated_ticket_age );
+                if( ret != 0 )
                 {
-                    /* found a match in the ticket cache; everything is OK */
-                    ssl->handshake->resume = 1;
-
-                    /* We put the resumption_master_secret into the handshake->psk
-                     *
-                     * Note: The key in the ticket is already the final PSK,
-                     *       i.e., the HKDF-Expand-Label( resumption_master_secret, "resumption", ticket_nonce, Hash.length )
-                     *       function has already been applied.
-                     */
-                    mbedtls_ssl_set_hs_psk( ssl, ticket.key, ticket.key_len );
-                    MBEDTLS_SSL_DEBUG_BUF( 5, "ticket: key", ticket.key, ticket.key_len );
-
-                    /* obfuscated ticket age follows the identity field, which is item_length long, containing the ticket */
-                    memcpy( &obfuscated_ticket_age, buf+item_length, 4 );
-                    MBEDTLS_SSL_DEBUG_BUF( 5, "ticket: obfuscated_ticket_age", ( const unsigned char * ) &obfuscated_ticket_age, 4 );
-                    /*
-                     * A server MUST validate that the ticket age for the selected PSK identity
-                     * is within a small tolerance of the time since the ticket was issued.
-                     */
-
-#if defined(MBEDTLS_HAVE_TIME)
-                    now = time( NULL );
-
-                    /* Check #1:
-                     *   Is the time when the ticket was issued later than now?
-                     */
-
-                    if( now < ticket.start )
-                    {
-                        MBEDTLS_SSL_DEBUG_MSG( 3, ( "Ticket expired: now=%d, ticket.start=%d",now, ticket.start ) );
-                        ret = MBEDTLS_ERR_SSL_SESSION_TICKET_EXPIRED;
-                    }
-
-                    /* Check #2:
-                     *   Is the ticket expired already?
-                     */
-
-                    if( now - ticket.start > ticket.ticket_lifetime )
-                    {
-                        MBEDTLS_SSL_DEBUG_MSG( 3, ( "Ticket expired ( now - ticket.start=%d, ticket.ticket_lifetime=%d", now - ticket.start, ticket.ticket_lifetime ) );
-                        ret = MBEDTLS_ERR_SSL_SESSION_TICKET_EXPIRED;
-                    }
-
-                    /* Check #3:
-                     *   Is the ticket age for the selected PSK identity ( computed by subtracting ticket_age_add from PskIdentity.obfuscated_ticket_age modulo 2^32 )
-                     *   within a small tolerance of the time since the ticket was issued?
-                     */
-
-                    diff = ( now - ticket.start ) - ( obfuscated_ticket_age - ticket.ticket_age_add );
-
-                    if( diff > MBEDTLS_SSL_TICKET_AGE_TOLERANCE )
-                    {
-                        MBEDTLS_SSL_DEBUG_MSG( 3, ( "Ticket age outside tolerance window ( diff=%d )", diff ) );
-                        ret = MBEDTLS_ERR_SSL_SESSION_TICKET_EXPIRED;
-                    }
-
-#if defined(MBEDTLS_ZERO_RTT)
-                    if( ssl->conf->early_data == MBEDTLS_SSL_EARLY_DATA_ENABLED )
-                    {
-                        if( diff <= MBEDTLS_SSL_EARLY_DATA_MAX_DELAY )
-                        {
-                            ssl->session_negotiate->process_early_data = MBEDTLS_SSL_EARLY_DATA_ENABLED;
-                        }
-                        else
-                        {
-                            ssl->session_negotiate->process_early_data = MBEDTLS_SSL_EARLY_DATA_DISABLED;
-                            ret = MBEDTLS_ERR_SSL_SESSION_TICKET_EXPIRED;
-                        }
-                    }
-#endif /* MBEDTLS_ZERO_RTT */
-#endif /* MBEDTLS_HAVE_TIME */
-
-                    /* TBD: check ALPN, ciphersuite and SNI as well */
-
-                    /*
-                     * If the check failed, the server SHOULD proceed with the handshake but
-                     * reject 0-RTT, and SHOULD NOT take any other action that assumes that
-                     * this ClientHello is fresh.
-                     */
-
-                    /* Disable 0-RTT */
-                    if( ret == MBEDTLS_ERR_SSL_SESSION_TICKET_EXPIRED )
-                    {
-#if defined(MBEDTLS_ZERO_RTT)
-                        if( ssl->conf->early_data == MBEDTLS_SSL_EARLY_DATA_ENABLED )
-                        {
-                            ssl->session_negotiate->process_early_data = MBEDTLS_SSL_EARLY_DATA_DISABLED;
-                        }
-#else
-                        ( ( void )buf );
-#endif /* MBEDTLS_ZERO_RTT */
-                    }
+                    MBEDTLS_SSL_DEBUG_MSG( 3, ( "Ticket not found in cache." ) );
                 }
             }
 #endif /* MBEDTLS_SSL_NEW_SESSION_TICKET */
@@ -1086,7 +1089,7 @@ psk_parsing_successful:
 
         if( ssl->handshake->resume == 1 )
         {
-            /* Case 1: We are using the PSK from a ticket */
+            /* Case 1: We are using the PSK from a ticket. */
             ret = ssl_calc_binder( ssl, ssl->handshake->psk, ssl->handshake->psk_len,
                                   mbedtls_md_info_from_type( ssl->handshake->ciphersuite_info->mac ), ssl->handshake->ciphersuite_info,
                                   truncated_clienthello_start, truncated_clienthello_end - truncated_clienthello_start, server_computed_binder );
@@ -1554,6 +1557,10 @@ found_version:
     ssl->minor_ver = minor_ver;
     ssl->handshake->max_major_ver = ssl->major_ver;
     ssl->handshake->max_minor_ver = ssl->minor_ver;
+#if defined(MBEDTLS_SSL_NEW_SESSION_TICKET)
+    /* Store minor version for later use with ticket serialization. */
+    ssl->session_negotiate->minor_ver = ssl->minor_ver;
+#endif /* MBEDTLS_SSL_NEW_SESSION_TICKET */
 
     return( 0 );
 }
@@ -1655,8 +1662,7 @@ static int ssl_write_new_session_ticket( mbedtls_ssl_context *ssl )
     size_t ext_len = 0;
     mbedtls_ssl_ciphersuite_t *suite_info;
     int hash_length;
-    mbedtls_ssl_ticket ticket;
-    mbedtls_ssl_ticket_context *ctx = ssl->conf->p_ticket;
+ //   mbedtls_ssl_ticket_context *ctx = ssl->conf->p_ticket;
 
     /* Check whether the use of session tickets is enabled */
     if( ssl->conf->session_tickets == 0 )
@@ -1665,8 +1671,6 @@ static int ssl_write_new_session_ticket( mbedtls_ssl_context *ssl )
         return ( 0 );
     }
     
-    ssl->session->ticket_t = &ticket;
-
     MBEDTLS_SSL_DEBUG_MSG( 2, ( "=> write NewSessionTicket msg" ) );
 
     /* Do we have space for the fixed length part of the ticket */
@@ -1679,7 +1683,7 @@ static int ssl_write_new_session_ticket( mbedtls_ssl_context *ssl )
     ssl->out_msgtype = MBEDTLS_SSL_MSG_HANDSHAKE;
     ssl->out_msg[0] = MBEDTLS_SSL_HS_NEW_SESSION_TICKET;
 
-    if( ( ret = ssl->conf->f_rng( ssl->conf->p_rng, (unsigned char*) &ticket.ticket_age_add, 4 ) ) != 0 )
+    if( ( ret = ssl->conf->f_rng( ssl->conf->p_rng, (unsigned char*) &ssl->session->ticket_age_add, 4 ) ) != 0 )
     {
         MBEDTLS_SSL_DEBUG_RET( 1, "Generating the ticket_age_add failed", ret );
         return( ret );
@@ -1693,27 +1697,6 @@ static int ssl_write_new_session_ticket( mbedtls_ssl_context *ssl )
         MBEDTLS_SSL_DEBUG_MSG( 1, ( "mbedtls_hash_size_for_ciphersuite == -1, ssl_write_new_session_ticket failed" ) );
         return( MBEDTLS_ERR_SSL_INTERNAL_ERROR );
     }
-
-#if defined(MBEDTLS_HAVE_TIME)
-    /* Store time when ticket was created. */
-    ticket.start = time( NULL );
-#endif /* MBEDTLS_HAVE_TIME */
-
-    ticket.flags = ctx->flags;
-    ticket.ticket_lifetime = ctx->ticket_lifetime;
-    /* In this code the psk key length equals the length of the hash */
-    ticket.key_len = hash_length;
-    ticket.ciphersuite = ssl->handshake->ciphersuite_info->id;
-
-    ssl->session->minor_ver = ssl->minor_ver;
-
-//#if defined(MBEDTLS_X509_CRT_PARSE_C)
-    // Check whether the client provided a certificate during the exchange
-    //if( ssl->session->peer_cert != NULL )
-    //    ticket.peer_cert = ssl->session->peer_cert;
-    //else
-    //    ticket.peer_cert = NULL;
-//#endif /* MBEDTLS_X509_CRT_PARSE_C */
 
     /*
      *  HKDF-Expand-Label( resumption_master_secret,
@@ -1733,7 +1716,7 @@ static int ssl_write_new_session_ticket( mbedtls_ssl_context *ssl )
                MBEDTLS_SSL_TLS1_3_LBL_WITH_LEN( resumption ),
                (const unsigned char *) &ssl->out_msg[13],
                MBEDTLS_SSL_TICKET_NONCE_LENGTH,
-               ticket.key, hash_length );
+               ssl->session->resumption_key, hash_length );
 
     if( ret != 0 )
     {
@@ -1741,35 +1724,35 @@ static int ssl_write_new_session_ticket( mbedtls_ssl_context *ssl )
         return ( ret );
     }
 
-    MBEDTLS_SSL_DEBUG_BUF( 3, "Ticket-resumed PSK", ticket.key, ticket.key_len );
-    MBEDTLS_SSL_DEBUG_MSG( 3, ( "ticket->key_len: %d", ticket.key_len ) );
+    ssl->session->resumption_key_len = hash_length;
+
+    MBEDTLS_SSL_DEBUG_BUF( 3, "Ticket-resumed PSK", ssl->session->resumption_key, hash_length );
 
     if( ( ret = ssl->conf->f_ticket_write( ssl->conf->p_ticket,
                                            ssl->session,
                                            &ssl->out_msg[ 15+ MBEDTLS_SSL_TICKET_NONCE_LENGTH ],
                                            ssl->out_msg + MBEDTLS_SSL_MAX_CONTENT_LEN,
-                                           &tlen, &ticket.ticket_lifetime ) ) != 0 )
+                                           &tlen, &ssl->session->ticket_lifetime ) ) != 0 )
     {
         MBEDTLS_SSL_DEBUG_RET( 1, "ticket->mbedtls_ssl_ticket_write", ret );
-/*		tlen = 0; */
         return ( ret );
     }
 
     /* Ticket Lifetime */
-    ssl->out_msg[4] = ( ticket.ticket_lifetime >> 24 ) & 0xFF;
-    ssl->out_msg[5] = ( ticket.ticket_lifetime >> 16 ) & 0xFF;
-    ssl->out_msg[6] = ( ticket.ticket_lifetime >> 8 ) & 0xFF;
-    ssl->out_msg[7] = ( ticket.ticket_lifetime ) & 0xFF;
+    ssl->out_msg[4] = ( ssl->session->ticket_lifetime >> 24 ) & 0xFF;
+    ssl->out_msg[5] = ( ssl->session->ticket_lifetime >> 16 ) & 0xFF;
+    ssl->out_msg[6] = ( ssl->session->ticket_lifetime >> 8 ) & 0xFF;
+    ssl->out_msg[7] = ( ssl->session->ticket_lifetime ) & 0xFF;
 
-    MBEDTLS_SSL_DEBUG_MSG( 3, ( "ticket->ticket_lifetime: %d", ticket.ticket_lifetime ) );
+    MBEDTLS_SSL_DEBUG_MSG( 3, ( "ticket->ticket_lifetime: %d", ssl->session->ticket_lifetime ) );
 
     /* Ticket Age Add */
-    ssl->out_msg[8] = ( ticket.ticket_age_add >> 24 ) & 0xFF;
-    ssl->out_msg[9] = ( ticket.ticket_age_add >> 16 ) & 0xFF;
-    ssl->out_msg[10] = ( ticket.ticket_age_add >> 8 ) & 0xFF;
-    ssl->out_msg[11] = ( ticket.ticket_age_add ) & 0xFF;
+    ssl->out_msg[8] = ( ssl->session->ticket_age_add >> 24 ) & 0xFF;
+    ssl->out_msg[9] = ( ssl->session->ticket_age_add >> 16 ) & 0xFF;
+    ssl->out_msg[10] = ( ssl->session->ticket_age_add >> 8 ) & 0xFF;
+    ssl->out_msg[11] = ( ssl->session->ticket_age_add ) & 0xFF;
 
-    MBEDTLS_SSL_DEBUG_BUF( 3, "ticket->ticket_age_add:", ( const unsigned char * )&ticket.ticket_age_add, 4 );
+    MBEDTLS_SSL_DEBUG_BUF( 3, "ticket->ticket_age_add:", ( const unsigned char * )&ssl->session->ticket_age_add, 4 );
 
     /* Nonce Length */
     ssl->out_msg[12] = MBEDTLS_SSL_TICKET_NONCE_LENGTH;
@@ -1787,7 +1770,6 @@ static int ssl_write_new_session_ticket( mbedtls_ssl_context *ssl )
     ssl->out_msglen = 17+ MBEDTLS_SSL_TICKET_NONCE_LENGTH + tlen;
 
     MBEDTLS_SSL_DEBUG_MSG( 3, ( "NewSessionTicket ( extension_length ): %d", ext_len ) );
-/*	MBEDTLS_SSL_DEBUG_BUF( 3, "NewSessionTicket ( extension ):", extensions, ext_len ); */
     MBEDTLS_SSL_DEBUG_MSG( 3, ( "NewSessionTicket ( ticket length ): %d", tlen ) );
     MBEDTLS_SSL_DEBUG_BUF( 3, "NewSessionTicket ( ticket dump ):", &ssl->out_msg[15 + MBEDTLS_SSL_TICKET_NONCE_LENGTH], tlen );
 
@@ -4482,6 +4464,11 @@ int mbedtls_ssl_handshake_server_step( mbedtls_ssl_context *ssl )
                 ssl->in_msg = ssl->in_buf + 13;
             }
 #endif /* MBEDTLS_CID && MBEDTLS_SSL_PROTO_DTLS */
+
+#if defined(MBEDTLS_SSL_NEW_SESSION_TICKET)
+            ssl->session_negotiate->minor_ver = ssl->minor_ver;
+            ssl->session_negotiate->endpoint = ssl->conf->endpoint;
+#endif /* MBEDTLS_SSL_NEW_SESSION_TICKET */
 
             ret = ssl_client_hello_process( ssl );
 

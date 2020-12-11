@@ -4791,15 +4791,17 @@ int mbedtls_ssl_parse_new_session_ticket( mbedtls_ssl_context *ssl )
         return( MBEDTLS_ERR_SSL_INTERNAL_ERROR );
     }
 
-    MBEDTLS_SSL_DEBUG_BUF( 3, "resumption_master_secret", ssl->session->resumption_master_secret, mbedtls_hash_size_for_ciphersuite( suite_info ) );
+    ssl->session->resumption_key_len = mbedtls_hash_size_for_ciphersuite( suite_info );
+
+    MBEDTLS_SSL_DEBUG_BUF( 3, "resumption_master_secret", ssl->session->resumption_master_secret, ssl->session->resumption_key_len );
 
     ret = mbedtls_ssl_tls1_3_hkdf_expand_label( suite_info->mac,
                     ssl->session->resumption_master_secret,
                     mbedtls_hash_size_for_ciphersuite( suite_info ),
                     MBEDTLS_SSL_TLS1_3_LBL_WITH_LEN( resumption ),
                     ssl->session->ticket_nonce, ssl->session->ticket_nonce_len,
-                    ssl->session->key,
-                    mbedtls_hash_size_for_ciphersuite( suite_info ) );
+                    ssl->session->resumption_key,
+                    ssl->session->resumption_key_len );
 
     if( ret != 0 )
     {
@@ -4807,9 +4809,8 @@ int mbedtls_ssl_parse_new_session_ticket( mbedtls_ssl_context *ssl )
         return ( ret );
     }
 
-    MBEDTLS_SSL_DEBUG_BUF( 3, "Ticket-resumed PSK", ssl->session->key, mbedtls_hash_size_for_ciphersuite( suite_info ) );
-    MBEDTLS_SSL_DEBUG_MSG( 3, ( "Key_len: %d", mbedtls_hash_size_for_ciphersuite( suite_info ) ) );
-
+    MBEDTLS_SSL_DEBUG_BUF( 3, "Ticket-resumed PSK", ssl->session->resumption_key, ssl->session->resumption_key_len );
+    MBEDTLS_SSL_DEBUG_MSG( 3, ( "Key_len: %d", ssl->session->resumption_key_len ) );
 
 #if defined(MBEDTLS_HAVE_TIME)
     /* Store ticket creation time */
@@ -4818,28 +4819,6 @@ int mbedtls_ssl_parse_new_session_ticket( mbedtls_ssl_context *ssl )
 
     MBEDTLS_SSL_DEBUG_MSG( 2, ( "<= parse new session ticket" ) );
 
-    return( 0 );
-}
-
-/* mbedtls_ssl_conf_ticket_meta( ) allows to set a 32-bit value that is
- * used to obscure the age of the ticket. For externally configured PSKs
- * this value is zero. Additionally, the time when the ticket was
- * received will be set.
- */
-
-#if defined(MBEDTLS_HAVE_TIME)
-int mbedtls_ssl_conf_ticket_meta( mbedtls_ssl_config *conf,
-                                  const uint32_t ticket_age_add,
-                                  const time_t ticket_received )
-#else
-    int mbedtls_ssl_conf_ticket_meta( mbedtls_ssl_config *conf,
-                                      const uint32_t ticket_age_add )
-#endif /* MBEDTLS_HAVE_TIME */
-{
-    conf->ticket_age_add = ticket_age_add;
-#if defined(MBEDTLS_HAVE_TIME)
-    conf->ticket_received = ticket_received;
-#endif /* MBEDTLS_HAVE_TIME */
     return( 0 );
 }
 #endif /* MBEDTLS_SSL_NEW_SESSION_TICKET && MBEDTLS_SSL_CLI_C */
@@ -4851,116 +4830,6 @@ void mbedtls_ssl_conf_signature_algorithms( mbedtls_ssl_config *conf,
     conf->sig_hashes = sig_algs;
 }
 #endif /* MBEDTLS_X509_CRT_PARSE_C */
-
-#if defined(MBEDTLS_SSL_NEW_SESSION_TICKET)
-
-#if defined(MBEDTLS_SSL_CLI_C)
-
-int mbedtls_ssl_conf_client_set_ticket( const mbedtls_ssl_context *ssl,
-                                    mbedtls_ssl_ticket *ticket, unsigned char *buf, size_t size, const int key_exchange_mode )
-{
-    int ret;
-    mbedtls_ssl_config *conf  = ( mbedtls_ssl_config * ) ssl->conf;
-
-    if( conf == NULL || ticket == NULL || ticket->key_len == 0 || size == 0 || buf == NULL )
-    {
-        MBEDTLS_SSL_DEBUG_MSG( 1, ( "Invalid configuration in "
-                                    "mbedtls_ssl_conf_client_set_ticket()" ) );
-        return( MBEDTLS_ERR_SSL_BAD_INPUT_DATA );
-    }
-
-    /* Set the psk and psk_identity */
-    ret = mbedtls_ssl_conf_psk( conf, ticket->key, ticket->key_len,
-                                ( const unsigned char * )buf,
-                                size );
-    if( ret != 0 ) 
-    {
-        MBEDTLS_SSL_DEBUG_MSG( 1, ( "mbedtls_ssl_conf_psk() failed (%d)", ret ) );
-        return( ret );
-    }
-
-    /* Set the key exchange mode to PSK */
-    if ( key_exchange_mode == MBEDTLS_SSL_TLS13_KEY_EXCHANGE_MODE_PSK_DHE_KE )
-       ret = mbedtls_ssl_conf_ke( conf, MBEDTLS_SSL_TLS13_KEY_EXCHANGE_MODE_PSK_DHE_KE );
-    else 
-       ret = mbedtls_ssl_conf_ke( conf, MBEDTLS_SSL_TLS13_KEY_EXCHANGE_MODE_PSK_KE );
-
-    if( ret != 0 )
-    {
-        MBEDTLS_SSL_DEBUG_MSG( 1, ( "mbedtls_ssl_conf_ke() failed (%d)", ret ) );
-        return( ret );
-    }
-
-    /* We set the ticket_age_add and the time we received the ticket */
-#if defined(MBEDTLS_HAVE_TIME)
-    ret = mbedtls_ssl_conf_ticket_meta( conf, ticket->ticket_age_add, ticket->start );
-#else
-    ret = mbedtls_ssl_conf_ticket_meta( conf, ticket->ticket_age_add );
-#endif /* MBEDTLS_HAVE_TIME */
-
-    if( ret != 0 )    
-    {
-        MBEDTLS_SSL_DEBUG_MSG( 1, ( "mbedtls_ssl_conf_ticket_meta() failed (%d)", ret ) );
-        return( ret );
-    }
-    
-    /* This is a resumption-based PSK */
-    conf->resumption_mode = 1; 
-
-    return( 0 );
-}
-
-int mbedtls_ssl_get_client_ticket( const mbedtls_ssl_context *ssl, mbedtls_ssl_ticket *metadata, void *buf, size_t *size)
-{
-    const mbedtls_ssl_ciphersuite_t *cur;
-    int hash_size;
-
-    if( ssl->session == NULL ) return( MBEDTLS_ERR_SSL_BAD_INPUT_DATA );
-
-    /* Check whether we got a ticket already */
-    if( ssl->session->ticket == NULL ) return( MBEDTLS_ERR_SSL_BAD_INPUT_DATA );
-
-    /* Return ticket size only */
-    if( buf == NULL || metadata == NULL )
-    {
-        *size = ssl->session->ticket_len;
-        return( 0 ); 
-    } 
-
-    /* store ticket in ticket_buffer */
-    *size = ssl->session->ticket_len;
-    memcpy( buf, ssl->session->ticket, ssl->session->ticket_len );
-
-    /* store ticket lifetime */
-    metadata->ticket_lifetime = ssl->session->ticket_lifetime;
-
-    /* store psk key and key length */
-    cur = mbedtls_ssl_ciphersuite_from_id( ssl->session->ciphersuite );
-    
-    if( cur == NULL ) return ( MBEDTLS_ERR_SSL_BAD_INPUT_DATA );
-
-    hash_size = mbedtls_hash_size_for_ciphersuite( cur );
-
-    if( hash_size == 0 ) return ( MBEDTLS_ERR_SSL_BAD_INPUT_DATA );
-    
-    metadata->key_len = hash_size;
-        
-    memcpy( metadata->key, ssl->session->key, hash_size );
-    //ssl->session->key_len = ticket->key_len;
-
-    /* store ticket_age_add */
-    metadata->ticket_age_add = ssl->session->ticket_age_add;
-
-#if defined(MBEDTLS_HAVE_TIME)
-    /* store time we received the ticket */
-    metadata->start = ssl->session->ticket_received;
-#endif /* MBEDTLS_HAVE_TIME */
-
-    return( 0 );
-}
-#endif /* MBEDTLS_SSL_CLI_C */
-#endif /* MBEDTLS_SSL_NEW_SESSION_TICKET */
-
 
 /* Early Data Extension
  *

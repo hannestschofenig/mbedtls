@@ -225,7 +225,7 @@ int mbedtls_ssl_session_copy( mbedtls_ssl_session *dst,
 
 #endif /* MBEDTLS_X509_CRT_PARSE_C */
 
-#if defined(MBEDTLS_SSL_SESSION_TICKETS) && defined(MBEDTLS_SSL_CLI_C)
+#if ( defined(MBEDTLS_SSL_SESSION_TICKETS) || defined(MBEDTLS_SSL_NEW_SESSION_TICKET) ) && defined(MBEDTLS_SSL_CLI_C)
     if( src->ticket != NULL )
     {
         dst->ticket = mbedtls_calloc( 1, src->ticket_len );
@@ -234,7 +234,13 @@ int mbedtls_ssl_session_copy( mbedtls_ssl_session *dst,
 
         memcpy( dst->ticket, src->ticket, src->ticket_len );
     }
-#endif /* MBEDTLS_SSL_SESSION_TICKETS && MBEDTLS_SSL_CLI_C */
+#endif /* (MBEDTLS_SSL_SESSION_TICKETS || MBEDTLS_SSL_NEW_SESSION_TICKET) && MBEDTLS_SSL_CLI_C */
+
+#if defined(MBEDTLS_SSL_NEW_SESSION_TICKET) && defined(MBEDTLS_SSL_CLI_C)
+    /* Resumption Key */
+    memcpy( dst->resumption_key, src->resumption_key, src->resumption_key_len );
+
+#endif /* MBEDTLS_SSL_NEW_SESSION_TICKET && MBEDTLS_SSL_CLI_C */
 
     return( 0 );
 }
@@ -4572,6 +4578,14 @@ int mbedtls_ssl_set_session( mbedtls_ssl_context *ssl, const mbedtls_ssl_session
 
     ssl->handshake->resume = 1;
 
+#if defined(MBEDTLS_SSL_NEW_SESSION_TICKET) && defined(MBEDTLS_SSL_CLI_C)
+    if( ssl->conf->endpoint == MBEDTLS_SSL_IS_CLIENT )
+    {
+        mbedtls_ssl_set_hs_psk( ssl, ssl->session_negotiate->resumption_key, ssl->session_negotiate->resumption_key_len );
+        MBEDTLS_SSL_DEBUG_BUF( 5, "ticket: key", ssl->session_negotiate->resumption_key, ssl->session_negotiate->resumption_key_len );
+    }
+#endif /* MBEDTLS_SSL_NEW_SESSION_TICKET && MBEDTLS_SSL_CLI_C */
+
     return( 0 );
 }
 #endif /* MBEDTLS_SSL_CLI_C */
@@ -4819,10 +4833,6 @@ int mbedtls_ssl_conf_psk( mbedtls_ssl_config *conf,
         return( MBEDTLS_ERR_SSL_ALLOC_FAILED );
     conf->psk_len = psk_len;
     memcpy( conf->psk, psk, conf->psk_len );
-
-#if defined(MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL)
-    conf->ticket_age_add = 0;
-#endif /* MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL */
 
     /* Check and set PSK Identity */
     ret = ssl_conf_set_psk_identity( conf, psk_identity, psk_identity_len );
@@ -5716,8 +5726,10 @@ static int ssl_session_save( const mbedtls_ssl_session *session,
 {
     unsigned char *p = buf;
     size_t used = 0;
+#if defined(MBEDTLS_SSL_NEW_SESSION_TICKET)
     int minor_ver = 0;
-#if defined(MBEDTLS_HAVE_TIME) && defined(MBEDTLS_SSL_SESSION_TICKETS)
+#endif /* MBEDTLS_SSL_NEW_SESSION_TICKET */
+#if defined(MBEDTLS_HAVE_TIME) && ( defined(MBEDTLS_SSL_SESSION_TICKETS) || defined(MBEDTLS_SSL_NEW_SESSION_TICKET) )
     uint64_t start;
 #endif
 #if defined(MBEDTLS_X509_CRT_PARSE_C)
@@ -5725,6 +5737,25 @@ static int ssl_session_save( const mbedtls_ssl_session *session,
     size_t cert_len;
 #endif /* MBEDTLS_SSL_KEEP_PEER_CERTIFICATE */
 #endif /* MBEDTLS_X509_CRT_PARSE_C */
+
+    if( session == NULL ) return ( MBEDTLS_ERR_SSL_INTERNAL_ERROR );
+
+#if defined(MBEDTLS_SSL_NEW_SESSION_TICKET)
+    /* Ticket formats depends on the TLS version negotiated. */
+    minor_ver = session->minor_ver;
+
+#if defined(MBEDTLS_SSL_CLI_C)
+    if( ( session->endpoint == MBEDTLS_SSL_IS_CLIENT ) && ( minor_ver == MBEDTLS_SSL_MINOR_VERSION_4 ) )
+    {
+        /* Check whether we got a ticket already */
+        if( session->ticket == NULL )
+        {
+            *olen = used;
+            return( MBEDTLS_ERR_SSL_BAD_INPUT_DATA );
+        }
+    }
+#endif /* MBEDTLS_SSL_CLI_C */
+#endif /* MBEDTLS_SSL_NEW_SESSION_TICKET */
 
     if( !omit_header )
     {
@@ -5743,9 +5774,6 @@ static int ssl_session_save( const mbedtls_ssl_session *session,
     }
 
 #if defined(MBEDTLS_SSL_NEW_SESSION_TICKET) && defined(MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL)
-    /* Ticket formats depends on the TLS version negotiated. */
-    minor_ver = session->minor_ver;
-
     if( minor_ver == MBEDTLS_SSL_MINOR_VERSION_4 )
     {
         /*
@@ -5756,14 +5784,16 @@ static int ssl_session_save( const mbedtls_ssl_session *session,
 
         if( used <= buf_len )
         {
-            *p++ = (unsigned char)( ( session->ticket_t->start >> 56 ) & 0xFF );
-            *p++ = (unsigned char)( ( session->ticket_t->start >> 48 ) & 0xFF );
-            *p++ = (unsigned char)( ( session->ticket_t->start >> 40 ) & 0xFF );
-            *p++ = (unsigned char)( ( session->ticket_t->start >> 32 ) & 0xFF );
-            *p++ = (unsigned char)( ( session->ticket_t->start >> 24 ) & 0xFF );
-            *p++ = (unsigned char)( ( session->ticket_t->start >> 16 ) & 0xFF );
-            *p++ = (unsigned char)( ( session->ticket_t->start >>  8 ) & 0xFF );
-            *p++ = (unsigned char)( ( session->ticket_t->start       ) & 0xFF );
+            start = (uint64_t) session->start;
+
+            *p++ = (unsigned char)( ( start >> 56 ) & 0xFF );
+            *p++ = (unsigned char)( ( start >> 48 ) & 0xFF );
+            *p++ = (unsigned char)( ( start >> 40 ) & 0xFF );
+            *p++ = (unsigned char)( ( start >> 32 ) & 0xFF );
+            *p++ = (unsigned char)( ( start >> 24 ) & 0xFF );
+            *p++ = (unsigned char)( ( start >> 16 ) & 0xFF );
+            *p++ = (unsigned char)( ( start >>  8 ) & 0xFF );
+            *p++ = (unsigned char)( ( start       ) & 0xFF );
         }
 #endif /* MBEDTLS_HAVE_TIME */
 
@@ -5778,34 +5808,69 @@ static int ssl_session_save( const mbedtls_ssl_session *session,
 
         if( used <= buf_len )
         {
-            *p++ = (unsigned char)( ( session->ticket_t->ciphersuite >> 8 ) & 0xFF );
-            *p++ = (unsigned char)( ( session->ticket_t->ciphersuite      ) & 0xFF );
+            *p++ = (unsigned char)( ( session->ciphersuite >> 8 ) & 0xFF );
+            *p++ = (unsigned char)( ( session->ciphersuite      ) & 0xFF );
 
-            *p++ = (unsigned char)( ( session->ticket_t->ticket_lifetime >> 24 ) & 0xFF );
-            *p++ = (unsigned char)( ( session->ticket_t->ticket_lifetime >> 16 ) & 0xFF );
-            *p++ = (unsigned char)( ( session->ticket_t->ticket_lifetime >>  8 ) & 0xFF );
-            *p++ = (unsigned char)( ( session->ticket_t->ticket_lifetime       ) & 0xFF );
+            *p++ = (unsigned char)( ( session->ticket_lifetime >> 24 ) & 0xFF );
+            *p++ = (unsigned char)( ( session->ticket_lifetime >> 16 ) & 0xFF );
+            *p++ = (unsigned char)( ( session->ticket_lifetime >>  8 ) & 0xFF );
+            *p++ = (unsigned char)( ( session->ticket_lifetime       ) & 0xFF );
 
 
-            *p++ = (unsigned char)( ( session->ticket_t->ticket_age_add >> 24 ) & 0xFF );
-            *p++ = (unsigned char)( ( session->ticket_t->ticket_age_add >> 16 ) & 0xFF );
-            *p++ = (unsigned char)( ( session->ticket_t->ticket_age_add >>  8 ) & 0xFF );
-            *p++ = (unsigned char)( ( session->ticket_t->ticket_age_add       ) & 0xFF );
+            *p++ = (unsigned char)( ( session->ticket_age_add >> 24 ) & 0xFF );
+            *p++ = (unsigned char)( ( session->ticket_age_add >> 16 ) & 0xFF );
+            *p++ = (unsigned char)( ( session->ticket_age_add >>  8 ) & 0xFF );
+            *p++ = (unsigned char)( ( session->ticket_age_add       ) & 0xFF );
 
-            *p++ = (unsigned char)( ( session->ticket_t->key_len      ) & 0xFF );
+            *p++ = (unsigned char)( ( session->resumption_key_len      ) & 0xFF );
 
-            *p++ = (unsigned char)( ( session->ticket_t->flags      ) & 0xFF );
+            *p++ = (unsigned char)( ( session->ticket_flags      ) & 0xFF );
         }
 
-        used += session->ticket_t->key_len;
+        used += session->resumption_key_len;
 
         if( used <= buf_len )
         {
-
-            memcpy( p, session->ticket_t->key, session->ticket_t->key_len );
-            p += session->ticket_t->key_len;
+            memcpy( p, session->resumption_key, session->resumption_key_len );
+            p += session->resumption_key_len;
         }
 
+#if defined(MBEDTLS_SSL_CLI_C)
+        if( session->endpoint == MBEDTLS_SSL_IS_CLIENT )
+        {
+            /* Store ticket itself */
+            used += 2                     /* ticket length */
+                 + session->ticket_len;   /* ticket */
+
+            if( used <= buf_len )
+            {
+                *p++ = (unsigned char)( ( session->ticket_len >> 8 ) & 0xFF );
+                *p++ = (unsigned char)( ( session->ticket_len      ) & 0xFF );
+
+                memcpy( p, session->ticket, session->ticket_len );
+                p +=  session->ticket_len;
+            }
+
+#if defined(MBEDTLS_HAVE_TIME)
+            used += 8;
+
+            if( used <= buf_len )
+            {
+                start = (uint64_t) session->ticket_received;
+
+                *p++ = (unsigned char)( ( start >> 56 ) & 0xFF );
+                *p++ = (unsigned char)( ( start >> 48 ) & 0xFF );
+                *p++ = (unsigned char)( ( start >> 40 ) & 0xFF );
+                *p++ = (unsigned char)( ( start >> 32 ) & 0xFF );
+                *p++ = (unsigned char)( ( start >> 24 ) & 0xFF );
+                *p++ = (unsigned char)( ( start >> 16 ) & 0xFF );
+                *p++ = (unsigned char)( ( start >>  8 ) & 0xFF );
+                *p++ = (unsigned char)( ( start       ) & 0xFF );
+            }
+#endif /* MBEDTLS_HAVE_TIME */
+        }
+
+#endif /* MBEDTLS_SSL_CLI_C */
     }
     else
 #endif /* MBEDTLS_SSL_NEW_SESSION_TICKET && MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL */
@@ -6033,7 +6098,7 @@ static int ssl_session_load( mbedtls_ssl_session *session,
 
 #if defined(MBEDTLS_SSL_NEW_SESSION_TICKET) && defined(MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL)
 
-    minor_ver = session->minor_ver;
+    minor_ver = MBEDTLS_SSL_MINOR_VERSION_4; /* TBD: For testing only */
 
     if( minor_ver == MBEDTLS_SSL_MINOR_VERSION_4 )
     {
@@ -6042,7 +6107,7 @@ static int ssl_session_load( mbedtls_ssl_session *session,
         if( 8 > (size_t)( end - p ) )
             return( MBEDTLS_ERR_SSL_BAD_INPUT_DATA );
 
-        session->ticket_t->start =
+        session->start =
                 ( (uint64_t) p[0] << 56 ) |
                 ( (uint64_t) p[1] << 48 ) |
                 ( (uint64_t) p[2] << 40 ) |
@@ -6052,8 +6117,6 @@ static int ssl_session_load( mbedtls_ssl_session *session,
                 ( (uint64_t) p[6] <<  8 ) |
                 ( (uint64_t) p[7]       );
         p += 8;
-
-        session->start = (time_t) session->ticket_t->start;
 #endif /* MBEDTLS_HAVE_TIME */
 
         /* 2 bytes for ciphersuite,
@@ -6066,32 +6129,73 @@ static int ssl_session_load( mbedtls_ssl_session *session,
         if( 2 + 4 + 4 + 1 + 1  > (size_t)( end - p ) )
             return( MBEDTLS_ERR_SSL_BAD_INPUT_DATA );
 
-        session->ticket_t->ciphersuite = ( p[0] << 8 ) | p[1];
+        session->ciphersuite = ( p[0] << 8 ) | p[1];
         p += 2;
 
-        session->ticket_t->ticket_lifetime =
+        session->ticket_lifetime =
                             ( (uint32_t) p[0] << 24 ) |
                             ( (uint32_t) p[1] << 16 ) |
                             ( (uint32_t) p[2] <<  8 ) |
                             ( (uint32_t) p[3]       );
         p += 4;
 
-        session->ticket_t->ticket_age_add =
+        session->ticket_age_add =
                             ( (uint32_t) p[0] << 24 ) |
                             ( (uint32_t) p[1] << 16 ) |
                             ( (uint32_t) p[2] <<  8 ) |
                             ( (uint32_t) p[3]       );
         p += 4;
 
-        session->ticket_t->key_len = *p++;
+        session->resumption_key_len = *p++;
 
-        session->ticket_t->flags = *p++;
+        session->ticket_flags = *p++;
 
-        if( session->ticket_t->key_len > (size_t)( end - p ) )
+        if( session->resumption_key_len > (size_t)( end - p ) )
             return( MBEDTLS_ERR_SSL_BAD_INPUT_DATA );
         
-        memcpy( session->ticket_t->key, p, session->ticket_t->key_len );
-        p += session->ticket_t->key_len;
+        memcpy( session->resumption_key, p, session->resumption_key_len );
+        p += session->resumption_key_len;
+
+#if defined(MBEDTLS_SSL_CLI_C)
+        if( session->endpoint == MBEDTLS_SSL_IS_CLIENT )
+        {
+            if( 2 > (size_t)( end - p ) )
+                return( MBEDTLS_ERR_SSL_BAD_INPUT_DATA );
+
+            session->ticket_len = ( p[0] << 8 ) | p[1];
+            p += 2;
+
+            if( session->ticket_len > (size_t)( end - p ) )
+                return( MBEDTLS_ERR_SSL_BAD_INPUT_DATA );
+
+            session->ticket = mbedtls_calloc( session->ticket_len, 1 );
+            if( session->ticket == NULL )
+            {
+                return ( MBEDTLS_ERR_SSL_ALLOC_FAILED );
+            }
+            else
+            {
+                memcpy( session->ticket, p, session->ticket_len );
+                p += session->ticket_len;
+            }
+
+#if defined(MBEDTLS_HAVE_TIME)
+            if( 8 > (size_t)( end - p ) )
+                return( MBEDTLS_ERR_SSL_BAD_INPUT_DATA );
+
+            session->ticket_received =
+                    ( (uint64_t) p[0] << 56 ) |
+                    ( (uint64_t) p[1] << 48 ) |
+                    ( (uint64_t) p[2] << 40 ) |
+                    ( (uint64_t) p[3] << 32 ) |
+                    ( (uint64_t) p[4] << 24 ) |
+                    ( (uint64_t) p[5] << 16 ) |
+                    ( (uint64_t) p[6] <<  8 ) |
+                    ( (uint64_t) p[7]       );
+            p += 8;
+#endif /* MBEDTLS_HAVE_TIME */
+        }
+#endif /* MBEDTLS_SSL_CLI_C */
     }
     else
 #endif /* MBEDTLS_SSL_NEW_SESSION_TICKET && MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL */

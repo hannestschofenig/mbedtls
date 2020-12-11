@@ -791,7 +791,7 @@ int mbedtls_ssl_create_binder( mbedtls_ssl_context *ssl, unsigned char *psk, siz
 #endif
     }
 
-    if( ssl->conf->resumption_mode == 1 )
+    if( ( ssl->handshake->resume == 1 ) || ( ssl->conf->resumption_mode == 1 ) )
     {
         ret = mbedtls_ssl_tls1_3_derive_secret( mbedtls_md_get_type( md ),
                             ssl->handshake->early_secret, hash_length,
@@ -815,6 +815,8 @@ int mbedtls_ssl_create_binder( mbedtls_ssl_context *ssl, unsigned char *psk, siz
         MBEDTLS_SSL_DEBUG_RET( 1, "mbedtls_ssl_tls1_3_derive_secret( ) with binder_key: Error", ret );
         return( ret );
     }
+
+    MBEDTLS_SSL_DEBUG_BUF( 5, "Binder Key", binder_key, hash_length );
 
     if( suite_info->mac == MBEDTLS_MD_SHA256 )
     {
@@ -989,6 +991,10 @@ int mbedtls_ssl_write_pre_shared_key_ext( mbedtls_ssl_context *ssl,
 #if defined(MBEDTLS_HAVE_TIME)
     time_t now;
 #endif
+    unsigned char *psk_identity;
+    size_t psk_identity_len;
+    unsigned char *psk;
+    size_t psk_len;
 
     *olen = 0;
 
@@ -999,7 +1005,7 @@ int mbedtls_ssl_write_pre_shared_key_ext( mbedtls_ssl_context *ssl,
     }
 
     /* Check whether we have any PSK credentials configured. */
-    if( mbedtls_ssl_get_psk( ssl, NULL, NULL ) != 0 )
+    if( mbedtls_ssl_get_psk( ssl, (const unsigned char **) &psk, &psk_len ) != 0 )
     {
         MBEDTLS_SSL_DEBUG_MSG( 3, ( "No externally configured PSK available." ) );
 
@@ -1015,22 +1021,43 @@ int mbedtls_ssl_write_pre_shared_key_ext( mbedtls_ssl_context *ssl,
 
     for ( int i = 0; ciphersuites[i] != 0; i++ )
     {
-        suite_info = mbedtls_ssl_ciphersuite_from_id( ciphersuites[i] );
-
-        if( suite_info == NULL )
-            continue;
-
-        hash_len = mbedtls_hash_size_for_ciphersuite( suite_info );
-
-        if( hash_len == 0 )
+        /* In this implementation we only add one pre-shared-key extension.
+         * If we are using resumption then we use this ciphersuite. 
+         */
+        if( ssl->handshake->resume == 1 )
         {
-            MBEDTLS_SSL_DEBUG_MSG( 1, ( "mbedtls_hash_size_for_ciphersuite == 0, mbedtls_ssl_write_pre_shared_key_ext failed" ) );
-            return( MBEDTLS_ERR_SSL_INTERNAL_ERROR );
-        }
+            suite_info = mbedtls_ssl_ciphersuite_from_id( ssl->session_negotiate->ciphersuite );
 
-        /* In this implementation we only add one pre-shared-key extension. */
-        ssl->session_negotiate->ciphersuite = ciphersuites[i];
-        ssl->handshake->ciphersuite_info = suite_info;
+            if( suite_info == NULL )
+                continue;
+
+            hash_len = mbedtls_hash_size_for_ciphersuite( suite_info );
+
+            if( hash_len == 0 )
+            {
+                MBEDTLS_SSL_DEBUG_MSG( 1, ( "mbedtls_hash_size_for_ciphersuite == 0, mbedtls_ssl_write_pre_shared_key_ext failed" ) );
+                return( MBEDTLS_ERR_SSL_INTERNAL_ERROR );
+            }
+            ssl->handshake->ciphersuite_info = suite_info;
+        }
+        else
+        {
+            suite_info = mbedtls_ssl_ciphersuite_from_id( ciphersuites[i] );
+
+            if( suite_info == NULL )
+                continue;
+
+            hash_len = mbedtls_hash_size_for_ciphersuite( suite_info );
+
+            if( hash_len == 0 )
+            {
+                MBEDTLS_SSL_DEBUG_MSG( 1, ( "mbedtls_hash_size_for_ciphersuite == 0, mbedtls_ssl_write_pre_shared_key_ext failed" ) );
+                return( MBEDTLS_ERR_SSL_INTERNAL_ERROR );
+            }
+
+            ssl->session_negotiate->ciphersuite = ciphersuites[i];
+            ssl->handshake->ciphersuite_info = suite_info;
+        }
 #if defined(MBEDTLS_ZERO_RTT)
         /* Even if we include a key_share extension in the ClientHello
          * message it will not be used at this stage for the key derivation.
@@ -1048,6 +1075,16 @@ int mbedtls_ssl_write_pre_shared_key_ext( mbedtls_ssl_context *ssl,
         return( MBEDTLS_ERR_SSL_INTERNAL_ERROR );
     }
 
+    if( ssl->handshake->resume == 1 )
+    {
+        psk_identity = ssl->session_negotiate->ticket;
+        psk_identity_len = ssl->session_negotiate->ticket_len;
+    }
+    else
+    {
+        psk_identity = ssl->conf->psk_identity;
+        psk_identity_len = ssl->conf->psk_identity_len;
+    }
     /*
      * The length ( excluding the extension header ) includes:
      *
@@ -1063,7 +1100,7 @@ int mbedtls_ssl_write_pre_shared_key_ext( mbedtls_ssl_context *ssl,
      *
      * Note: Currently we assume we have only one PSK credential configured per server.
      */
-    ext_length = 2 + 2 + ssl->conf->psk_identity_len + 4 + 2 + 1 + hash_len;
+    ext_length = 2 + 2 + psk_identity_len + 4 + 2 + 1 + hash_len;
 
     /* ext_length + Extension Type ( 2 bytes ) + Extension Length ( 2 bytes ) */
     if( end < p || (size_t)( end - p ) < ( ext_length + 4 ) )
@@ -1087,33 +1124,33 @@ int mbedtls_ssl_write_pre_shared_key_ext( mbedtls_ssl_context *ssl,
         *p++ = (unsigned char)( ext_length & 0xFF );
 
         /* 2 bytes length field for array of PskIdentity */
-        *p++ = (unsigned char)( ( ( ssl->conf->psk_identity_len + 4 + 2 ) >> 8 ) & 0xFF );
-        *p++ = (unsigned char)( ( ssl->conf->psk_identity_len + 4 + 2 ) & 0xFF );
+        *p++ = (unsigned char)( ( ( psk_identity_len + 4 + 2 ) >> 8 ) & 0xFF );
+        *p++ = (unsigned char)( ( psk_identity_len + 4 + 2 ) & 0xFF );
 
         /* 2 bytes length field for psk_identity */
-        *p++ = (unsigned char)( ( ( ssl->conf->psk_identity_len ) >> 8 ) & 0xFF );
-        *p++ = (unsigned char)( ( ssl->conf->psk_identity_len ) & 0xFF );
+        *p++ = (unsigned char)( ( ( psk_identity_len ) >> 8 ) & 0xFF );
+        *p++ = (unsigned char)( ( psk_identity_len ) & 0xFF );
 
         /* actual psk_identity */
-        memcpy( p, ssl->conf->psk_identity, ssl->conf->psk_identity_len );
+        memcpy( p, psk_identity, psk_identity_len );
 
-        p += ssl->conf->psk_identity_len;
+        p += psk_identity_len;
 
         /* Calculate obfuscated_ticket_age */
         /* ( but not for externally configured PSKs ) */
-        if( ssl->conf->ticket_age_add > 0 )
+        if( ssl->session_negotiate->ticket_age_add > 0 )
         {
 #if defined(MBEDTLS_HAVE_TIME)
             now = time( NULL );
 
-            if( !( ssl->conf->ticket_received <= now && now - ssl->conf->ticket_received < 7 * 86400 * 1000 ) )
+            if( !( ssl->session_negotiate->ticket_received <= now && now - ssl->session_negotiate->ticket_received < 7 * 86400 * 1000 ) )
             {
                 MBEDTLS_SSL_DEBUG_MSG( 3, ( "ticket expired" ) );
                 /* TBD: We would have to fall back to another PSK */
                 return( MBEDTLS_ERR_SSL_SESSION_TICKET_EXPIRED );
             }
 
-            obfuscated_ticket_age = ( uint32_t )( now - ssl->conf->ticket_received ) + ssl->conf->ticket_age_add;
+            obfuscated_ticket_age = ( uint32_t )( now - ssl->session_negotiate->ticket_received ) + ssl->session_negotiate->ticket_age_add;
             MBEDTLS_SSL_DEBUG_MSG( 5, ( "obfuscated_ticket_age: %u", obfuscated_ticket_age ) );
 #endif /* MBEDTLS_HAVE_TIME */
         }
@@ -1123,7 +1160,6 @@ int mbedtls_ssl_write_pre_shared_key_ext( mbedtls_ssl_context *ssl,
         *p++ = ( obfuscated_ticket_age >> 16 ) & 0xFF;
         *p++ = ( obfuscated_ticket_age >> 8 ) & 0xFF;
         *p++ = ( obfuscated_ticket_age ) & 0xFF;
-/*		p += 4; */
 
         /* Store this pointer since we need it to compute the psk binder */
         truncated_clienthello_end = p;
@@ -1139,7 +1175,7 @@ int mbedtls_ssl_write_pre_shared_key_ext( mbedtls_ssl_context *ssl,
 
         MBEDTLS_SSL_DEBUG_BUF( 3, "ssl_calc_binder computed over ", truncated_clienthello_start, truncated_clienthello_end - truncated_clienthello_start );
 
-        ret = mbedtls_ssl_create_binder( ssl, ssl->conf->psk, ssl->conf->psk_len, mbedtls_md_info_from_type( suite_info->mac ),
+        ret = mbedtls_ssl_create_binder( ssl, psk, psk_len, mbedtls_md_info_from_type( suite_info->mac ),
                                 suite_info, truncated_clienthello_start, truncated_clienthello_end - truncated_clienthello_start, p );
 
 
@@ -1616,8 +1652,8 @@ static int ssl_client_hello_write( mbedtls_ssl_context* ssl,
     const mbedtls_ssl_ciphersuite_t* ciphersuite_info;
     size_t i; /* used to iterate through ciphersuite list */
     /* ciphersuite_start points to the start of the ciphersuite list, i.e. to the length field*/
-    unsigned char* ciphersuite_start;
-    size_t ciphersuite_count;
+    unsigned char* ciphersuite_start = NULL;
+    size_t ciphersuite_count = 0;
 
     /* Keeping track of the included extensions */
     ssl->handshake->extensions_present = NO_EXTENSION;
@@ -1783,35 +1819,21 @@ static int ssl_client_hello_write( mbedtls_ssl_context* ssl,
      * ( including secret key length ) and a hash to be used with
      * HKDF, in descending order of client preference.
      */
-    ciphersuites = ssl->conf->ciphersuite_list[ssl->minor_ver];
 
-    if( buflen < 2 /* for ciphersuite list length */ )
+    /* Are we using session resumption? */
+    if( ssl->handshake->resume == 1 )
     {
-        MBEDTLS_SSL_DEBUG_MSG( 1, ( "buffer too small to hold ClientHello" ) );
-        return( MBEDTLS_ERR_SSL_BUFFER_TOO_SMALL );
+        /* write ciphersuite length */
+        *buf++ = (unsigned char)( 2 >> 8 );
+        *buf++ = (unsigned char)( 2 );
+
+        /* write ciphersuite */
+        *buf++ = (unsigned char)( ssl->session_negotiate->ciphersuite >> 8 );
+        *buf++ = (unsigned char)( ssl->session_negotiate->ciphersuite );
     }
-
-    /* Skip writing ciphersuite length for now */
-    ciphersuite_count = 0;
-    ciphersuite_start = buf;
-    buf += 2;
-    buflen -= 2;
-
-    for ( i = 0; ciphersuites[i] != 0; i++ )
+    else
     {
-        ciphersuite_info = mbedtls_ssl_ciphersuite_from_id( ciphersuites[i] );
-
-        if( ciphersuite_info == NULL )
-            continue;
-
-        if( ciphersuite_info->min_minor_ver != MBEDTLS_SSL_MINOR_VERSION_4 ||
-            ciphersuite_info->max_minor_ver != MBEDTLS_SSL_MINOR_VERSION_4 )
-            continue;
-
-        MBEDTLS_SSL_DEBUG_MSG( 3, ( "client hello, add ciphersuite: %04x, %s",
-                                    ciphersuites[i], ciphersuite_info->name ) );
-
-        ciphersuite_count++;
+        ciphersuites = ssl->conf->ciphersuite_list[ssl->minor_ver];
 
         if( buflen < 2 /* for ciphersuite list length */ )
         {
@@ -1819,22 +1841,51 @@ static int ssl_client_hello_write( mbedtls_ssl_context* ssl,
             return( MBEDTLS_ERR_SSL_BUFFER_TOO_SMALL );
         }
 
-        *buf++ = (unsigned char)( ciphersuites[i] >> 8 );
-        *buf++ = (unsigned char)( ciphersuites[i] );
-
+        /* Skip writing ciphersuite length for now */
+        ciphersuite_count = 0;
+        ciphersuite_start = buf;
+        buf += 2;
         buflen -= 2;
 
-#if defined(MBEDTLS_ZERO_RTT)
-        /* For ZeroRTT we only add a single ciphersuite. */
-        break;
-#endif /* MBEDTLS_ZERO_RTT */
+        for ( i = 0; ciphersuites[i] != 0; i++ )
+        {
+            ciphersuite_info = mbedtls_ssl_ciphersuite_from_id( ciphersuites[i] );
+
+            if( ciphersuite_info == NULL )
+                continue;
+
+            if( ciphersuite_info->min_minor_ver != MBEDTLS_SSL_MINOR_VERSION_4 ||
+                ciphersuite_info->max_minor_ver != MBEDTLS_SSL_MINOR_VERSION_4 )
+                continue;
+
+            MBEDTLS_SSL_DEBUG_MSG( 3, ( "client hello, add ciphersuite: %04x, %s",
+                                        ciphersuites[i], ciphersuite_info->name ) );
+
+            ciphersuite_count++;
+
+            if( buflen < 2 /* for ciphersuite list length */ )
+            {
+                MBEDTLS_SSL_DEBUG_MSG( 1, ( "buffer too small to hold ClientHello" ) );
+                return( MBEDTLS_ERR_SSL_BUFFER_TOO_SMALL );
+            }
+
+            *buf++ = (unsigned char)( ciphersuites[i] >> 8 );
+            *buf++ = (unsigned char)( ciphersuites[i] );
+
+            buflen -= 2;
+
+    #if defined(MBEDTLS_ZERO_RTT)
+            /* For ZeroRTT we only add a single ciphersuite. */
+            break;
+    #endif /* MBEDTLS_ZERO_RTT */
+        }
+
+        /* write ciphersuite length now */
+        *ciphersuite_start++ = (unsigned char)( ciphersuite_count*2 >> 8 );
+        *ciphersuite_start++ = (unsigned char)( ciphersuite_count*2 );
+
+        MBEDTLS_SSL_DEBUG_MSG( 3, ( "client hello, got %d ciphersuites", ciphersuite_count ) );
     }
-
-    /* write ciphersuite length now */
-    *ciphersuite_start++ = (unsigned char)( ciphersuite_count*2 >> 8 );
-    *ciphersuite_start++ = (unsigned char)( ciphersuite_count*2 );
-
-    MBEDTLS_SSL_DEBUG_MSG( 3, ( "client hello, got %d ciphersuites", ciphersuite_count ) );
 
     /* For every TLS 1.3 ClientHello, this vector MUST contain exactly
      * one byte set to zero, which corresponds to the 'null' compression
@@ -2056,6 +2107,11 @@ static int ssl_parse_supported_version_ext( mbedtls_ssl_context* ssl,
             return( MBEDTLS_ERR_SSL_BAD_HS_SERVER_HELLO );
         }
     }
+
+#if defined(MBEDTLS_SSL_NEW_SESSION_TICKET)
+    ssl->session_negotiate->minor_ver = ssl->minor_ver;
+    ssl->session_negotiate->endpoint = ssl->conf->endpoint;
+#endif /* MBEDTLS_SSL_NEW_SESSION_TICKET */
 
     return( 0 );
 }
@@ -4040,6 +4096,11 @@ int mbedtls_ssl_handshake_client_step( mbedtls_ssl_context *ssl )
                 mbedtls_ack_clear_all( ssl, MBEDTLS_SSL_ACK_RECORDS_RECEIVED );
             }
 #endif /* MBEDTLS_SSL_PROTO_DTLS */
+
+#if defined(MBEDTLS_SSL_NEW_SESSION_TICKET)
+            ssl->session_negotiate->endpoint = ssl->conf->endpoint;
+#endif /* MBEDTLS_SSL_NEW_SESSION_TICKET */
+
             break;
 
             /* ----- WRITE CLIENT HELLO ----*/
