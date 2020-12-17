@@ -6610,7 +6610,8 @@ void mbedtls_ssl_handshake_free( mbedtls_ssl_context *ssl )
         return;
 
 #if defined(MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL)
-    mbedtls_free( handshake->key_shares_curve_list );
+    if( handshake->key_shares_curve_list != NULL )
+        mbedtls_free( handshake->key_shares_curve_list ); 
 #endif /* MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL */
 
 #if defined(MBEDTLS_SSL_ASYNC_PRIVATE)

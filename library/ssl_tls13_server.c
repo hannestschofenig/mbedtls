@@ -272,18 +272,15 @@ int mbedtls_ssl_parse_supported_groups_ext(
         return( MBEDTLS_ERR_SSL_BAD_HS_SUPPORTED_GROUPS );
     }
 
-    /* Should never happen unless client duplicates the extension */
-    /*	if( ssl->handshake->curves != NULL )
-	{
-	MBEDTLS_SSL_DEBUG_MSG( 1, ( "bad supported groups extension" ) );
-	return( MBEDTLS_ERR_SSL_BAD_HS_SUPPORTED_GROUPS );
-	}
-    */
     /* Don't allow our peer to make us allocate too much memory,
-     * and leave room for a final 0 */
+     * and leave room for a final 0.
+     */
     our_size = list_size / 2 + 1;
     if( our_size > MBEDTLS_ECP_DP_MAX )
         our_size = MBEDTLS_ECP_DP_MAX;
+
+    if( ssl->handshake->curves != NULL)
+        mbedtls_free( ssl->handshake->curves );
 
     if( ( curves = mbedtls_calloc( our_size, sizeof( *curves ) ) ) == NULL )
     {
@@ -318,7 +315,6 @@ int mbedtls_ssl_parse_supported_groups_ext(
     }
 
     return( 0 );
-
 }
 #endif /* MBEDTLS_ECDH_C || ( MBEDTLS_ECDSA_C */
 

@@ -945,10 +945,14 @@ int mbedtls_ssl_parse_signature_algorithms_ext( mbedtls_ssl_context *ssl,
             num_supported_hashes++;
     }
 
+    /* Clear previously allocated memory */
+    if( ssl->handshake->received_signature_schemes_list != NULL )
+        mbedtls_free( ssl->handshake->received_signature_schemes_list );
+
     /* Store the received and compatible signature algorithms for later use. */
     ssl->handshake->received_signature_schemes_list =
         mbedtls_calloc( num_supported_hashes + 1, sizeof(uint32_t) );
-    /* TODO: Remove heap buffer here */
+
     if( ssl->handshake->received_signature_schemes_list == NULL )
     {
         MBEDTLS_SSL_DEBUG_MSG( 1, ( "malloc failed in ssl_parse_signature_algorithms_ext( )" ) );
@@ -3973,7 +3977,6 @@ void mbedtls_ssl_handshake_wrapup( mbedtls_ssl_context *ssl )
      */
     if( ssl->session )
     {
-
         mbedtls_ssl_session_free( ssl->session );
         mbedtls_free( ssl->session );
     }
