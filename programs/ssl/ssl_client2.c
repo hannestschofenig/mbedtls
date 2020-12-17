@@ -3464,56 +3464,54 @@ send_request:
          *
          * For TLS 1.3 this results in a PSK-based exchange.
          */
+        if( opt.reco_mode == 1 )
         {
-            if( opt.reco_mode == 1 )
+            /* free any previously saved data */
+            if( session_data != NULL )
             {
-                /* free any previously saved data */
-                if( session_data != NULL )
-                {
-                    mbedtls_platform_zeroize( session_data, session_data_len );
-                    mbedtls_free( session_data );
-                    session_data = NULL;
-                }
-
-                /* get size of the buffer needed */
-                mbedtls_ssl_session_save( mbedtls_ssl_get_session_pointer( &ssl ),
-                                          NULL, 0, &session_data_len );
-                session_data = mbedtls_calloc( 1, session_data_len );
-                if( session_data == NULL )
-                {
-                    mbedtls_printf( " failed\n  ! alloc %u bytes for session data\n",
-                                    (unsigned) session_data_len );
-                    ret = MBEDTLS_ERR_SSL_ALLOC_FAILED;
-                    goto exit;
-                }
-
-                /* actually save session data */
-                if( ( ret = mbedtls_ssl_session_save( mbedtls_ssl_get_session_pointer( &ssl ),
-                                                      session_data, session_data_len,
-                                                      &session_data_len ) ) != 0 )
-                {
-                    mbedtls_printf( " failed\n  ! mbedtls_ssl_session_saved returned -0x%04x\n\n",
-                                    (unsigned int) -ret );
-                    goto exit;
-                }
-            }
-            else
-            {
-                if( ( ret = mbedtls_ssl_get_session( &ssl, &saved_session ) ) != 0 )
-                {
-                    mbedtls_printf( " failed\n  ! mbedtls_ssl_get_session returned -0x%x\n\n",
-                                    (unsigned int) -ret );
-                    goto exit;
-                }
+                mbedtls_platform_zeroize( session_data, session_data_len );
+                mbedtls_free( session_data );
+                session_data = NULL;
             }
 
-            mbedtls_printf( " ok\n" );
-
-            if( opt.reco_mode == 1 )
+            /* get size of the buffer needed */
+            mbedtls_ssl_session_save( mbedtls_ssl_get_session_pointer( &ssl ),
+                                        NULL, 0, &session_data_len );
+            session_data = mbedtls_calloc( 1, session_data_len );
+            if( session_data == NULL )
             {
-                mbedtls_printf( "    [ Saved %u bytes of session data]\n",
+                mbedtls_printf( " failed\n  ! alloc %u bytes for session data\n",
                                 (unsigned) session_data_len );
+                ret = MBEDTLS_ERR_SSL_ALLOC_FAILED;
+                goto exit;
             }
+
+            /* actually save session data */
+            if( ( ret = mbedtls_ssl_session_save( mbedtls_ssl_get_session_pointer( &ssl ),
+                                                    session_data, session_data_len,
+                                                    &session_data_len ) ) != 0 )
+            {
+                mbedtls_printf( " failed\n  ! mbedtls_ssl_session_saved returned -0x%04x\n\n",
+                                (unsigned int) -ret );
+                goto exit;
+            }
+        }
+        else
+        {
+            if( ( ret = mbedtls_ssl_get_session( &ssl, &saved_session ) ) != 0 )
+            {
+                mbedtls_printf( " failed\n  ! mbedtls_ssl_get_session returned -0x%x\n\n",
+                                (unsigned int) -ret );
+                goto exit;
+            }
+        }
+
+        mbedtls_printf( " ok\n" );
+
+        if( opt.reco_mode == 1 )
+        {
+            mbedtls_printf( "    [ Saved %u bytes of session data]\n",
+                            (unsigned) session_data_len );
         }
     }
 
