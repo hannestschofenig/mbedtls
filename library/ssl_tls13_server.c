@@ -521,10 +521,6 @@ int mbedtls_ssl_parse_psk_identity(
         return ( MBEDTLS_ERR_SSL_ALLOC_FAILED );
     } else memcpy( ticket_buffer, buf, len );
 
-/*  
-    ssl->session_negotiate->ticket = ticket;
-    ssl->session_negotiate->ticket_len = len;
-*/
     if( ( ret = ssl->conf->f_ticket_parse( ssl->conf->p_ticket,
                                            ssl->session_negotiate,
                                            ticket_buffer, len ) ) != 0 )
@@ -546,13 +542,12 @@ int mbedtls_ssl_parse_psk_identity(
 
     /* We have to put the resumption_master_secret into the handshake->psk.
      *
-     * Note: The key in the ticket is already the final PSK,
+     * Note: The resumption key obtained from the ticket is already the final PSK,
      *       i.e., the HKDF-Expand-Label( resumption_master_secret, "resumption", ticket_nonce, Hash.length )
-     *       function has already been applied.
+     *       function has already been computed.
      */
     mbedtls_ssl_set_hs_psk( ssl, ssl->session_negotiate->resumption_key, ssl->session_negotiate->resumption_key_len );
     MBEDTLS_SSL_DEBUG_BUF( 5, "ticket: key", ssl->session_negotiate->resumption_key, ssl->session_negotiate->resumption_key_len );
-    mbedtls_free( ssl->session_negotiate->resumption_key );
 
     /*
      * A server MUST validate that the ticket age for the selected PSK identity
@@ -990,6 +985,8 @@ int mbedtls_ssl_parse_client_psk_identity_ext( mbedtls_ssl_context *ssl,
             /* Check the ticket cache if previous lookup was unsuccessful */
             if( ret == MBEDTLS_ERR_SSL_UNKNOWN_IDENTITY )
             {
+                /* TBD: Should we omit copying the ticket? */
+
                 /* copy ticket since it acts as the psk_identity */
                 if( ssl->session_negotiate->ticket != NULL )
                 {
@@ -1011,6 +1008,7 @@ int mbedtls_ssl_parse_client_psk_identity_ext( mbedtls_ssl_context *ssl,
                 ret = mbedtls_ssl_parse_psk_identity( ssl, ssl->session_negotiate->ticket, item_length, obfuscated_ticket_age );
                 if( ret != 0 )
                 {
+                    mbedtls_free( ssl->session_negotiate->ticket );
                     MBEDTLS_SSL_DEBUG_MSG( 3, ( "Ticket not found in cache." ) );
                 }
             }
