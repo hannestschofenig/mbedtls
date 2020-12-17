@@ -236,11 +236,19 @@ int mbedtls_ssl_session_copy( mbedtls_ssl_session *dst,
     }
 #endif /* (MBEDTLS_SSL_SESSION_TICKETS || MBEDTLS_SSL_NEW_SESSION_TICKET) && MBEDTLS_SSL_CLI_C */
 
-#if defined(MBEDTLS_SSL_NEW_SESSION_TICKET) && defined(MBEDTLS_SSL_CLI_C)
+#if defined(MBEDTLS_SSL_NEW_SESSION_TICKET)
     /* Resumption Key */
     memcpy( dst->resumption_key, src->resumption_key, src->resumption_key_len );
 
-#endif /* MBEDTLS_SSL_NEW_SESSION_TICKET && MBEDTLS_SSL_CLI_C */
+    if( src->ticket_nonce != NULL )
+    {
+        dst->ticket_nonce = mbedtls_calloc( 1, src->ticket_nonce_len );
+        if( dst->ticket_nonce == NULL )
+            return( MBEDTLS_ERR_SSL_ALLOC_FAILED );
+
+        memcpy( dst->ticket_nonce, src->ticket_nonce, src->ticket_nonce_len );
+    }
+#endif /* MBEDTLS_SSL_NEW_SESSION_TICKET */
 
     return( 0 );
 }
