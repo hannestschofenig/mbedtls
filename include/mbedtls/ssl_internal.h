@@ -1764,4 +1764,20 @@ static inline int mbedtls_ssl_extensions_present( mbedtls_ssl_context *ssl,
     return( ret );
 }
 
+/* Check presence of extensions and send an alert if one of them is already
+ * present. Update the list of present extensions */
+static inline int mbedtls_ssl_check_extensions_present( mbedtls_ssl_context *ssl,
+                                                        int extension_flag )
+{
+    int ret = 0;
+
+    if( ( ret = mbedtls_ssl_extensions_present( ssl, extension_flag, 0 ) ) )
+        SSL_PEND_FATAL_ALERT( MBEDTLS_SSL_ALERT_MSG_UNEXPECTED_MESSAGE );
+
+    /* Update extension list */
+    ssl->handshake->extensions_present |= extension_flag;
+
+    return( ret );
+}
+
 #endif /* ssl_internal.h */
