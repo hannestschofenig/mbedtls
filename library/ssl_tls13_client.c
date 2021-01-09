@@ -1400,7 +1400,7 @@ static int ssl_write_key_shares_ext( mbedtls_ssl_context *ssl,
             return( ret );
         }
 
-        if( ( ret = mbedtls_ecdh_make_params( &ssl->handshake->ecdh_ctx[nr], &len,
+        if( ( ret = mbedtls_ecdh_make_tls_13_params( &ssl->handshake->ecdh_ctx[nr], &len,
                                               p+2, MBEDTLS_SSL_MAX_CONTENT_LEN - *olen,
                                               ssl->conf->f_rng, ssl->conf->p_rng ) ) != 0 )
         {
@@ -2199,7 +2199,7 @@ static int ssl_parse_key_shares_ext( mbedtls_ssl_context *ssl,
      */
     ssl->handshake->ecdh_ctx_selected = i;
 
-    if( ( ret = mbedtls_ecdh_read_params( &ssl->handshake->ecdh_ctx[i],
+    if( ( ret = mbedtls_ecdh_read_tls_13_params( &ssl->handshake->ecdh_ctx[i],
                                           ( const unsigned char ** )&start, end ) ) != 0 )
     {
         MBEDTLS_SSL_DEBUG_RET( 1, ( "mbedtls_ecdh_read_params" ), ret );

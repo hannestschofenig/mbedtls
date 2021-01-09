@@ -754,6 +754,30 @@ int mbedtls_ecp_tls_read_point( const mbedtls_ecp_group *grp,
                                 mbedtls_ecp_point *pt,
                                 const unsigned char **buf, size_t len );
 
+
+/**
+ * \brief           This function imports a point from a TLS ECPoint record.
+ *
+ * \note            On function return, \p *buf is updated to point immediately
+ *                  after the ECPoint record.
+ *
+ * \param grp       The ECP group to use.
+ *                  This must be initialized and have group parameters
+ *                  set, for example through mbedtls_ecp_group_load().
+ * \param pt        The destination point.
+ * \param buf       The address of the pointer to the start of the input buffer.
+ * \param len       The length of the buffer.
+ *
+ * \return          \c 0 on success.
+ * \return          An \c MBEDTLS_ERR_MPI_XXX error code on initialization
+ *                  failure.
+ * \return          #MBEDTLS_ERR_ECP_BAD_INPUT_DATA if input is invalid.
+ */
+int mbedtls_ecp_tls_13_read_point( const mbedtls_ecp_group *grp,
+                                mbedtls_ecp_point *pt,
+                                const unsigned char **buf, size_t len );
+
+
 /**
  * \brief           This function exports a point as a TLS ECPoint record
  *                  defined in RFC 4492, Section 5.4.
@@ -780,6 +804,33 @@ int mbedtls_ecp_tls_write_point( const mbedtls_ecp_group *grp,
                                  const mbedtls_ecp_point *pt,
                                  int format, size_t *olen,
                                  unsigned char *buf, size_t blen );
+
+/**
+ * \brief           This function exports a point as defined in TLS 1.3.
+ *
+ * \param grp       The ECP group to use.
+ *                  This must be initialized and have group parameters
+ *                  set, for example through mbedtls_ecp_group_load().
+ * \param pt        The point to be exported. This must be initialized.
+ * \param format    The point format to use. This must be either
+ *                  #MBEDTLS_ECP_PF_COMPRESSED or #MBEDTLS_ECP_PF_UNCOMPRESSED.
+ * \param olen      The address at which to store the length in Bytes
+ *                  of the data written.
+ * \param buf       The target buffer. This must be a writable buffer of
+ *                  length \p blen Bytes.
+ * \param blen      The length of the target buffer \p buf in Bytes.
+ *
+ * \return          \c 0 on success.
+ * \return          #MBEDTLS_ERR_ECP_BAD_INPUT_DATA if the input is invalid.
+ * \return          #MBEDTLS_ERR_ECP_BUFFER_TOO_SMALL if the target buffer
+ *                  is too small to hold the exported point.
+ * \return          Another negative error code on other kinds of failure.
+ */
+int mbedtls_ecp_tls_13_write_point( const mbedtls_ecp_group *grp,
+                                 const mbedtls_ecp_point *pt,
+                                 int format, size_t *olen,
+                                 unsigned char *buf, size_t blen );
+
 
 /**
  * \brief           This function sets up an ECP group context

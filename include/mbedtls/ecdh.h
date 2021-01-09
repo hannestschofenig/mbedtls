@@ -285,6 +285,32 @@ int mbedtls_ecdh_make_params( mbedtls_ecdh_context *ctx, size_t *olen,
                       void *p_rng );
 
 /**
+ * \brief           This function generates an EC key pair and exports its
+ *                  in the format used in a TLS 1.3 KeyShare extension.
+ *
+ * \see             ecp.h
+ *
+ * \param ctx       The ECDH context to use. This must be initialized
+ *                  and bound to a group, for example via mbedtls_ecdh_setup().
+ * \param olen      The address at which to store the number of Bytes written.
+ * \param buf       The destination buffer. This must be a writable buffer of
+ *                  length \p blen Bytes.
+ * \param blen      The length of the destination buffer \p buf in Bytes.
+ * \param f_rng     The RNG function to use. This must not be \c NULL.
+ * \param p_rng     The RNG context to be passed to \p f_rng. This may be
+ *                  \c NULL in case \p f_rng doesn't need a context argument.
+ *
+ * \return          \c 0 on success.
+ * \return          #MBEDTLS_ERR_ECP_IN_PROGRESS if maximum number of
+ *                  operations was reached: see \c mbedtls_ecp_set_max_ops().
+ * \return          Another \c MBEDTLS_ERR_ECP_XXX error code on failure.
+ */
+int mbedtls_ecdh_make_tls_13_params( mbedtls_ecdh_context *ctx, size_t *olen,
+                      unsigned char *buf, size_t blen,
+                      int (*f_rng)(void *, unsigned char *, size_t),
+                      void *p_rng );
+
+/**
  * \brief           This function parses the ECDHE parameters in a
  *                  TLS ServerKeyExchange handshake message.
  *
@@ -309,6 +335,31 @@ int mbedtls_ecdh_make_params( mbedtls_ecdh_context *ctx, size_t *olen,
  *
  */
 int mbedtls_ecdh_read_params( mbedtls_ecdh_context *ctx,
+                              const unsigned char **buf,
+                              const unsigned char *end );
+
+
+/**
+ * \brief           This function parses the ECDHE parameters in a
+ *                  TLS 1.3 KeyShare extension.
+ *
+ * \see             ecp.h
+ *
+ * \param ctx       The ECDHE context to use. This must be initialized.
+ * \param buf       On input, \c *buf must be the start of the input buffer.
+ *                  On output, \c *buf is updated to point to the end of the
+ *                  data that has been read. On success, this is the first byte
+ *                  past the end of the ServerKeyExchange parameters.
+ *                  On error, this is the point at which an error has been
+ *                  detected, which is usually not useful except to debug
+ *                  failures.
+ * \param end       The end of the input buffer.
+ *
+ * \return          \c 0 on success.
+ * \return          An \c MBEDTLS_ERR_ECP_XXX error code on failure.
+ *
+ */
+int mbedtls_ecdh_read_tls_13_params( mbedtls_ecdh_context *ctx,
                               const unsigned char **buf,
                               const unsigned char *end );
 
