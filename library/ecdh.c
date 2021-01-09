@@ -293,8 +293,6 @@ void mbedtls_ecdh_free( mbedtls_ecdh_context *ctx )
 #endif
 }
 
-#if defined(MBEDTLS_SSL_PROTO_TLS1) || defined(MBEDTLS_SSL_PROTO_TLS1_1) || \
-    defined(MBEDTLS_SSL_PROTO_TLS1_2)
 static int ecdh_make_params_internal( mbedtls_ecdh_context_mbed *ctx,
                                       size_t *olen, int point_format,
                                       unsigned char *buf, size_t blen,
@@ -345,8 +343,6 @@ static int ecdh_make_params_internal( mbedtls_ecdh_context_mbed *ctx,
     *olen = grp_len + pt_len;
     return( 0 );
 }
-#endif /* MBEDTLS_SSL_PROTO_TLS1 || MBEDTLS_SSL_PROTO_TLS1_1 || \
-          MBEDTLS_SSL_PROTO_TLS1_2 */
 
 #if defined(MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL)
 static int ecdh_make_tls_13_params_internal( mbedtls_ecdh_context_mbed *ctx,
@@ -408,8 +404,6 @@ static int ecdh_make_tls_13_params_internal( mbedtls_ecdh_context_mbed *ctx,
  *          ECPoint         public;
  *      } ServerECDHParams;
  */
-#if defined(MBEDTLS_SSL_PROTO_TLS1) || defined(MBEDTLS_SSL_PROTO_TLS1_1) || \
-    defined(MBEDTLS_SSL_PROTO_TLS1_2)
 int mbedtls_ecdh_make_params( mbedtls_ecdh_context *ctx, size_t *olen,
                               unsigned char *buf, size_t blen,
                               int (*f_rng)(void *, unsigned char *, size_t),
@@ -448,8 +442,6 @@ int mbedtls_ecdh_make_params( mbedtls_ecdh_context *ctx, size_t *olen,
     }
 #endif
 }
-#endif /* MBEDTLS_SSL_PROTO_TLS1 || MBEDTLS_SSL_PROTO_TLS1_1 || \
-          MBEDTLS_SSL_PROTO_TLS1_2 */
 
 #if defined(MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL)
 int mbedtls_ecdh_make_tls_13_params( mbedtls_ecdh_context *ctx, size_t *olen,
@@ -492,8 +484,6 @@ int mbedtls_ecdh_make_tls_13_params( mbedtls_ecdh_context *ctx, size_t *olen,
 }
 #endif /* MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL */
 
-#if defined(MBEDTLS_SSL_PROTO_TLS1) || defined(MBEDTLS_SSL_PROTO_TLS1_1) || \
-    defined(MBEDTLS_SSL_PROTO_TLS1_2)
 static int ecdh_read_params_internal( mbedtls_ecdh_context_mbed *ctx,
                                       const unsigned char **buf,
                                       const unsigned char *end )
@@ -501,8 +491,6 @@ static int ecdh_read_params_internal( mbedtls_ecdh_context_mbed *ctx,
     return( mbedtls_ecp_tls_read_point( &ctx->grp, &ctx->Qp, buf,
                                         end - *buf ) );
 }
-#endif /* MBEDTLS_SSL_PROTO_TLS1 || MBEDTLS_SSL_PROTO_TLS1_1 || \
-          MBEDTLS_SSL_PROTO_TLS1_2 */
 
 #if defined(MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL)
 static int ecdh_read_tls_13_params_internal( mbedtls_ecdh_context_mbed *ctx,
@@ -522,8 +510,6 @@ static int ecdh_read_tls_13_params_internal( mbedtls_ecdh_context_mbed *ctx,
  *          ECPoint         public;
  *      } ServerECDHParams;
  */
-#if defined(MBEDTLS_SSL_PROTO_TLS1) || defined(MBEDTLS_SSL_PROTO_TLS1_1) || \
-    defined(MBEDTLS_SSL_PROTO_TLS1_2)
 int mbedtls_ecdh_read_params( mbedtls_ecdh_context *ctx,
                               const unsigned char **buf,
                               const unsigned char *end )
@@ -560,8 +546,6 @@ int mbedtls_ecdh_read_params( mbedtls_ecdh_context *ctx,
     }
 #endif
 }
-#endif /* MBEDTLS_SSL_PROTO_TLS1 || MBEDTLS_SSL_PROTO_TLS1_1 || \
-          MBEDTLS_SSL_PROTO_TLS1_2 */
 
 #if defined(MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL)
 int mbedtls_ecdh_read_tls_13_params( mbedtls_ecdh_context *ctx,
@@ -717,8 +701,6 @@ static int ecdh_make_public_internal( mbedtls_ecdh_context_mbed *ctx,
 /*
  * Setup and export the client public value
  */
-#if defined(MBEDTLS_SSL_PROTO_TLS1) || defined(MBEDTLS_SSL_PROTO_TLS1_1) || \
-    defined(MBEDTLS_SSL_PROTO_TLS1_2)
 int mbedtls_ecdh_make_public( mbedtls_ecdh_context *ctx, size_t *olen,
                               unsigned char *buf, size_t blen,
                               int (*f_rng)(void *, unsigned char *, size_t),
@@ -755,11 +737,8 @@ int mbedtls_ecdh_make_public( mbedtls_ecdh_context *ctx, size_t *olen,
     }
 #endif
 }
-#endif /* MBEDTLS_SSL_PROTO_TLS1 || MBEDTLS_SSL_PROTO_TLS1_1 || \
-          MBEDTLS_SSL_PROTO_TLS1_2 */
 
 #if defined(MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL)
-
 static int ecdh_make_tls_13_public_internal( mbedtls_ecdh_context_mbed *ctx,
                                       size_t *olen, int point_format,
                                       unsigned char *buf, size_t blen,
@@ -839,9 +818,6 @@ int mbedtls_ecdh_make_tls_13_public( mbedtls_ecdh_context *ctx, size_t *olen,
 }
 #endif /* MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL */
 
-
-#if defined(MBEDTLS_SSL_PROTO_TLS1) || defined(MBEDTLS_SSL_PROTO_TLS1_1) || \
-    defined(MBEDTLS_SSL_PROTO_TLS1_2)
 static int ecdh_read_public_internal( mbedtls_ecdh_context_mbed *ctx,
                                       const unsigned char *buf, size_t blen )
 {
@@ -857,8 +833,6 @@ static int ecdh_read_public_internal( mbedtls_ecdh_context_mbed *ctx,
 
     return( 0 );
 }
-#endif /* MBEDTLS_SSL_PROTO_TLS1 || MBEDTLS_SSL_PROTO_TLS1_1 || \
-          MBEDTLS_SSL_PROTO_TLS1_2 */
 
 #if defined(MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL)
 static int ecdh_read_tls_13_public_internal( mbedtls_ecdh_context_mbed *ctx,
@@ -881,8 +855,6 @@ static int ecdh_read_tls_13_public_internal( mbedtls_ecdh_context_mbed *ctx,
 /*
  * Parse and import the client's public value
  */
-#if defined(MBEDTLS_SSL_PROTO_TLS1) || defined(MBEDTLS_SSL_PROTO_TLS1_1) || \
-    defined(MBEDTLS_SSL_PROTO_TLS1_2)
 int mbedtls_ecdh_read_public( mbedtls_ecdh_context *ctx,
                               const unsigned char *buf, size_t blen )
 {
@@ -907,15 +879,13 @@ int mbedtls_ecdh_read_public( mbedtls_ecdh_context *ctx,
     }
 #endif
 }
-#endif /* MBEDTLS_SSL_PROTO_TLS1 || MBEDTLS_SSL_PROTO_TLS1_1 || \
-          MBEDTLS_SSL_PROTO_TLS1_2 */
 
 /*
  * Parse and import the client's TLS 1.3 public value
  */
 
 #if defined(MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL)
-int mbedtls_ecdh_tls_13_read_public( mbedtls_ecdh_context *ctx,
+int mbedtls_ecdh_read_tls_13_public( mbedtls_ecdh_context *ctx,
                               const unsigned char *buf, size_t blen )
 {
     ECDH_VALIDATE_RET( ctx != NULL );

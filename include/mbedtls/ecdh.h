@@ -417,6 +417,35 @@ int mbedtls_ecdh_make_public( mbedtls_ecdh_context *ctx, size_t *olen,
                       int (*f_rng)(void *, unsigned char *, size_t),
                       void *p_rng );
 
+
+/**
+ * \brief           This function generates a public key and exports it
+ *                  as a TLS 1.3 KeyShare payload.
+ *
+ * \see             ecp.h
+ *
+ * \param ctx       The ECDH context to use. This must be initialized
+ *                  and bound to a group, the latter usually by
+ *                  mbedtls_ecdh_read_params().
+ * \param olen      The address at which to store the number of Bytes written.
+ *                  This must not be \c NULL.
+ * \param buf       The destination buffer. This must be a writable buffer
+ *                  of length \p blen Bytes.
+ * \param blen      The size of the destination buffer \p buf in Bytes.
+ * \param f_rng     The RNG function to use. This must not be \c NULL.
+ * \param p_rng     The RNG context to be passed to \p f_rng. This may be
+ *                  \c NULL in case \p f_rng doesn't need a context argument.
+ *
+ * \return          \c 0 on success.
+ * \return          #MBEDTLS_ERR_ECP_IN_PROGRESS if maximum number of
+ *                  operations was reached: see \c mbedtls_ecp_set_max_ops().
+ * \return          Another \c MBEDTLS_ERR_ECP_XXX error code on failure.
+ */
+int mbedtls_ecdh_make_tls_13_public( mbedtls_ecdh_context *ctx, size_t *olen,
+                      unsigned char *buf, size_t blen,
+                      int (*f_rng)(void *, unsigned char *, size_t),
+                      void *p_rng );
+
 /**
  * \brief       This function parses and processes the ECDHE payload of a
  *              TLS ClientKeyExchange message.
@@ -437,6 +466,25 @@ int mbedtls_ecdh_make_public( mbedtls_ecdh_context *ctx, size_t *olen,
  * \return      An \c MBEDTLS_ERR_ECP_XXX error code on failure.
  */
 int mbedtls_ecdh_read_public( mbedtls_ecdh_context *ctx,
+                              const unsigned char *buf, size_t blen );
+
+
+/**
+ * \brief       This function parses and processes the ECDHE payload of a
+ *              TLS 1.3 KeyShare extension.
+ *
+ * \see         ecp.h
+ *
+ * \param ctx   The ECDH context to use. This must be initialized
+ *              and bound to a group, for example via mbedtls_ecdh_setup().
+ * \param buf   The pointer to the ClientKeyExchange payload. This must
+ *              be a readable buffer of length \p blen Bytes.
+ * \param blen  The length of the input buffer \p buf in Bytes.
+ *
+ * \return      \c 0 on success.
+ * \return      An \c MBEDTLS_ERR_ECP_XXX error code on failure.
+ */
+int mbedtls_ecdh_read_tls_13_public( mbedtls_ecdh_context *ctx,
                               const unsigned char *buf, size_t blen );
 
 /**
