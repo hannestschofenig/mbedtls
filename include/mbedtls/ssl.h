@@ -1548,6 +1548,9 @@ void mbedtls_ssl_conf_transport( mbedtls_ssl_config *conf, int transport );
  * the right time(s), which may not be obvious, while REQUIRED always perform
  * the verification as soon as possible. For example, REQUIRED was protecting
  * against the "triple handshake" attack even before it was found.
+ * 
+ * \note In any mode, the signatures of the certificates in the CertificateVerify 
+ * messages are always verified.
  */
 void mbedtls_ssl_conf_authmode( mbedtls_ssl_config *conf, int authmode );
 
