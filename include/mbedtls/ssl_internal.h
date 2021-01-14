@@ -1751,14 +1751,15 @@ static inline void mbedtls_ssl_reset_extensions_present( mbedtls_ssl_context *ss
     ssl->handshake->extensions_present = NO_EXTENSION;
 }
 
-/* Check presence of extensions and optionally set the extension flag */
+/* Check presence of extension (or conjunction of extensions) and optionally set
+ * the extension flag */
 static inline int mbedtls_ssl_extensions_present( mbedtls_ssl_context *ssl,
                                                   int extension_flag,
                                                   int set_extension_flag )
 {
     int ret = 0;
 
-    ret = ssl->handshake->extensions_present & extension_flag;
+    ret = ( ssl->handshake->extensions_present & extension_flag ) == extension_flag;
     if( set_extension_flag )
         ssl->handshake->extensions_present |= extension_flag;
     return( ret );
