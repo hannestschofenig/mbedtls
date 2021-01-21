@@ -833,7 +833,9 @@ struct mbedtls_ssl_handshake_params
     int max_minor_ver;                  /*!< max. minor version client*/
     int cli_exts;                       /*!< client extension presence*/
 #if defined(MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL)
-    int extensions_present;             /*!< which extension were present; the */
+    int extensions_present;             /*!< which extensions are present; used
+                                             and set by
+                                             `mbedtls_ssl_extensions_present()`*/
 #endif /* MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL */
 
 #if defined(MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL) && defined(MBEDTLS_SSL_TLS13_CTLS)
@@ -1748,5 +1750,41 @@ void mbedtls_ssl_flight_free( mbedtls_ssl_flight_item *flight );
 int mbedtls_ssl_double_retransmit_timeout( mbedtls_ssl_context *ssl );
 void mbedtls_ssl_reset_retransmit_timeout( mbedtls_ssl_context *ssl );
 #endif /* MBEDTLS_SSL_PROTO_DTLS */
+
+/* Reset list of present extensions */
+static inline void mbedtls_ssl_reset_extensions_present( mbedtls_ssl_context *ssl )
+{
+    ssl->handshake->extensions_present = NO_EXTENSION;
+}
+
+/* Check presence of extension (or conjunction of extensions) and optionally set
+ * the extension flag */
+static inline int mbedtls_ssl_extensions_present( mbedtls_ssl_context *ssl,
+                                                  int extension_flag,
+                                                  int set_extension_flag )
+{
+    int ret = 0;
+
+    ret = ( ssl->handshake->extensions_present & extension_flag ) == extension_flag;
+    if( set_extension_flag )
+        ssl->handshake->extensions_present |= extension_flag;
+    return( ret );
+}
+
+/* Check presence of extensions and send an alert if one of them is already
+ * present. Update the list of present extensions */
+static inline int mbedtls_ssl_check_extensions_present( mbedtls_ssl_context *ssl,
+                                                        int extension_flag )
+{
+    int ret = 0;
+
+    if( ( ret = mbedtls_ssl_extensions_present( ssl, extension_flag, 0 ) ) )
+        SSL_PEND_FATAL_ALERT( MBEDTLS_SSL_ALERT_MSG_UNEXPECTED_MESSAGE );
+
+    /* Update extension list */
+    ssl->handshake->extensions_present |= extension_flag;
+
+    return( ret );
+}
 
 #endif /* ssl_internal.h */
