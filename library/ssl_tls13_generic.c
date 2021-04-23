@@ -2859,6 +2859,50 @@ static int ssl_new_session_ticket_fetch( mbedtls_ssl_context* ssl,
 }
 #endif /* MBEDTLS_SSL_USE_MPS */
 
+static int ssl_new_session_ticket_early_data_ext_parse( mbedtls_ssl_context* ssl,
+                                                        const unsigned char* buf,
+                                                        size_t ext_size)
+{
+    if ( ext_size == 4 && ssl->session != NULL )
+    {
+	    ssl->session->max_early_data_size =
+            ((uint32_t) buf[0] << 24) | ((uint32_t) buf[1] << 16) |
+            ((uint32_t) buf[2] << 8) | ((uint32_t) buf[3]);
+        MBEDTLS_SSL_DEBUG_MSG( 3, ( "ticket->max_early_data_size: %u", ssl->session->max_early_data_size ) );
+        ssl->session->ticket_flags |= allow_early_data;
+        return 0;
+    }
+    return MBEDTLS_ERR_SSL_BAD_INPUT_DATA;
+}
+
+static int ssl_new_session_ticket_extensions_parse(mbedtls_ssl_context* ssl,
+                                                   const unsigned char* buf,
+                                                   size_t ext_len)
+{
+    const unsigned char* ext_buf = buf;
+    size_t buf_remain = ext_len;
+    int ret;
+    while (buf_remain != 0) {
+        if (buf_remain < 4) {
+            return MBEDTLS_ERR_SSL_BAD_INPUT_DATA;
+        }
+
+        unsigned int ext_id = ((ext_buf[0] << 8) | (ext_buf[1]));
+        size_t ext_size = ((ext_buf[2] << 8) | (ext_buf[3]));
+        if (ext_id == MBEDTLS_TLS_EXT_EARLY_DATA)
+        {
+            if ((ret = ssl_new_session_ticket_early_data_ext_parse(ssl, &ext_buf[4], ext_size)) != 0)
+            {
+                MBEDTLS_SSL_DEBUG_RET(1, "ssl_new_session_ticket_early_data_ext_parse", ret);
+                return ( ret );
+            }
+        }
+        ext_buf += 4 + ext_size;
+        buf_remain -= 4 + ext_size;
+    }
+    return 0;
+}
+
 static int ssl_new_session_ticket_parse( mbedtls_ssl_context* ssl,
                                          unsigned char* buf,
                                          size_t buflen )
@@ -2991,11 +3035,18 @@ static int ssl_new_session_ticket_parse( mbedtls_ssl_context* ssl,
 
     MBEDTLS_SSL_DEBUG_MSG( 5, ( "ticket->extension length: %d", ext_len ) );
 
-    /* We are not storing any extensions at the moment */
     MBEDTLS_SSL_DEBUG_BUF( 3, "ticket->extension",
                            &buf[ 13 + ssl->session->ticket_nonce_len + ticket_len ],
                            ext_len );
 
+
+    ret = ssl_new_session_ticket_extensions_parse( ssl,
+                                                   &buf[ 13 + ssl->session->ticket_nonce_len + ticket_len ],
+                                                   ext_len);
+    if (ret != 0 ){
+        MBEDTLS_SSL_DEBUG_RET( 1, "ssl_new_session_ticket_extensions_parse", ret );
+        return ( ret );
+    }
     /* Compute PSK based on received nonce and resumption_master_secret
      * in the following style:
      *
