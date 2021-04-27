@@ -526,10 +526,10 @@ int mbedtls_ssl_tls1_3_derive_application_secrets(
 
     ret = mbedtls_ssl_tls1_3_derive_secret( md_type,
               application_secret, md_size,
-              MBEDTLS_SSL_TLS1_3_LBL_WITH_LEN( res_master ),
+              MBEDTLS_SSL_TLS1_3_LBL_WITH_LEN( exp_master ),
               transcript, transcript_len,
               MBEDTLS_SSL_TLS1_3_CONTEXT_HASHED,
-              derived_application_secrets->resumption_master_secret,
+              derived_application_secrets->exporter_master_secret,
               md_size );
 
     if( ret != 0 )
@@ -988,7 +988,7 @@ int mbedtls_ssl_generate_resumption_master_secret( mbedtls_ssl_context *ssl )
         return( ret );
 
     ret = mbedtls_ssl_tls1_3_derive_resumption_master_secret( md_type,
-                                         ssl->handshake->handshake_secret,
+                                         ssl->handshake->master_secret,
                                          transcript, transcript_len,
                                          &ssl->session_negotiate->app_secrets );
     if( ret != 0 )
@@ -1160,8 +1160,10 @@ int mbedtls_ssl_tls1_3_derive_master_secret( mbedtls_ssl_context *ssl,
 
     int ret = 0;
     mbedtls_md_type_t const md_type = ssl->handshake->ciphersuite_info->mac;
+#if defined(MBEDTLS_DEBUG_C)
     mbedtls_md_info_t const * const md_info = mbedtls_md_info_from_type( md_type );
     size_t const md_size = mbedtls_md_get_size( md_info );
+#endif /* MBEDTLS_DEBUG_C */
 
     unsigned char *psk = NULL;
     size_t psk_len = 0;

@@ -6535,12 +6535,11 @@ int mbedtls_ssl_handle_pending_alert( mbedtls_ssl_context *ssl )
 
         ret = mbedtls_mps_send_fatal( &ssl->mps.l4,
                                       ssl->alert_type );
+        ssl->send_alert = 2;
 
         MBEDTLS_SSL_DEBUG_MSG( 2, ( "<= send alert message" ) );
         if( ret != 0 )
             return( ret );
-
-        ssl->send_alert = 2;
     }
 
     ret = mbedtls_mps_flush( &ssl->mps.l4 );
