@@ -2875,9 +2875,9 @@ static int ssl_new_session_ticket_early_data_ext_parse( mbedtls_ssl_context* ssl
     return( MBEDTLS_ERR_SSL_BAD_INPUT_DATA );
 }
 
-static int ssl_new_session_ticket_extensions_parse(mbedtls_ssl_context* ssl,
-                                                   const unsigned char* buf,
-                                                   size_t buf_remain)
+static int ssl_new_session_ticket_extensions_parse( mbedtls_ssl_context* ssl,
+                                                    const unsigned char* buf,
+                                                    size_t buf_remain )
 {
     int ret;
     while( buf_remain != 0 )
@@ -2896,7 +2896,7 @@ static int ssl_new_session_ticket_extensions_parse(mbedtls_ssl_context* ssl,
 
         if( ext_id == MBEDTLS_TLS_EXT_EARLY_DATA )
         {
-            if ((ret = ssl_new_session_ticket_early_data_ext_parse(ssl, &buf[4], ext_size)) != 0)
+            if( ( ret = ssl_new_session_ticket_early_data_ext_parse( ssl, &buf[4], ext_size ) ) != 0 )
             {
                 MBEDTLS_SSL_DEBUG_RET( 1, "ssl_new_session_ticket_early_data_ext_parse", ret );
                 return( ret );
