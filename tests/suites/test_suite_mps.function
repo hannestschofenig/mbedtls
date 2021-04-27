@@ -127,6 +127,8 @@ typedef struct
     unsigned char *buf;
     size_t buflen;
     size_t avail;
+    int first_try;
+    int fake_retry;
 } layer0_mock;
 
 static layer0_mock c2s; /* Client-to-Server */
@@ -140,6 +142,10 @@ int layer0_init( layer0_mock *mbuf )
 
     mbuf->avail = 0;
     mbuf->buflen = layer0_bufsize;
+
+    mbuf->first_try = 0;
+    mbuf->fake_retry = 0;
+
     return( 0 );
 }
 
@@ -156,6 +162,13 @@ int layer0_read( void* mbuf_raw,
 {
     size_t remaining;
     layer0_mock* const mbuf = (layer0_mock*) mbuf_raw;
+
+    if( mbuf->fake_retry == 1 &&
+        mbuf->first_try  == 1 )
+    {
+        mbuf->first_try = 0;
+        return( MBEDTLS_ERR_MPS_WANT_READ );
+    }
 
     if( mbuf->avail == 0 )
         return( MBEDTLS_ERR_MPS_WANT_READ );
@@ -174,6 +187,8 @@ int layer0_read( void* mbuf_raw,
     memmove( mbuf->buf, mbuf->buf + size, remaining );
 
     mbuf->avail = remaining;
+
+    mbuf->first_try = 1;
     return( size );
 }
 
@@ -184,6 +199,13 @@ int layer0_write( void *mbuf_raw,
 {
     layer0_mock* const mbuf = (layer0_mock*) mbuf_raw;
     const size_t remaining = mbuf->buflen - mbuf->avail;
+
+    if( mbuf->fake_retry == 1 &&
+        mbuf->first_try  == 1 )
+    {
+        mbuf->first_try = 0;
+        return( MBEDTLS_ERR_MPS_WANT_WRITE );
+    }
 
     if( size == 0 )
         return( 0 );
@@ -202,6 +224,8 @@ int layer0_write( void *mbuf_raw,
 
     memcpy( mbuf->buf + mbuf->avail, src, size );
     mbuf->avail += size;
+
+    mbuf->first_try = 1;
 
     return( size );
 }
@@ -3855,6 +3879,9 @@ void mbedtls_mps_l1_random_communication_stream( int allocator_buffer_sz,
     mps_test_config.l0_stream_buffer_sz = layer0_buffer_sz;
     TEST_ASSERT( init_mps_layers() == 0 );
 
+    c2s.fake_retry = 1;
+    s2c.fake_retry = 1;
+
     /* This probably needs to be changed because we want
      * our tests to be deterministic. */
     srand( time( NULL ) );
@@ -5926,6 +5953,9 @@ void mbedtls_mps_l2_random( int allocator_buffer_sz,
     mps_test_config.io_buffer_size = allocator_buffer_sz;
     mps_test_config.l0_stream_buffer_sz = layer0_buffer_sz;
     TEST_ASSERT( init_mps_layers() == 0 );
+
+    c2s.fake_retry = 1;
+    s2c.fake_retry = 1;
 
     TEST_ASSERT( num_types <= 64 );
     for( size_t ty=0; ty < (unsigned) num_types; ty++ )
@@ -8004,6 +8034,9 @@ void mbedtls_mps_l3_random( int allocator_buffer_sz,
     mps_test_config.l0_stream_buffer_sz = layer0_buffer_sz;
     TEST_ASSERT( init_mps_layers() == 0 );
 
+    c2s.fake_retry = 1;
+    s2c.fake_retry = 1;
+
     TEST_ASSERT( mps_l2_config_add_type( &cli_l2, MBEDTLS_MPS_MSG_HS,
                                          1, 1, 0, 0 ) == 0 );
     TEST_ASSERT( mps_l2_config_add_type( &srv_l2, MBEDTLS_MPS_MSG_HS,
@@ -9881,6 +9914,9 @@ void mbedtls_mps_l4_flight_exchange( int mode,
     mps_test_config.l2_accumulator_size = ( 3 * hs_len ) / 2;
     mps_test_config.l4_queue_size       = ( 3 * hs_len ) / 2;
     TEST_ASSERT( init_mps_layers() == 0 );
+
+    c2s.fake_retry = 1;
+    s2c.fake_retry = 1;
 
 #if !defined(MBEDTLS_MPS_PROTO_TLS)
     TEST_ASSUME( mode == MBEDTLS_MPS_MODE_DATAGRAM );

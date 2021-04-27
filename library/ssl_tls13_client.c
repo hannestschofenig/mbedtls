@@ -2991,6 +2991,51 @@ cleanup:
 }
 #endif /* MBEDTLS_SSL_USE_MPS */
 
+static int ssl_server_hello_session_id_check( mbedtls_ssl_context* ssl,
+                                              const unsigned char** buf,
+                                              const unsigned char* end )
+{
+    size_t buflen = (size_t)( end - *buf );
+    size_t recv_id_len;
+
+    if( buflen == 0 )
+        return( 1 );
+
+    recv_id_len = **buf;
+    *buf   += 1; /* skip session id length */
+    buflen -= 1;
+
+    /* legacy_session_id_echo */
+    if( ssl->session_negotiate->id_len != recv_id_len )
+    {
+        MBEDTLS_SSL_DEBUG_MSG( 1, ( "Mismatch of session id length" ) );
+        return( 1 );
+    }
+
+    if( buflen < recv_id_len )
+        return( 1 );
+
+    if( memcmp( ssl->session_negotiate->id, *buf,
+                ssl->session_negotiate->id_len ) != 0 )
+    {
+        MBEDTLS_SSL_DEBUG_MSG( 1, ( "Unexpected legacy_session_id_echo" ) );
+        MBEDTLS_SSL_DEBUG_BUF( 3, "Expected Session ID",
+                               ssl->session_negotiate->id,
+                               ssl->session_negotiate->id_len );
+        MBEDTLS_SSL_DEBUG_BUF( 3, "Received Session ID", *buf,
+                               ssl->session_negotiate->id_len );
+        return( 1 );
+    }
+
+    *buf   += recv_id_len;
+    buflen -= recv_id_len;
+
+    MBEDTLS_SSL_DEBUG_BUF( 3, "Session ID",
+                           ssl->session_negotiate->id,
+                           ssl->session_negotiate->id_len );
+    return( 0 );
+}
+
 static int ssl_server_hello_parse( mbedtls_ssl_context* ssl,
                                    const unsigned char* buf,
                                    size_t buflen )
@@ -3069,44 +3114,12 @@ static int ssl_server_hello_parse( mbedtls_ssl_context* ssl,
     /* skip random bytes */
     buf += 32;
 
-#if defined(MBEDTLS_SSL_TLS13_COMPATIBILITY_MODE)
-    /* legacy_session_id_echo */
-    if( ssl->session_negotiate->id_len != buf[0] )
-    {
-        MBEDTLS_SSL_DEBUG_MSG( 1, ( "Mismatch of session id length" ) );
-        SSL_PEND_FATAL_ALERT( MBEDTLS_SSL_ALERT_MSG_ILLEGAL_PARAMETER,
-                              MBEDTLS_ERR_SSL_BAD_HS_SERVER_HELLO );
-        return( MBEDTLS_ERR_SSL_BAD_HS_SERVER_HELLO );
-    }
-    buf++; /* skip session id length */
-
-    if( memcmp( ssl->session_negotiate->id, &buf[0], ssl->session_negotiate->id_len ) != 0 )
-    {
-        MBEDTLS_SSL_DEBUG_MSG( 1, ( "Mismatch of session id" ) );
-        MBEDTLS_SSL_DEBUG_BUF( 3, "- expected session id", ssl->session_negotiate->id, ssl->session_negotiate->id_len );
-        MBEDTLS_SSL_DEBUG_BUF( 3, "- received session id", &buf[0], ssl->session_negotiate->id_len );
-
-        SSL_PEND_FATAL_ALERT( MBEDTLS_SSL_ALERT_MSG_ILLEGAL_PARAMETER,
-                              MBEDTLS_ERR_SSL_BAD_HS_SERVER_HELLO );
-        return( MBEDTLS_ERR_SSL_BAD_HS_SERVER_HELLO );
-    }
-    buf += ssl->session_negotiate->id_len; /* skip session id */
-
-    MBEDTLS_SSL_DEBUG_MSG( 3, ( "session id length ( %d )", ssl->session_negotiate->id_len ) );
-    MBEDTLS_SSL_DEBUG_BUF( 3, "session id", ssl->session_negotiate->id, ssl->session_negotiate->id_len );
-#else
-    /* Length of the session id must be zero */
-    if( *buf == 0 )
-    {
-        buf++; /* skip session id length */
-    }
-    else
+    if( ssl_server_hello_session_id_check( ssl, &buf, msg_end ) != 0 )
     {
         SSL_PEND_FATAL_ALERT( MBEDTLS_SSL_ALERT_MSG_ILLEGAL_PARAMETER,
                               MBEDTLS_ERR_SSL_BAD_HS_SERVER_HELLO );
         return( MBEDTLS_ERR_SSL_BAD_HS_SERVER_HELLO );
     }
-#endif /* MBEDTLS_SSL_TLS13_COMPATIBILITY_MODE */
 
     /* read server-selected ciphersuite, which follows random bytes */
     i = ( buf[0] << 8 ) | buf[1];
@@ -3454,44 +3467,12 @@ static int ssl_hrr_parse( mbedtls_ssl_context* ssl,
     /* skip random bytes */
     buf += 32;
 
-#if defined(MBEDTLS_SSL_TLS13_COMPATIBILITY_MODE)
-    /* legacy_session_id_echo */
-    if( ssl->session_negotiate->id_len != buf[0] )
-    {
-        MBEDTLS_SSL_DEBUG_MSG( 1, ( "Mismatch of session id length" ) );
-        SSL_PEND_FATAL_ALERT( MBEDTLS_SSL_ALERT_MSG_ILLEGAL_PARAMETER,
-                              MBEDTLS_ERR_SSL_BAD_HS_HELLO_RETRY_REQUEST );
-        return( MBEDTLS_ERR_SSL_BAD_HS_HELLO_RETRY_REQUEST );
-    }
-    buf++; /* skip session id length */
-
-    if( memcmp( ssl->session_negotiate->id, &buf[0], ssl->session_negotiate->id_len ) != 0 )
-    {
-        MBEDTLS_SSL_DEBUG_MSG( 1, ( "Mismatch of session id" ) );
-        MBEDTLS_SSL_DEBUG_BUF( 3, "- expected session id", ssl->session_negotiate->id, ssl->session_negotiate->id_len );
-        MBEDTLS_SSL_DEBUG_BUF( 3, "- received session id", &buf[0], ssl->session_negotiate->id_len );
-
-        SSL_PEND_FATAL_ALERT( MBEDTLS_SSL_ALERT_MSG_ILLEGAL_PARAMETER,
-                              MBEDTLS_ERR_SSL_BAD_HS_HELLO_RETRY_REQUEST );
-        return( MBEDTLS_ERR_SSL_BAD_HS_HELLO_RETRY_REQUEST );
-    }
-    buf += ssl->session_negotiate->id_len; /* skip session id */
-
-    MBEDTLS_SSL_DEBUG_MSG( 3, ( "session id length ( %d )", ssl->session_negotiate->id_len ) );
-    MBEDTLS_SSL_DEBUG_BUF( 3, "session id", ssl->session_negotiate->id, ssl->session_negotiate->id_len );
-#else
-    /* Length of the session id must be zero */
-    if( *buf == 0 )
-    {
-        buf++; /* skip session id length */
-    }
-    else
+    if( ssl_server_hello_session_id_check( ssl, &buf, msg_end ) != 0 )
     {
         SSL_PEND_FATAL_ALERT( MBEDTLS_SSL_ALERT_MSG_ILLEGAL_PARAMETER,
                               MBEDTLS_ERR_SSL_BAD_HS_HELLO_RETRY_REQUEST );
         return( MBEDTLS_ERR_SSL_BAD_HS_HELLO_RETRY_REQUEST );
     }
-#endif /* MBEDTLS_SSL_TLS13_COMPATIBILITY_MODE */
 
     /* read server-selected ciphersuite, which follows random bytes */
     i = ( buf[0] << 8 ) | buf[1];
