@@ -1162,8 +1162,8 @@ struct mbedtls_ssl_session
 #if defined(MBEDTLS_HAVE_TIME) && defined(MBEDTLS_SSL_CLI_C)
     time_t ticket_received;         /*!< time ticket was received */
 #endif /* MBEDTLS_HAVE_TIME && MBEDTLS_SSL_CLI_C */
-    uint32_t max_early_data_size;   /*!< max data allowed */
-#endif /*  MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL || MBEDTLS_SSL_NEW_SESSION_TICKET */
+    uint32_t max_early_data_size;   /*!< max early data allowed */
+#endif /*  MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL && MBEDTLS_SSL_NEW_SESSION_TICKET */
 
 
 
