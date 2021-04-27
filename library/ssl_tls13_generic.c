@@ -3050,7 +3050,7 @@ static int ssl_new_session_ticket_parse( mbedtls_ssl_context* ssl,
                                                    ext_len );
     if (ret != 0 ){
         MBEDTLS_SSL_DEBUG_RET( 1, "ssl_new_session_ticket_extensions_parse", ret );
-        return ( ret );
+        return( ret );
     }
     /* Compute PSK based on received nonce and resumption_master_secret
      * in the following style:
@@ -3093,7 +3093,7 @@ static int ssl_new_session_ticket_parse( mbedtls_ssl_context* ssl,
     if( ret != 0 )
     {
         MBEDTLS_SSL_DEBUG_RET( 2, "Creating the ticket-resumed PSK failed", ret );
-        return( ret );
+        return ( ret );
     }
 
     ssl->session->resumption_key_len = mbedtls_hash_size_for_ciphersuite( suite_info );
