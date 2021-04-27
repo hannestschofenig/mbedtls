@@ -2889,7 +2889,8 @@ static int ssl_new_session_ticket_extensions_parse(mbedtls_ssl_context* ssl,
 
         unsigned int ext_id = ( ( buf[0] << 8 ) | ( buf[1] ) );
         size_t ext_size = ( ( buf[2] << 8 ) | ( buf[3] ) );
-        if( ext_size > buf_remain - 4 ) {
+        if( ext_size > buf_remain - 4 )
+        {
             return( MBEDTLS_ERR_SSL_BAD_INPUT_DATA );
         }
 
