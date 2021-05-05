@@ -2633,10 +2633,6 @@ int main( int argc, char *argv[] )
 
 #endif /* MBEDTLS_X509_CRT_PARSE_C */
 
-#if defined(MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL) && defined(MBEDTLS_ZERO_RTT)
-    mbedtls_ssl_conf_early_data( &conf, opt.early_data, early_data, strlen( early_data ), NULL );
-#endif /* MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL && MBEDTLS_ZERO_RTT */
-
 #if defined(MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL) && defined(MBEDTLS_ECP_C)
     mbedtls_ssl_conf_sig_hashes( &conf, ssl_sig_hashes_for_test_tls13 );
 #endif /* MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL && MBEDTLS_ECP_C */
@@ -3095,11 +3091,6 @@ int main( int argc, char *argv[] )
 #endif /* MBEDTLS_SSL_PROTO_TLS1 || MBEDTLS_SSL_PROTO_TLS1_1 || \
           MBEDTLS_SSL_PROTO_TLS1_2 */
 #endif /* MBEDTLS_SSL_EXPORT_KEYS */
-
-#if defined(MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL) && \
-    defined(MBEDTLS_ZERO_RTT) && defined(MBEDTLS_SSL_CLI_C)
-    mbedtls_printf( "early data status = %d\n", mbedtls_ssl_get_early_data_status( &ssl ) );
-#endif /* MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL && MBEDTLS_ZERO_RTT && MBEDTLS_SSL_CLI_C */
 
 #if defined(MBEDTLS_X509_CRT_PARSE_C)
     /*
@@ -3814,6 +3805,10 @@ reconnect:
         }
 #endif /* MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL */
 
+#if defined(MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL) && defined(MBEDTLS_ZERO_RTT)
+    mbedtls_ssl_conf_early_data( &conf, opt.early_data, early_data, strlen( early_data ), NULL );
+#endif /* MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL && MBEDTLS_ZERO_RTT */
+
         if( ( ret = mbedtls_net_connect( &server_fd,
                         opt.server_addr, opt.server_port,
                         opt.transport == MBEDTLS_SSL_TRANSPORT_STREAM ?
@@ -3848,7 +3843,10 @@ reconnect:
         }
 
         mbedtls_printf( " ok\n" );
-
+#if defined(MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL) && \
+    defined(MBEDTLS_ZERO_RTT) && defined(MBEDTLS_SSL_CLI_C)
+    mbedtls_printf( "early data status = %d\n", mbedtls_ssl_get_early_data_status( &ssl ) );
+#endif /* MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL && MBEDTLS_ZERO_RTT && MBEDTLS_SSL_CLI_C */
         goto send_request;
     }
 #endif /* MBEDTLS_SSL_NEW_SESSION_TICKET */
