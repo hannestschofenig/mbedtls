@@ -101,6 +101,8 @@
 #define MBEDTLS_ERR_SSL_HRR_REQUIRED                      -0x7A80
 /** Received NewSessionTicket Post Handshake Message */
 #define MBEDTLS_ERR_SSL_RECEIVED_NEW_SESSION_TICKET       -0x7B00
+/** Early return when the client is ready to send early data */
+#define MBEDTLS_ERR_SSL_HANDSHAKE_EARLY_RETURN            -0x7B80
 /* Error space gap */
 /* Error space gap */
 /* Error space gap */
@@ -307,8 +309,9 @@
 #define MBEDTLS_SSL_EARLY_DATA_DISABLED        0
 #define MBEDTLS_SSL_EARLY_DATA_ENABLED         1
 
-#define MBEDTLS_SSL_EARLY_DATA_OFF        0
-#define MBEDTLS_SSL_EARLY_DATA_ON         1
+#define MBEDTLS_SSL_EARLY_DATA_STATE_DISABLED        0
+#define MBEDTLS_SSL_EARLY_DATA_STATE_OFF             1   /* early_data extension sent, cannot send early_data */
+#define MBEDTLS_SSL_EARLY_DATA_STATE_ON              2   /* early_data extension sent, can send early_data */
 
 #define MBEDTLS_SSL_FORCE_RR_CHECK_OFF      0
 #define MBEDTLS_SSL_FORCE_RR_CHECK_ON       1
@@ -1813,12 +1816,6 @@ struct mbedtls_ssl_context
     size_t MBEDTLS_PRIVATE(early_data_server_buf_len);
 #endif /* MBEDTLS_SSL_SRV_C */
 
-#if defined(MBEDTLS_SSL_CLI_C)
-    /* Pointer to early data buffer to send. */
-    const unsigned char* MBEDTLS_PRIVATE(early_data_buf);
-    /* Length of early data to send. */
-    size_t MBEDTLS_PRIVATE(early_data_len);
-#endif /* MBEDTLS_SSL_CLI_C */
 #endif /* MBEDTLS_ZERO_RTT */
 
 #if defined(MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL) && \
