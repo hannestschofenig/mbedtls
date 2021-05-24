@@ -1792,7 +1792,7 @@ static int ssl_read_end_of_early_data_coordinate( mbedtls_ssl_context* ssl )
 #else /* MBEDTLS_ZERO_RTT */
 static int ssl_read_end_of_early_data_coordinate( mbedtls_ssl_context* ssl )
 {
-    if( ssl->handshake->early_data != MBEDTLS_SSL_EARLY_DATA_ON )
+    if( ssl->handshake->early_data != MBEDTLS_SSL_EARLY_DATA_STATE_ON )
         return( SSL_END_OF_EARLY_DATA_SKIP );
 
     return( SSL_END_OF_EARLY_DATA_EXPECT );
@@ -1961,7 +1961,7 @@ static int ssl_read_early_data_coordinate( mbedtls_ssl_context* ssl )
 {
     int ret;
 
-    if( ssl->handshake->early_data != MBEDTLS_SSL_EARLY_DATA_ON )
+    if( ssl->handshake->early_data != MBEDTLS_SSL_EARLY_DATA_STATE_ON )
         return( SSL_EARLY_DATA_SKIP );
 
     /* Activate early data transform */
@@ -2022,7 +2022,7 @@ static int ssl_read_early_data_parse( mbedtls_ssl_context* ssl,
     else
     {
         MBEDTLS_SSL_DEBUG_MSG( 1, ( "Buffer too small (recv %d bytes, buffer %d bytes)",
-                                    buflen, ssl->early_data_len ) );
+                                    buflen, ssl->early_data_server_buf ) );
         return ( MBEDTLS_ERR_SSL_ALLOC_FAILED );
     }
 
@@ -2426,7 +2426,7 @@ static int ssl_check_use_0rtt_handshake( mbedtls_ssl_context *ssl )
     }
 
     /* Accept 0-RTT */
-    ssl->handshake->early_data = MBEDTLS_SSL_EARLY_DATA_ON;
+    ssl->handshake->early_data = MBEDTLS_SSL_EARLY_DATA_STATE_ON;
     return( 0 );
 }
 #endif /* MBEDTLS_ZERO_RTT*/
@@ -3004,7 +3004,7 @@ static int ssl_client_hello_postprocess( mbedtls_ssl_context* ssl,
     }
 
 #if defined(MBEDTLS_ZERO_RTT)
-    if( ssl->handshake->early_data == MBEDTLS_SSL_EARLY_DATA_ON )
+    if( ssl->handshake->early_data == MBEDTLS_SSL_EARLY_DATA_STATE_ON )
     {
         MBEDTLS_SSL_DEBUG_MSG( 3, ( "Generate 0-RTT keys" ) );
 

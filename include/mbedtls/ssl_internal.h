@@ -828,9 +828,10 @@ struct mbedtls_ssl_handshake_params
 #if defined(MBEDTLS_ZERO_RTT)
     mbedtls_ssl_tls1_3_early_secrets early_secrets;
 
-    /*!< Early data indication:
-    0  -- MBEDTLS_SSL_EARLY_DATA_DISABLED (for no early data), and
-    1  -- MBEDTLS_SSL_EARLY_DATA_ENABLED (for use early data)
+    /*!< Early data state
+       MBEDTLS_SSL_EARLY_DATA_STATE_DISABLED
+       MBEDTLS_SSL_EARLY_DATA_STATE_ON
+       MBEDTLS_SSL_EARLY_DATA_STATE_OFF
     */
     int early_data;
 #endif /* MBEDTLS_ZERO_RTT */

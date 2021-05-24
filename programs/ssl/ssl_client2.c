@@ -3031,8 +3031,6 @@ int main( int argc, char *argv[] )
 
 #if defined(MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL) && defined(MBEDTLS_ZERO_RTT)
     mbedtls_ssl_conf_early_data( &conf, opt.early_data, 0, NULL );
-    mbedtls_ssl_set_early_data( &ssl, (const unsigned char*) early_data,
-                                strlen( early_data ) );
 #endif /* MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL && MBEDTLS_ZERO_RTT */
 
     if( ( ret = mbedtls_ssl_setup( &ssl, &conf ) ) != 0 )
@@ -3134,7 +3132,13 @@ int main( int argc, char *argv[] )
 
     while( ( ret = mbedtls_ssl_handshake( &ssl ) ) != 0 )
     {
-        if( ret != MBEDTLS_ERR_SSL_WANT_READ &&
+        if ( ret == MBEDTLS_ERR_SSL_HANDSHAKE_EARLY_RETURN &&
+             opt.early_data == MBEDTLS_SSL_EARLY_DATA_ENABLED )
+        {
+            ret = mbedtls_ssl_write( &ssl, (const unsigned char*) early_data, strlen(early_data) );
+        }
+        if( ret < 0 &&
+            ret != MBEDTLS_ERR_SSL_WANT_READ &&
             ret != MBEDTLS_ERR_SSL_WANT_WRITE &&
             ret != MBEDTLS_ERR_SSL_CRYPTO_IN_PROGRESS )
         {
@@ -4043,12 +4047,6 @@ reconnect:
         }
 #endif /* MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL */
 
-#if defined(MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL) && defined(MBEDTLS_ZERO_RTT)
-        mbedtls_ssl_set_early_data( &ssl, (const unsigned char*) early_data,
-                                    strlen( early_data ) );
-#endif /* MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL && MBEDTLS_ZERO_RTT */
-
-
         if( ( ret = mbedtls_net_connect( &server_fd,
                         opt.server_addr, opt.server_port,
                         opt.transport == MBEDTLS_SSL_TRANSPORT_STREAM ?
@@ -4072,7 +4070,14 @@ reconnect:
 
         while( ( ret = mbedtls_ssl_handshake( &ssl ) ) != 0 )
         {
-            if( ret != MBEDTLS_ERR_SSL_WANT_READ &&
+            if ( ret == MBEDTLS_ERR_SSL_HANDSHAKE_EARLY_RETURN &&
+                 opt.early_data == MBEDTLS_SSL_EARLY_DATA_ENABLED )
+            {
+                ret = mbedtls_ssl_write( &ssl, (const unsigned char*) early_data, strlen(early_data) );
+            }
+
+            if( ret < 0 &&
+                ret != MBEDTLS_ERR_SSL_WANT_READ &&
                 ret != MBEDTLS_ERR_SSL_WANT_WRITE &&
                 ret != MBEDTLS_ERR_SSL_CRYPTO_IN_PROGRESS )
             {
