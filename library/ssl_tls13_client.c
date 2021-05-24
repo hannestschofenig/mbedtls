@@ -176,7 +176,10 @@ int ssl_write_early_data_process( mbedtls_ssl_context* ssl )
 #endif /* MBEDTLS_SSL_USE_MPS */
 
 #else /* MBEDTLS_ZERO_RTT */
-
+        ((void) buf);
+        ((void) buf_len);
+        ((void) msg);
+        ((void) msg_len);
         /* Should never happen */
         return( MBEDTLS_ERR_SSL_INTERNAL_ERROR );
 
@@ -3414,7 +3417,7 @@ static int ssl_server_hello_postprocess( mbedtls_ssl_context* ssl )
     ret = mbedtls_ssl_tls1_3_key_schedule_stage_early_data( ssl );
     if( ret != 0 )
     {
-        MBEDTLS_SSL_DEBUG_RET( 1, "mbedtls_ssl_tls1_3_establish_early_secret",
+        MBEDTLS_SSL_DEBUG_RET( 1, "mbedtls_ssl_tls1_3_key_schedule_stage_early_data",
                                ret );
         return( ret );
     }

@@ -1672,7 +1672,9 @@ int ssl_read_end_of_early_data_process( mbedtls_ssl_context* ssl );
 
 static int ssl_read_end_of_early_data_coordinate( mbedtls_ssl_context* ssl );
 
+#if defined(MBEDTLS_ZERO_RTT)
 static int ssl_end_of_early_data_fetch( mbedtls_ssl_context* ssl );
+#endif /* MBEDTLS_ZERO_RTT */
 
 /* Update the state after handling the incoming end of early data message. */
 static int ssl_read_end_of_early_data_postprocess( mbedtls_ssl_context* ssl );
@@ -1819,6 +1821,7 @@ int ssl_read_early_data_process( mbedtls_ssl_context* ssl );
 #define SSL_EARLY_DATA_SKIP   0
 #define SSL_EARLY_DATA_EXPECT 1
 
+#if defined(MBEDTLS_ZERO_RTT)
 #if defined(MBEDTLS_SSL_USE_MPS)
 static int ssl_early_data_fetch( mbedtls_ssl_context* ssl,
                                  mbedtls_mps_reader **reader );
@@ -1827,6 +1830,7 @@ static int ssl_early_data_fetch( mbedtls_ssl_context* ssl,
                                  unsigned char** buf,
                                  size_t* buflen );
 #endif /* MBEDTLS_SSL_USE_MPS */
+#endif /* MBEDTLS_ZERO_RTT */
 
 static int ssl_read_early_data_coordinate( mbedtls_ssl_context* ssl );
 
@@ -1898,6 +1902,7 @@ cleanup:
     return( ret );
 }
 
+#if defined(MBEDTLS_ZERO_RTT)
 #if defined(MBEDTLS_SSL_USE_MPS)
 static int ssl_early_data_fetch( mbedtls_ssl_context *ssl,
                                  mbedtls_mps_reader **rd )
@@ -1943,7 +1948,7 @@ cleanup:
     return( ret );
 }
 #endif /* MBEDTLS_SSL_USE_MPS */
-
+#endif /* MBEDTLS_ZERO_RTT */
 
 #if !defined(MBEDTLS_ZERO_RTT)
 static int ssl_read_early_data_coordinate( mbedtls_ssl_context* ssl )
