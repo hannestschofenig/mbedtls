@@ -3875,6 +3875,9 @@ static int ssl_hrr_postprocess( mbedtls_ssl_context* ssl,
 
     ssl->handshake->hello_retry_requests_received++;
 
+    MBEDTLS_SSL_DEBUG_MSG( 4, ( "Reset transform_out" ) );
+    ssl->transform_out = NULL;
+
     MBEDTLS_SSL_DEBUG_MSG( 4, ( "Compress transcript hash for stateless HRR" ) );
     ret = mbedtls_ssl_hash_transcript( ssl );
     if( ret != 0 )
