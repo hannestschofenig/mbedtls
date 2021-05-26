@@ -493,8 +493,10 @@ int main( void )
 
 #if defined(MBEDTLS_ZERO_RTT)
 #define USAGE_EARLY_DATA \
-    "    early_data=%%d        default: 0 (disabled)\n"      \
-    "                        options: 0 (disabled), 1 (enabled)\n"
+    "    early_data=%%d        default: 0 (disabled)\n"             \
+    "                        options: 0     (disabled), "           \
+    "                                 -1    (enabled, unlimited), " \
+    "                                 n > 0 (enabled, max. number of bytes sent as 0-RTT = n)\n"
 #else
 #define USAGE_EARLY_DATA ""
 #endif /* MBEDTLS_ZERO_RTT */
@@ -745,6 +747,7 @@ struct options
     int reproducible;           /* make communication reproducible          */
     unsigned char key_exchange_modes; /* key exchange modes                 */
     int early_data;                   /* support for early data             */
+    int early_data_max;               /* maximum amount of early data       */
     const char *named_groups_string;  /* list of named groups               */
     const char *sig_algs;             /* supported signature algorithms     */
     int query_config_mode;      /* whether to read config                   */
@@ -2066,10 +2069,6 @@ int main( int argc, char *argv[] )
     unsigned char alloc_buf[MEMORY_HEAP_SIZE];
 #endif
 
-#if defined(MBEDTLS_ZERO_RTT)
-    unsigned int max_early_data;
-#endif
-
 #if defined(MBEDTLS_SSL_DTLS_CONNECTION_ID)
     unsigned char cid[MBEDTLS_SSL_CID_IN_LEN_MAX];
     unsigned char cid_renego[MBEDTLS_SSL_CID_IN_LEN_MAX];
@@ -2489,15 +2488,16 @@ int main( int argc, char *argv[] )
 #if defined(MBEDTLS_ZERO_RTT)
         else if( strcmp( p, "early_data" ) == 0 )
         {
-            switch( atoi( q ) )
+            int early_data_val = atoi( q );
+            switch( early_data_val )
             {
                 case 0:
                     opt.early_data = MBEDTLS_SSL_EARLY_DATA_DISABLED;
                     break;
-                case 1:
+                default:
                     opt.early_data = MBEDTLS_SSL_EARLY_DATA_ENABLED;
+                    opt.early_data_max = (size_t) early_data_val;
                     break;
-                default: goto usage;
             }
         }
 #endif /* MBEDTLS_ZERO_RTT */
@@ -3540,9 +3540,9 @@ int main( int argc, char *argv[] )
         mbedtls_ssl_conf_cert_req_ca_list( &conf, opt.cert_req_ca_list );
 
 #if defined(MBEDTLS_ZERO_RTT)
-    max_early_data = 50;
     mbedtls_ssl_conf_early_data( &conf, opt.early_data,
-                                 max_early_data, early_data_callback );
+                                 opt.early_data_max,
+                                 early_data_callback );
 #endif /* MBEDTLS_ZERO_RTT */
 
 #if defined(MBEDTLS_SSL_PROTO_DTLS)

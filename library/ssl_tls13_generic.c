@@ -2755,11 +2755,13 @@ void mbedtls_ssl_conf_early_data( mbedtls_ssl_config* conf, int early_data,
 
     if( early_data == MBEDTLS_SSL_EARLY_DATA_ENABLED )
     {
+        if( max_early_data > MBEDTLS_SSL_MAX_EARLY_DATA )
+            max_early_data = MBEDTLS_SSL_MAX_EARLY_DATA;
+
         conf->max_early_data = max_early_data;
         conf->early_data_callback = early_data_callback;
         /* Only the server uses the early data callback.
-         * For the client this parameter is not used.
-         */
+         * For the client this parameter is not used. */
     }
     else
     {

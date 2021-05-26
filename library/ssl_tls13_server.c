@@ -2016,13 +2016,13 @@ static int ssl_read_early_data_parse( mbedtls_ssl_context* ssl,
         /* copy data to staging area */
         memcpy( ssl->early_data_server_buf, buf, buflen );
         /* execute callback to process application data */
-        ssl->conf->early_data_callback( ssl, (unsigned char*)ssl->early_data_server_buf,
+        ssl->conf->early_data_callback( ssl, ssl->early_data_server_buf,
                                         buflen );
     }
     else
     {
         MBEDTLS_SSL_DEBUG_MSG( 1, ( "Buffer too small (recv %d bytes, buffer %d bytes)",
-                                    buflen, ssl->early_data_server_buf ) );
+                                    buflen, ssl->conf->max_early_data ) );
         return ( MBEDTLS_ERR_SSL_ALLOC_FAILED );
     }
 
