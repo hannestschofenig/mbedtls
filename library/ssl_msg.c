@@ -6423,20 +6423,36 @@ int mbedtls_ssl_write( mbedtls_ssl_context *ssl, const unsigned char *buf, size_
 #endif
 
 #if defined(MBEDTLS_ZERO_RTT)
-    /* TODO: What's the purpose of this check? */
-    if( ( ssl->handshake != NULL ) &&
-        ( ssl->handshake->early_data == MBEDTLS_SSL_EARLY_DATA_OFF ) )
+    /* Finish handshake if cannot send early data. */
+    if( ssl->handshake != NULL &&
+        ( ssl->conf->endpoint == MBEDTLS_SSL_IS_SERVER ||
+          ssl->handshake->early_data != MBEDTLS_SSL_EARLY_DATA_STATE_ON ) )
 #endif /* MBEDTLS_ZERO_RTT */
     {
         if( ssl->state != MBEDTLS_SSL_HANDSHAKE_OVER )
         {
-            if( ( ret = mbedtls_ssl_handshake( ssl ) ) != 0 )
+            ret = mbedtls_ssl_handshake( ssl );
+            if( ret != 0 && ret != MBEDTLS_ERR_SSL_HANDSHAKE_EARLY_RETURN )
             {
                 MBEDTLS_SSL_DEBUG_RET( 1, "mbedtls_ssl_handshake", ret );
                 return( ret );
             }
         }
     }
+
+#if defined(MBEDTLS_ZERO_RTT)
+    if ( ssl->handshake != NULL &&
+         ssl->conf->endpoint == MBEDTLS_SSL_IS_CLIENT &&
+         ssl->handshake->early_data == MBEDTLS_SSL_EARLY_DATA_STATE_ON )
+    {
+        ret = mbedtls_ssl_flush_output( ssl );
+        if (ret != 0 ) {
+            MBEDTLS_SSL_DEBUG_RET( 1, "mbedtls_ssl_flush_output", ret );
+            return ret;
+        }
+        MBEDTLS_SSL_DEBUG_MSG( 2, ( "write early_data" ) );
+    }
+#endif /* MBEDTLS_ZERO_RTT */
 
 #if defined(MBEDTLS_SSL_CBC_RECORD_SPLITTING)
     ret = ssl_write_split( ssl, buf, len );

@@ -3092,7 +3092,7 @@ int mbedtls_ssl_write_early_data_ext( mbedtls_ssl_context *ssl,
             ssl->conf->early_data_enabled == MBEDTLS_SSL_EARLY_DATA_DISABLED )
         {
             MBEDTLS_SSL_DEBUG_MSG( 2, ( "skip write early_data extension" ) );
-            ssl->handshake->early_data = MBEDTLS_SSL_EARLY_DATA_OFF;
+            ssl->handshake->early_data = MBEDTLS_SSL_EARLY_DATA_STATE_DISABLED;
             return( 0 );
         }
     }
@@ -3106,7 +3106,7 @@ int mbedtls_ssl_write_early_data_ext( mbedtls_ssl_context *ssl,
             ssl->conf->early_data_enabled == MBEDTLS_SSL_EARLY_DATA_DISABLED )
         {
             MBEDTLS_SSL_DEBUG_MSG( 2, ( "<= skip write early_data extension" ) );
-            ssl->handshake->early_data = MBEDTLS_SSL_EARLY_DATA_OFF;
+            ssl->handshake->early_data = MBEDTLS_SSL_EARLY_DATA_STATE_DISABLED;
             return( 0 );
         }
     }
@@ -3135,7 +3135,7 @@ int mbedtls_ssl_write_early_data_ext( mbedtls_ssl_context *ssl,
     }
 #endif /* MBEDTLS_SSL_SRV_C */
 
-    ssl->handshake->early_data = MBEDTLS_SSL_EARLY_DATA_ON;
+    ssl->handshake->early_data = MBEDTLS_SSL_EARLY_DATA_STATE_ON;
 
     /* Write extension header */
     *p++ = (unsigned char)( ( MBEDTLS_TLS_EXT_EARLY_DATA >> 8 ) & 0xFF );
