@@ -6494,6 +6494,7 @@ static int ssl_session_load( mbedtls_ssl_session *session,
 #if defined(MBEDTLS_SSL_NEW_SESSION_TICKET) && defined(MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL)
 
     minor_ver = MBEDTLS_SSL_MINOR_VERSION_4; /* TBD: For testing only */
+    session->minor_ver = minor_ver;
 
     if( minor_ver == MBEDTLS_SSL_MINOR_VERSION_4 )
     {
