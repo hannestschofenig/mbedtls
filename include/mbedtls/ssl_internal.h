@@ -1434,7 +1434,8 @@ void mbedtls_ssl_add_hs_hdr_to_checksum( mbedtls_ssl_context *ssl,
                                          unsigned hs_type,
                                          size_t total_hs_len );
 
-int mbedtls_ssl_hash_transcript( mbedtls_ssl_context *ssl );
+/* Reset SSL Context and update hash for handling HRR. */
+int mbedtls_ssl_reset_for_hrr( mbedtls_ssl_context *ssl );
 
 void mbedtls_ssl_set_inbound_transform( mbedtls_ssl_context *ssl,
                                         mbedtls_ssl_transform *transform );
