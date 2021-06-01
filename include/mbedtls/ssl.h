@@ -1285,6 +1285,10 @@ struct mbedtls_ssl_config
     /** Callback to customize X.509 certificate chain verification          */
     int (*f_vrfy)(void *, mbedtls_x509_crt *, int, uint32_t *);
     void *p_vrfy;                   /*!< context for X.509 verify calllback */
+#if defined(MBEDTLS_SSL_SERVER_NAME_INDICATION) && defined(MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL)
+    int (*f_verify_callback)(void *, const mbedtls_x509_crt *, const char *);
+    void *p_verify_callback;
+#endif /* MBEDTLS_SSL_SERVER_NAME_INDICATION && MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL */
 #endif /* MBEDTLS_X509_CRT_PARSE_C */
 
 #if defined(MBEDTLS_KEY_EXCHANGE_SOME_PSK_ENABLED)
@@ -2056,6 +2060,25 @@ int mbedtls_ssl_set_early_data( mbedtls_ssl_context* ssl, const unsigned char* b
 void mbedtls_ssl_conf_verify( mbedtls_ssl_config *conf,
                      int (*f_vrfy)(void *, mbedtls_x509_crt *, int, uint32_t *),
                      void *p_vrfy );
+#if defined(MBEDTLS_SSL_SERVER_NAME_INDICATION) && defined(MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL)
+/**
+ * \brief          Set the verification callback (Optional).
+ *
+ *                 If the application does not explicitly specify a
+ *                 verification callback function, the built-in verification
+ *                 function is used. If a verification callback is specified via
+ *                 mbedtls_ssl_conf_set_verify_callback(), the supplied callback
+ *                 function is called instead. By setting callback to NULL, the
+ *                 default behaviour is restored.
+ *
+ * \param conf              SSL configuration
+ * \param f_verify_callback verification function
+ * \param p_verify_callback verification parameter
+ */
+void mbedtls_ssl_conf_set_verify_callback( mbedtls_ssl_config *conf,
+                     int (*f_verify_callback)(void *, const mbedtls_x509_crt *, const char *),
+                     void *p_verify_callback );
+#endif /* MBEDTLS_SSL_SERVER_NAME_INDICATION && MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL */
 #endif /* MBEDTLS_X509_CRT_PARSE_C */
 
 #if defined(MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL) && defined(MBEDTLS_X509_CRT_PARSE_C)

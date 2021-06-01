@@ -1939,8 +1939,9 @@ static int ssl_read_certificate_validate( mbedtls_ssl_context* ssl )
 {
     int ret = 0;
     int authmode = ssl->conf->authmode;
-    mbedtls_x509_crt* ca_chain;
-    mbedtls_x509_crl* ca_crl;
+    int have_ca_chain = 0;
+    mbedtls_x509_crt* ca_chain = NULL;
+    mbedtls_x509_crl* ca_crl = NULL;
 
     /* If SNI was used, overwrite authentication mode
      * from the configuration. */
@@ -1989,6 +1990,21 @@ static int ssl_read_certificate_validate( mbedtls_ssl_context* ssl )
     }
 
 #if defined(MBEDTLS_SSL_SERVER_NAME_INDICATION)
+    if (ssl->conf->f_verify_callback) {
+      if (ssl->conf->f_verify_callback(
+            ssl->conf->p_verify_callback,
+            ssl->session_negotiate->peer_cert,
+            ssl->hostname) != 0)
+      {
+        ssl->session_negotiate->verify_result |= MBEDTLS_X509_BADCERT_OTHER;
+        ret = MBEDTLS_ERR_X509_CERT_VERIFY_FAILED;
+      }
+      have_ca_chain = 1;
+    }
+    else
+#endif /* MBEDTLS_SSL_SERVER_NAME_INDICATION */
+    {
+#if defined(MBEDTLS_SSL_SERVER_NAME_INDICATION)
     if( ssl->handshake->sni_ca_chain != NULL )
     {
         ca_chain = ssl->handshake->sni_ca_chain;
@@ -2001,6 +2017,8 @@ static int ssl_read_certificate_validate( mbedtls_ssl_context* ssl )
         ca_crl = ssl->conf->ca_crl;
     }
 
+      if( ca_chain != NULL )
+        have_ca_chain = 1;
     /*
      * Main check: verify certificate
      */
@@ -2011,10 +2029,13 @@ static int ssl_read_certificate_validate( mbedtls_ssl_context* ssl )
         ssl->hostname,
         &ssl->session_negotiate->verify_result,
         ssl->conf->f_vrfy, ssl->conf->p_vrfy );
+    }
 
     if( ret != 0 )
     {
         MBEDTLS_SSL_DEBUG_RET( 1, "x509_verify_cert", ret );
+        mbedtls_ssl_send_alert_message(ssl, MBEDTLS_SSL_ALERT_LEVEL_FATAL,
+            MBEDTLS_SSL_ALERT_MSG_CERT_UNKNOWN);
     }
 
     /*
@@ -2061,7 +2082,7 @@ static int ssl_read_certificate_validate( mbedtls_ssl_context* ssl )
         ret = 0;
     }
 
-    if( ca_chain == NULL && authmode == MBEDTLS_SSL_VERIFY_REQUIRED )
+    if( have_ca_chain == 0 && authmode == MBEDTLS_SSL_VERIFY_REQUIRED )
     {
         MBEDTLS_SSL_DEBUG_MSG( 1, ( "got no CA chain" ) );
         ret = MBEDTLS_ERR_SSL_CA_CHAIN_REQUIRED;

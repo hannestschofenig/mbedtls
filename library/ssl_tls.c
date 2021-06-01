@@ -4809,6 +4809,16 @@ void mbedtls_ssl_conf_verify( mbedtls_ssl_config *conf,
     conf->f_vrfy      = f_vrfy;
     conf->p_vrfy      = p_vrfy;
 }
+
+#if defined(MBEDTLS_SSL_SERVER_NAME_INDICATION) && defined(MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL)
+void mbedtls_ssl_conf_set_verify_callback( mbedtls_ssl_config *conf,
+                     int (*f_verify_callback)(void *, const mbedtls_x509_crt *, const char *),
+                     void *p_verify_callback ) {
+    conf->f_verify_callback = f_verify_callback;
+    conf->p_verify_callback = p_verify_callback;
+}
+#endif /* MBEDTLS_SSL_SERVER_NAME_INDICATION && MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL */
+
 #endif /* MBEDTLS_X509_CRT_PARSE_C */
 
 void mbedtls_ssl_conf_rng( mbedtls_ssl_config *conf,
