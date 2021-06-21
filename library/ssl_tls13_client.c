@@ -624,7 +624,7 @@ static int ssl_write_max_fragment_length_ext( mbedtls_ssl_context *ssl,
         return( MBEDTLS_ERR_SSL_BUFFER_TOO_SMALL );
     }
 
-    MBEDTLS_SSL_DEBUG_MSG( 3, ( "client hello, adding max_fragment_length extension" ) );
+    MBEDTLS_SSL_DEBUG_MSG( 3, ( "adding max_fragment_length extension" ) );
 
     *p++ = (unsigned char)( ( MBEDTLS_TLS_EXT_MAX_FRAGMENT_LENGTH >> 8 ) & 0xFF );
     *p++ = (unsigned char)( ( MBEDTLS_TLS_EXT_MAX_FRAGMENT_LENGTH ) & 0xFF );
@@ -1808,7 +1808,13 @@ static int ssl_client_hello_write_partial( mbedtls_ssl_context* ssl,
 #endif /* MBEDTLS_SSL_ALPN */
 
 #if defined(MBEDTLS_SSL_MAX_FRAGMENT_LENGTH)
-    ssl_write_max_fragment_length_ext( ssl, buf, end, &cur_ext_len );
+    if( ( ret = ssl_write_max_fragment_length_ext( ssl, buf,
+                                                   end - buf, &cur_ext_len )  ) != 0 )
+    {
+        MBEDTLS_SSL_DEBUG_RET( 1, "ssl_write_max_fragment_length_ext", ret );
+        return( ret );
+    }
+
     total_ext_len += cur_ext_len;
     buf += cur_ext_len;
 #endif /* MBEDTLS_SSL_MAX_FRAGMENT_LENGTH */
