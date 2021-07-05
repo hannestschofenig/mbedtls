@@ -975,6 +975,7 @@ static mbedtls_tls_prf_types tls_prf_get_type( mbedtls_ssl_tls_prf_cb *tls_prf )
     return( MBEDTLS_SSL_TLS_PRF_NONE );
 }
 #endif /* MBEDTLS_SSL_EXPORT_KEYS */
+#endif /* !defined(MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL) */
 
 int  mbedtls_ssl_tls_prf( const mbedtls_tls_prf_types prf,
                           const unsigned char *secret, size_t slen,
@@ -1015,7 +1016,7 @@ int  mbedtls_ssl_tls_prf( const mbedtls_tls_prf_types prf,
 
     return( tls_prf( secret, slen, label, random, rlen, dstbuf, dlen ) );
 }
-
+#if !defined(MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL)
 /* Type for the TLS PRF */
 typedef int ssl_tls_prf_t(const unsigned char *, size_t, const char *,
                           const unsigned char *, size_t,
@@ -6327,7 +6328,7 @@ static int ssl_session_save( const mbedtls_ssl_session *session,
     }
 #else
     {
-        return ( MBEDTLS_ERR_SSL_INTERNAL_ERROR );
+        return ( MBEDTLS_ERR_SSL_INTERNAL_ERROR ); //TODO::MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL report this error
     }
 #endif /* MBEDTLS_SSL_PROTO_TLS1_2_OR_EARLIER */
 
