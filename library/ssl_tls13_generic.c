@@ -219,6 +219,11 @@ static int ssl_write_change_cipher_spec_coordinate( mbedtls_ssl_context* ssl )
 {
     int ret = SSL_WRITE_CCS_NEEDED;
 
+#if defined(MBEDTLS_SSL_PROTO_QUIC)
+    if (ssl->conf->transport == MBEDTLS_SSL_TRANSPORT_QUIC)
+        return( SSL_WRITE_CCS_SKIP );
+#endif /* MBEDTLS_SSL_PROTO_QUIC */
+
 #if defined(MBEDTLS_SSL_SRV_C)
     if( ssl->conf->endpoint == MBEDTLS_SSL_IS_SERVER )
     {
@@ -2111,6 +2116,10 @@ int mbedtls_ssl_tls13_populate_transform( mbedtls_ssl_transform *transform,
                                           mbedtls_ssl_key_set const *traffic_keys,
                                           mbedtls_ssl_context *ssl /* DEBUG ONLY */ )
 {
+#if defined(MBEDTLS_SSL_PROTO_QUIC)
+    if (ssl->conf->transport == MBEDTLS_SSL_TRANSPORT_QUIC)
+        return 0;
+#endif /* MBEDTLS_SSL_PROTO_QUIC */
     int ret;
     mbedtls_cipher_info_t const *cipher_info;
     const mbedtls_ssl_ciphersuite_t *ciphersuite_info;
@@ -2362,6 +2371,11 @@ static int ssl_finished_out_postprocess( mbedtls_ssl_context* ssl )
                     "mbedtls_ssl_tls1_3_generate_resumption_master_secret ", ret );
             return ( ret );
         }
+
+#if defined(MBEDTLS_SSL_PROTO_QUIC)
+        if (ssl->conf->transport == MBEDTLS_SSL_TRANSPORT_QUIC)
+            mbedtls_set_quic_traffic_key(ssl, MBEDTLS_SSL_CRYPTO_LEVEL_APPLICATION);
+#endif /* MBEDTLS_SSL_PROTO_QUIC */
 
         mbedtls_ssl_handshake_set_state( ssl, MBEDTLS_SSL_FLUSH_BUFFERS );
     }
@@ -2716,6 +2730,49 @@ static int ssl_finished_in_postprocess( mbedtls_ssl_context* ssl )
 
     return( MBEDTLS_ERR_SSL_INTERNAL_ERROR );
 }
+
+#if defined(MBEDTLS_SSL_PROTO_QUIC)
+/**
+ * Install the secrets into the QUIC transport.
+ */
+int mbedtls_set_quic_traffic_key(mbedtls_ssl_context *ssl, mbedtls_ssl_crypto_level level)
+{
+    uint8_t *read_secret = NULL;
+    uint8_t *write_secret = NULL;
+
+    const mbedtls_ssl_ciphersuite_t *ciphersuite_info = ssl->handshake->ciphersuite_info;
+
+    size_t secret_len = mbedtls_hash_size_for_ciphersuite(ciphersuite_info);
+
+    switch (level)
+    {
+        case MBEDTLS_SSL_CRYPTO_LEVEL_HANDSHAKE:
+            ssl->quic_hs_crypto_level = level;
+            read_secret = ssl->handshake->hs_secrets.server_handshake_traffic_secret;
+            write_secret = ssl->handshake->hs_secrets.client_handshake_traffic_secret;
+            break;
+        case MBEDTLS_SSL_CRYPTO_LEVEL_EARLY_DATA:
+            read_secret = NULL;
+            write_secret = ssl->handshake->early_secrets.client_early_traffic_secret;
+            break;
+        case MBEDTLS_SSL_CRYPTO_LEVEL_APPLICATION:
+            ssl->quic_hs_crypto_level = level;
+            read_secret = ssl->session_negotiate->app_secrets.server_application_traffic_secret_N;
+            write_secret = ssl->session_negotiate->app_secrets.client_application_traffic_secret_N;
+            break;
+        default:
+            break;
+    }
+
+    MBEDTLS_SSL_DEBUG_MSG(2, ("setting QUIC secrets, level = %d", level));
+    return ssl->quic_method->set_encryption_secrets(
+            ssl->p_quic_method,
+            level,
+            read_secret,
+            write_secret,
+            secret_len);
+}
+#endif /* MBEDTLS_SSL_PROTO_QUIC */
 
 #if defined(MBEDTLS_ZERO_RTT)
 void mbedtls_ssl_conf_early_data( mbedtls_ssl_config* conf, int early_data,
@@ -3128,6 +3185,51 @@ int mbedtls_ssl_write_early_data_ext( mbedtls_ssl_context *ssl,
     return( 0 );
 }
 #endif /* MBEDTLS_ZERO_RTT */
+
+#if defined(MBEDTLS_SSL_PROTO_QUIC)
+
+/* declared in ssl_internal.h */
+int ssl_set_quic_transport_params(mbedtls_ssl_context *ssl,
+        const uint8_t *params, size_t len,
+        uint8_t **oparams, size_t *olen) 
+{
+    if (len > MBEDTLS_QUIC_TRANSPORT_PARAMS_MAX_LEN)
+    {
+        MBEDTLS_SSL_DEBUG_MSG(1, ("ssl_set_quic_transport_params: bad transport_params length"));
+        return MBEDTLS_ERR_SSL_INTERNAL_ERROR;
+    }
+
+    if ((*oparams = mbedtls_calloc(1, len)) == NULL)
+    {
+        return MBEDTLS_ERR_SSL_ALLOC_FAILED;
+    }
+
+    memcpy(*oparams, params, len);
+    *olen = len;
+
+    return 0;
+}
+
+int mbedtls_ssl_set_quic_transport_params(mbedtls_ssl_context *ssl,
+        const uint8_t *params, size_t len)
+{
+    // Setting transport params more than once is not expected, but
+    // permitted.
+    mbedtls_free(ssl->quic_transport_params);
+    ssl->quic_transport_params = NULL;
+
+    return ssl_set_quic_transport_params(ssl, params, len,
+            &ssl->quic_transport_params, &ssl->quic_transport_params_len);
+}
+
+void mbedtls_ssl_get_peer_quic_transport_params(mbedtls_ssl_context *ssl,
+    const uint8_t **oparams, size_t *olen)
+{
+    *oparams = (const uint8_t*)(ssl->peer_quic_transport_params);
+    *olen = ssl->peer_quic_transport_params_len;
+}
+
+#endif /* MBEDTLS_SSL_PROTO_QUIC */
 
 
 #if defined(MBEDTLS_ECDH_C)

@@ -2402,6 +2402,12 @@ cleanup:
  */
 int mbedtls_ssl_flush_output( mbedtls_ssl_context *ssl )
 {
+#if defined(MBEDTLS_SSL_PROTO_QUIC)
+    // In QUIC mode, we do not employ byte-granular I/O. Therefore,
+    // there is no leftover output to flush.
+    if (ssl->conf->transport == MBEDTLS_SSL_TRANSPORT_QUIC)
+        return 0;
+#endif /* MBEDTLS_SSL_PROTO_QUIC */
     int ret = MBEDTLS_ERR_ERROR_CORRUPTION_DETECTED;
     unsigned char *buf;
 
@@ -3007,6 +3013,22 @@ int mbedtls_ssl_write_handshake_msg_ext( mbedtls_ssl_context *ssl,
  */
 int mbedtls_ssl_write_record( mbedtls_ssl_context *ssl, uint8_t force_flush )
 {
+#if defined(MBEDTLS_SSL_PROTO_QUIC)
+    if (ssl->conf->transport == MBEDTLS_SSL_TRANSPORT_QUIC)
+    {
+        MBEDTLS_SSL_DEBUG_MSG(5, ("=> write record (quic)"));
+
+        ssl->quic_method->add_handshake_data(
+                ssl->p_quic_method,
+                ssl->quic_hs_crypto_level,
+                ssl->out_msg,
+                ssl->out_msglen);
+
+        MBEDTLS_SSL_DEBUG_MSG(5, ("<= write record (quic)"));
+
+        return(0);
+    }
+#endif /* MBEDTLS_SSL_PROTO_QUIC */
     int ret, done = 0;
     size_t len = ssl->out_msglen;
     uint8_t flush = force_flush;
@@ -4261,6 +4283,47 @@ static int ssl_record_is_in_progress( mbedtls_ssl_context *ssl );
 int mbedtls_ssl_read_record( mbedtls_ssl_context *ssl,
                              unsigned update_hs_digest )
 {
+#if defined(MBEDTLS_SSL_PROTO_QUIC)
+    if (ssl->conf->transport == MBEDTLS_SSL_TRANSPORT_QUIC)
+    {
+        if( ssl->keep_current_message == 0 )
+        {
+            /*  Check for sufficient space in the `ssl->in_buf` buffer.
+             *  We can use the entire span of the allocated memory past the `ssl->in_msg`:
+             *
+             *                           *- ssl->in_msg
+             *                          /
+             *                         v
+             * ssl->in_buf = [         |              ...   ]
+             *               |    MBEDTLS_SSL_IN_BUFFER_LEN |
+             */
+            size_t available = MBEDTLS_SSL_IN_BUFFER_LEN -
+                (size_t)( ssl->in_msg - ssl->in_buf );
+
+            size_t len = mbedtls_quic_input_read(
+                    ssl, ssl->quic_hs_crypto_level, ssl->in_msg, available);
+
+            if ( len == 0 ) 
+            {
+                return (MBEDTLS_ERR_SSL_INTERNAL_ERROR);
+            }
+
+            // Successfully read the message, store the length.
+            ssl->in_msglen = len;
+
+            // Mark the message type as handshake
+            ssl->in_msgtype = MBEDTLS_SSL_MSG_HANDSHAKE;
+
+            return mbedtls_ssl_prepare_handshake_record( ssl );
+        }
+        else
+        {
+            MBEDTLS_SSL_DEBUG_MSG( 2, ( "reuse previously read message" ) );
+            ssl->keep_current_message = 0;
+            return 0;
+        }
+    }
+#endif /* MBEDTLS_SSL_PROTO_QUIC */
     int ret = MBEDTLS_ERR_ERROR_CORRUPTION_DETECTED;
 
     MBEDTLS_SSL_DEBUG_MSG( 2, ( "=> read record" ) );
@@ -5333,15 +5396,27 @@ int mbedtls_ssl_send_alert_message( mbedtls_ssl_context *ssl,
 
 #else /* MBEDTLS_SSL_USE_MPS */
 
-    ssl->out_msgtype = MBEDTLS_SSL_MSG_ALERT;
-    ssl->out_msglen = 2;
-    ssl->out_msg[0] = level;
-    ssl->out_msg[1] = message;
-
-    if( ( ret = mbedtls_ssl_write_record( ssl, SSL_FORCE_FLUSH ) ) != 0 )
+#if defined(MBEDTLS_SSL_PROTO_QUIC)
+    if (ssl->conf->transport == MBEDTLS_SSL_TRANSPORT_QUIC)
     {
+        if ( ( ret = ssl->quic_method->send_alert(ssl->p_quic_method, ssl->quic_hs_crypto_level, message ) ) != 0 )
+        {
+            return ret;
+        }
+    }
+    else
+#endif /* MBEDTLS_SSL_PROTO_QUIC */
+    {
+      ssl->out_msgtype = MBEDTLS_SSL_MSG_ALERT;
+      ssl->out_msglen = 2;
+      ssl->out_msg[0] = level;
+      ssl->out_msg[1] = message;
+
+      if( ( ret = mbedtls_ssl_write_record( ssl, SSL_FORCE_FLUSH ) ) != 0 )
+      {
         MBEDTLS_SSL_DEBUG_RET( 1, "mbedtls_ssl_write_record", ret );
         return( ret );
+      }
     }
 
 #endif /* MBEDTLS_SSL_USE_MPS */

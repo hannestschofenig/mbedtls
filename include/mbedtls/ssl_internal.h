@@ -1879,6 +1879,14 @@ int mbedtls_ssl_double_retransmit_timeout( mbedtls_ssl_context *ssl );
 void mbedtls_ssl_reset_retransmit_timeout( mbedtls_ssl_context *ssl );
 #endif /* MBEDTLS_SSL_PROTO_DTLS */
 
+
+#if defined(MBEDTLS_SSL_PROTO_QUIC)
+int mbedtls_set_quic_traffic_key(mbedtls_ssl_context *ssl, mbedtls_ssl_crypto_level level);
+/* Shared implementation for the QUIC transport params setting */
+int ssl_set_quic_transport_params(mbedtls_ssl_context *ssl,
+    const uint8_t *params, size_t len,
+    uint8_t **oparams, size_t *olen);
+#endif
 #if defined(MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL)
 #if defined(MBEDTLS_ECDH_C)
 /**

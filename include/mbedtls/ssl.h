@@ -80,6 +80,10 @@
 #include "psa/crypto.h"
 #endif /* MBEDTLS_USE_PSA_CRYPTO */
 
+#if defined(MBEDTLS_SSL_PROTO_QUIC)
+#include "quic.h"
+#endif /* MBEDTLS_SSL_PROTO_QUIC */
+
 /*
  * SSL Error codes
  */
@@ -222,6 +226,7 @@
 
 #define MBEDTLS_SSL_TRANSPORT_STREAM            0   /*!< TLS      */
 #define MBEDTLS_SSL_TRANSPORT_DATAGRAM          1   /*!< DTLS     */
+#define MBEDTLS_SSL_TRANSPORT_QUIC              2   /*!< QUIC     */
 
 #define MBEDTLS_SSL_MAX_HOST_NAME_LEN           255 /*!< Maximum host name defined in RFC 1035 */
 #define MBEDTLS_SSL_MAX_ALPN_NAME_LEN           255 /*!< Maximum size in bytes of a protocol name in alpn ext., RFC 7301 */
@@ -563,6 +568,10 @@
 
 #define MBEDTLS_TLS_EXT_RENEGOTIATION_INFO      0xFF01
 
+#define MBEDTLS_TLS_EXT_QUIC_TRANSPORT_PARAMS   0xFFA5
+
+#define MBEDTLS_QUIC_TRANSPORT_PARAMS_MAX_LEN   65535
+
 /*
  * Size defines
  */
@@ -848,6 +857,28 @@ typedef enum
 } mbedtls_ssl_ticket_flags;
 
 #endif /* MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL && MBEDTLS_SSL_NEW_SESSION_TICKET */
+
+#if defined(MBEDTLS_SSL_PROTO_QUIC)
+/**
+ * \brief set the QUIC transport params buffer for this endpoint.
+ *
+ * \param ssl        SSL context.
+ * \param params     the QUIC transport params buffer.
+ * \param len        length of the the QUIC transport params buffer.
+ */
+int mbedtls_ssl_set_quic_transport_params(mbedtls_ssl_context *ssl,
+    const uint8_t *params, size_t len);
+
+/**
+ * \brief get the quic transport params for the peer endpoint.
+ *
+ * \param ssl        SSL context.
+ */
+void mbedtls_ssl_get_peer_quic_transport_params(mbedtls_ssl_context *ssl,
+    const uint8_t **params, size_t *len);
+
+int mbedtls_ssl_quic_post_handshake(mbedtls_ssl_context *ssl);
+#endif /* MBEDTLS_SSL_PROTO_QUIC */
 
 #if defined(MBEDTLS_SSL_EXPORT_KEYS) && \
     defined(MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL)
@@ -1487,7 +1518,7 @@ struct mbedtls_ssl_config
      */
 
     unsigned int endpoint : 1;      /*!< 0: client, 1: server               */
-    unsigned int transport : 1;     /*!< stream (TLS) or datagram (DTLS)    */
+    unsigned int transport : 2;     /*!< 0: TLS, 1: DTLS, 2: QUIC           */
     unsigned int authmode : 2;      /*!< MBEDTLS_SSL_VERIFY_XXX             */
     /* needed even with renego disabled for LEGACY_BREAK_HANDSHAKE          */
     unsigned int allow_legacy_renegotiation : 2 ; /*!< MBEDTLS_LEGACY_XXX   */
@@ -1834,6 +1865,39 @@ struct mbedtls_ssl_context
     int early_data_status;
 #endif /* MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL && MBEDTLS_ZERO_RTT && MBEDTLS_SSL_CLI_C */
 
+#if defined(MBEDTLS_SSL_PROTO_QUIC)
+    /*
+     * QUIC method callbacks and the callback context pointer.
+     */
+    mbedtls_quic_method           *quic_method;
+
+    /*
+     * Context parameter for the QUIC method callbacks.
+     */
+    void                          *p_quic_method;
+
+    /*
+     * QUIC outgoing and incoming crypto levels.
+     */
+    mbedtls_ssl_crypto_level      quic_hs_crypto_level;
+
+    /*
+     * The QUIC input data queue.
+     */
+    mbedtls_quic_input            quic_input;
+
+    /*
+     * QUIC transport parameters.
+     */
+    uint8_t                       *quic_transport_params;
+    size_t                        quic_transport_params_len;
+
+    /*
+     * QUIC peer transport parameters.
+     */
+    uint8_t                       *peer_quic_transport_params;
+    size_t                        peer_quic_transport_params_len;
+#endif /* MBEDTLS_SSL_PROTO_QUIC */
 };
 
 #if defined(MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL)

@@ -4483,6 +4483,18 @@ int mbedtls_ssl_setup( mbedtls_ssl_context *ssl,
     else
 #endif /* MBEDTLS_SSL_PROTO_DTLS */
     {
+#if defined(MBEDTLS_SSL_PROTO_QUIC)
+        if (conf->transport == MBEDTLS_SSL_TRANSPORT_QUIC)
+        {
+            mbedtls_quic_input_init(ssl, &ssl->quic_input);
+            if ((ret = mbedtls_quic_input_setup(ssl, &ssl->quic_input)) != 0)
+            {
+                MBEDTLS_SSL_DEBUG_RET( 1, "mbedtls_quic_input_setup", ret );
+                return ret;
+            }
+            ssl->quic_hs_crypto_level = MBEDTLS_SSL_CRYPTO_LEVEL_INITIAL;
+        }
+#endif /* MBEDTLS_SSL_PROTO_QUIC */
         ssl->out_ctr = ssl->out_buf;
         ssl->out_hdr = ssl->out_buf + 8;
         ssl->out_len = ssl->out_buf + 11;
@@ -8068,6 +8080,15 @@ void mbedtls_ssl_free( mbedtls_ssl_context *ssl )
         mbedtls_free( ssl->early_data_server_buf );
     }
 #endif /* MBEDTLS_ZERO_RTT && MBEDTLS_SSL_SRV_C */
+
+#if defined(MBEDTLS_SSL_PROTO_QUIC)
+    if (ssl->conf != NULL && ssl->conf->transport == MBEDTLS_SSL_TRANSPORT_QUIC)
+    {
+        mbedtls_quic_input_free(ssl, &ssl->quic_input);
+        mbedtls_free(ssl->quic_transport_params);
+        mbedtls_free(ssl->peer_quic_transport_params);
+    }
+#endif /* MBEDTLS_SSL_PROTO_QUIC */
 
     MBEDTLS_SSL_DEBUG_MSG( 2, ( "<= free" ) );
 

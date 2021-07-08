@@ -35,6 +35,11 @@
 #endif
 
 #if defined(MBEDTLS_DEBUG_C)
+#include <assert.h>
+#endif
+
+#define MBEDTLS_SSL_DEBUG_QUIC_HS_MSG( level, text, hs_msg ) do { } while ( 0 )
+#if defined(MBEDTLS_DEBUG_C)
 
 #define MBEDTLS_DEBUG_STRIP_PARENS( ... )   __VA_ARGS__
 
@@ -68,6 +73,8 @@
     mbedtls_debug_printf_ecdh( ssl, level, __FILE__, __LINE__, ecdh, attr )
 #endif
 
+#define MBEDTLS_ASSERT(cond) assert(cond)
+
 #else /* MBEDTLS_DEBUG_C */
 
 #define MBEDTLS_SSL_DEBUG_MSG( level, args )            do { } while( 0 )
@@ -77,6 +84,7 @@
 #define MBEDTLS_SSL_DEBUG_ECP( level, text, X )         do { } while( 0 )
 #define MBEDTLS_SSL_DEBUG_CRT( level, text, crt )       do { } while( 0 )
 #define MBEDTLS_SSL_DEBUG_ECDH( level, ecdh, attr )     do { } while( 0 )
+#define MBEDTLS_ASSERT(cond)                            do { } while( 0 )
 
 #endif /* MBEDTLS_DEBUG_C */
 
