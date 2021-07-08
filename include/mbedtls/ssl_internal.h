@@ -1300,10 +1300,6 @@ int mbedtls_ssl_parse_finished( mbedtls_ssl_context *ssl );
 int mbedtls_ssl_write_finished( mbedtls_ssl_context *ssl );
 #endif /* MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL */
 
-#if defined(MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL)
-int mbedtls_ssl_new_session_ticket_process(mbedtls_ssl_context* ssl);
-#endif /* MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL */
-
 #if defined(MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL) && \
     defined(MBEDTLS_ZERO_RTT) && defined(MBEDTLS_SSL_CLI_C)
 /* parse early data extension */
@@ -1545,7 +1541,7 @@ static inline int mbedtls_ssl_get_psk_to_offer( const mbedtls_ssl_context *ssl,
         if( ptrs_present )
         {
             *psk = ssl->session_negotiate->key;
-            *psk_len = ssl->session_negotiate->resumption_key_len;
+            *psk_len = ssl->session_negotiate->key_len;
             *psk_identity = ssl->session_negotiate->ticket;
             *psk_identity_len = ssl->session_negotiate->ticket_len;
         }

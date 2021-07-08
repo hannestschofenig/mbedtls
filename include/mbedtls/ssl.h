@@ -1192,9 +1192,7 @@ struct mbedtls_ssl_session
     unsigned int endpoint : 1;             /*!< 0: client, 1: server */
     mbedtls_ssl_ticket_flags ticket_flags; /*!< Ticket flags */
     uint32_t ticket_age_add;               /*!< Randomly generated value used to obscure the age of the ticket */
-    unsigned char* ticket_nonce;           /*!< Ticket nonce value */
-    uint8_t ticket_nonce_len;              /*!< Ticket nonce length */
-    uint8_t resumption_key_len;            /*!< PSK key length */
+    uint8_t key_len;                       /*!< PSK key length */
 
 #if defined(MBEDTLS_SHA256_C) && !defined(MBEDTLS_SHA512_C)
     unsigned char key[32];                 /*!< key (32 byte) */

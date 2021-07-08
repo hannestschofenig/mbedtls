@@ -641,9 +641,9 @@ int mbedtls_ssl_parse_client_psk_identity_ext(
                      *       function has already been applied.
                      */
                     mbedtls_ssl_set_hs_psk( ssl, ssl->session_negotiate->key,
-                                            ssl->session_negotiate->resumption_key_len );
+                                            ssl->session_negotiate->key_len );
                     MBEDTLS_SSL_DEBUG_BUF( 4, "Ticket-resumed PSK:", ssl->session_negotiate->key,
-                                           ssl->session_negotiate->resumption_key_len );
+                                           ssl->session_negotiate->key_len );
 
                     /* obfuscated ticket age follows the identity field, which is
                      * item_length long, containing the ticket */
@@ -1534,7 +1534,7 @@ static int ssl_write_new_session_ticket_write( mbedtls_ssl_context* ssl,
         return( MBEDTLS_ERR_SSL_INTERNAL_ERROR );
 
     /* In this code the psk key length equals the length of the hash */
-    ssl->session->resumption_key_len = hash_length;
+    ssl->session->key_len = hash_length;
     ssl->session->ciphersuite = ssl->handshake->ciphersuite_info->id;
 
     /* Ticket Lifetime
@@ -1596,7 +1596,7 @@ static int ssl_write_new_session_ticket_write( mbedtls_ssl_context* ssl,
 
     p += MBEDTLS_SSL_TICKET_NONCE_LENGTH;
 
-    ssl->session->resumption_key_len = hash_length;
+    ssl->session->key_len = hash_length;
 
     MBEDTLS_SSL_DEBUG_BUF( 3, "Ticket-resumed PSK",
                            ssl->session->key, hash_length );
