@@ -1705,7 +1705,7 @@
  *
  * Comment this macro to disable support for SSL 3.0
  */
-//#define MBEDTLS_SSL_PROTO_SSL3
+#define MBEDTLS_SSL_PROTO_SSL3
 
 /**
  * \def MBEDTLS_SSL_PROTO_TLS1
@@ -1717,7 +1717,7 @@
  *
  * Comment this macro to disable support for TLS 1.0
  */
-//#define MBEDTLS_SSL_PROTO_TLS1
+#define MBEDTLS_SSL_PROTO_TLS1
 
 /**
  * \def MBEDTLS_SSL_PROTO_TLS1_1
@@ -1729,7 +1729,7 @@
  *
  * Comment this macro to disable support for TLS 1.1 / DTLS 1.0
  */
-//#define MBEDTLS_SSL_PROTO_TLS1_1
+#define MBEDTLS_SSL_PROTO_TLS1_1
 
 /**
  * \def MBEDTLS_SSL_PROTO_TLS1_2
@@ -1741,7 +1741,7 @@
  *
  * Comment this macro to disable support for TLS 1.2 / DTLS 1.2
  */
-//#define MBEDTLS_SSL_PROTO_TLS1_2
+#define MBEDTLS_SSL_PROTO_TLS1_2
 
 /**
  * \def MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL
@@ -1761,7 +1761,7 @@
  * functionality specific to TLS 1.3.
  */
 #define MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL
-
+#define MBEDTLS_SSL_PROTO_TLS1_2_OR_EARLIER
 /* \def MBEDTLS_SSL_TLS13_COMPATIBILITY_MODE
  *
  * Enable TLS 1.3 middlebox compatibility mode.
@@ -1868,7 +1868,7 @@
  *
  * Comment this macro to disable support for DTLS
  */
-//#define MBEDTLS_SSL_PROTO_DTLS
+#define MBEDTLS_SSL_PROTO_DTLS
 
 /**
  * \def MBEDTLS_SSL_ALPN
@@ -1993,6 +1993,7 @@
  * Comment this macro to disable support for key export
  */
 #define MBEDTLS_SSL_EXPORT_KEYS
+
 
 /**
  * \def MBEDTLS_SSL_SERVER_NAME_INDICATION

@@ -3020,10 +3020,12 @@ int main( int argc, char *argv[] )
 #endif /* MBEDTLS_KEY_EXCHANGE_SOME_PSK_ENABLED */
 
     if( opt.min_version != DFL_MIN_VERSION )
+        // TAG for Jerry Yu, This is important for TLS1.3 now
         mbedtls_ssl_conf_min_version( &conf, MBEDTLS_SSL_MAJOR_VERSION_3,
                                       opt.min_version );
 
     if( opt.max_version != DFL_MAX_VERSION )
+        // TAG for Jerry Yu, This is important for TLS1.3 now
         mbedtls_ssl_conf_max_version( &conf, MBEDTLS_SSL_MAJOR_VERSION_3,
                                       opt.max_version );
 

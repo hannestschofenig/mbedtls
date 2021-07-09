@@ -3915,7 +3915,7 @@ static int ssl_hrr_postprocess( mbedtls_ssl_context* ssl,
 /*
  * TLS and DTLS 1.3 State Maschine -- client side
  */
-int mbedtls_ssl_handshake_client_step( mbedtls_ssl_context *ssl )
+int mbedtls_ssl_handshake_client_step_tls1_3( mbedtls_ssl_context *ssl )
 {
     int ret = 0;
 

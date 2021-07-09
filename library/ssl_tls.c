@@ -4416,7 +4416,18 @@ static void ssl_mps_free( mbedtls_ssl_context *ssl )
     mps_alloc_free( &ssl->mps.alloc );
 }
 #endif /* MEDTLS_SSL_USE_MPS */
-
+#if defined(MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL)
+static inline int check_version_config(const mbedtls_ssl_config *conf)
+{
+    if(conf->max_minor_ver==MBEDTLS_SSL_MINOR_VERSION_4
+        && conf->min_minor_ver == MBEDTLS_SSL_MINOR_VERSION_4)
+        return 0;
+    if(conf->max_minor_ver!=MBEDTLS_SSL_MINOR_VERSION_4
+        && conf->min_minor_ver != MBEDTLS_SSL_MINOR_VERSION_4)
+        return 0;
+    return 1;
+}
+#endif
 /*
  * Setup an SSL context
  */
@@ -4425,6 +4436,11 @@ int mbedtls_ssl_setup( mbedtls_ssl_context *ssl,
                        const mbedtls_ssl_config *conf )
 {
     int ret = MBEDTLS_ERR_ERROR_CORRUPTION_DETECTED;
+
+#if defined(MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL)
+    if(check_version_config(conf))
+        return( MBEDTLS_ERR_SSL_BAD_CONFIG );
+#endif
 
 #if !defined(MBEDTLS_SSL_USE_MPS)
     size_t in_buf_len = MBEDTLS_SSL_IN_BUFFER_LEN;
@@ -5193,7 +5209,7 @@ int mbedtls_ssl_set_hs_psk( mbedtls_ssl_context *ssl,
 
     if( psk_len > MBEDTLS_PSK_MAX_LEN )
     {
-        MBEDTLS_SSL_DEBUG_MSG( 1, 
+        MBEDTLS_SSL_DEBUG_MSG( 1,
             ( "PSK length has exceeded MBEDTLS_PSK_MAX_LEN (%u)",
               (unsigned) MBEDTLS_PSK_MAX_LEN ) );
         return( MBEDTLS_ERR_SSL_BAD_INPUT_DATA );
@@ -6854,11 +6870,36 @@ int mbedtls_ssl_handshake_step( mbedtls_ssl_context *ssl )
 
 #if defined(MBEDTLS_SSL_CLI_C)
     if( ssl->conf->endpoint == MBEDTLS_SSL_IS_CLIENT )
+    {
+#if defined(MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL)
+
+        if(ssl->conf->max_major_ver==MBEDTLS_SSL_MAJOR_VERSION_3
+            && ssl->conf->min_major_ver==MBEDTLS_SSL_MAJOR_VERSION_3
+            && ssl->conf->max_minor_ver==MBEDTLS_SSL_MINOR_VERSION_4
+            && ssl->conf->min_minor_ver==MBEDTLS_SSL_MINOR_VERSION_4)
+            ret = mbedtls_ssl_handshake_client_step_tls1_3( ssl );
+        else
+            ret = mbedtls_ssl_handshake_client_step( ssl );
+#else
         ret = mbedtls_ssl_handshake_client_step( ssl );
+#endif
+    }
 #endif
 #if defined(MBEDTLS_SSL_SRV_C)
     if( ssl->conf->endpoint == MBEDTLS_SSL_IS_SERVER )
+    {
+#if defined(MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL)
+        if(ssl->conf->max_major_ver==MBEDTLS_SSL_MAJOR_VERSION_3
+            && ssl->conf->min_major_ver==MBEDTLS_SSL_MAJOR_VERSION_3
+            && ssl->conf->max_minor_ver==MBEDTLS_SSL_MINOR_VERSION_4
+            && ssl->conf->min_minor_ver==MBEDTLS_SSL_MINOR_VERSION_4)
+            ret = mbedtls_ssl_handshake_server_step_tls1_3( ssl );
+        else
+            ret = mbedtls_ssl_handshake_server_step( ssl );
+#else
         ret = mbedtls_ssl_handshake_server_step( ssl );
+#endif
+    }
 #endif
 
     if( ret != 0 )
