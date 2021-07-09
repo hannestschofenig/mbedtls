@@ -975,6 +975,7 @@ static mbedtls_tls_prf_types tls_prf_get_type( mbedtls_ssl_tls_prf_cb *tls_prf )
     return( MBEDTLS_SSL_TLS_PRF_NONE );
 }
 #endif /* MBEDTLS_SSL_EXPORT_KEYS */
+#endif /* !defined(MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL) */
 
 int  mbedtls_ssl_tls_prf( const mbedtls_tls_prf_types prf,
                           const unsigned char *secret, size_t slen,
@@ -1015,7 +1016,7 @@ int  mbedtls_ssl_tls_prf( const mbedtls_tls_prf_types prf,
 
     return( tls_prf( secret, slen, label, random, rlen, dstbuf, dlen ) );
 }
-
+#if !defined(MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL)
 /* Type for the TLS PRF */
 typedef int ssl_tls_prf_t(const unsigned char *, size_t, const char *,
                           const unsigned char *, size_t,
@@ -4415,7 +4416,18 @@ static void ssl_mps_free( mbedtls_ssl_context *ssl )
     mps_alloc_free( &ssl->mps.alloc );
 }
 #endif /* MEDTLS_SSL_USE_MPS */
-
+#if defined(MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL)
+static inline int check_version_config(const mbedtls_ssl_config *conf)
+{
+    if(conf->max_minor_ver==MBEDTLS_SSL_MINOR_VERSION_4 
+        && conf->min_minor_ver == MBEDTLS_SSL_MINOR_VERSION_4)
+        return 0;
+    if(conf->max_minor_ver!=MBEDTLS_SSL_MINOR_VERSION_4 
+        && conf->min_minor_ver != MBEDTLS_SSL_MINOR_VERSION_4)
+        return 0;
+    return 1;
+}
+#endif
 /*
  * Setup an SSL context
  */
@@ -4424,6 +4436,11 @@ int mbedtls_ssl_setup( mbedtls_ssl_context *ssl,
                        const mbedtls_ssl_config *conf )
 {
     int ret = MBEDTLS_ERR_ERROR_CORRUPTION_DETECTED;
+
+#if defined(MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL)
+    if(check_version_config(conf))
+        return( MBEDTLS_ERR_SSL_BAD_CONFIG );
+#endif
 
 #if !defined(MBEDTLS_SSL_USE_MPS)
     size_t in_buf_len = MBEDTLS_SSL_IN_BUFFER_LEN;
@@ -6327,7 +6344,7 @@ static int ssl_session_save( const mbedtls_ssl_session *session,
     }
 #else
     {
-        return ( MBEDTLS_ERR_SSL_INTERNAL_ERROR );
+        return ( MBEDTLS_ERR_SSL_INTERNAL_ERROR ); //TODO::MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL report this error
     }
 #endif /* MBEDTLS_SSL_PROTO_TLS1_2_OR_EARLIER */
 
@@ -6853,11 +6870,36 @@ int mbedtls_ssl_handshake_step( mbedtls_ssl_context *ssl )
 
 #if defined(MBEDTLS_SSL_CLI_C)
     if( ssl->conf->endpoint == MBEDTLS_SSL_IS_CLIENT )
+    {
+#if defined(MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL)
+        
+        if(ssl->conf->max_major_ver==MBEDTLS_SSL_MAJOR_VERSION_3
+            && ssl->conf->min_major_ver==MBEDTLS_SSL_MAJOR_VERSION_3
+            && ssl->conf->max_minor_ver==MBEDTLS_SSL_MINOR_VERSION_4
+            && ssl->conf->min_minor_ver==MBEDTLS_SSL_MINOR_VERSION_4)
+            ret = mbedtls_ssl_handshake_client_step_tls1_3( ssl );
+        else
+            ret = mbedtls_ssl_handshake_client_step( ssl );
+#else
         ret = mbedtls_ssl_handshake_client_step( ssl );
+#endif
+    }
 #endif
 #if defined(MBEDTLS_SSL_SRV_C)
     if( ssl->conf->endpoint == MBEDTLS_SSL_IS_SERVER )
+    {
+#if defined(MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL)
+        if(ssl->conf->max_major_ver==MBEDTLS_SSL_MAJOR_VERSION_3
+            && ssl->conf->min_major_ver==MBEDTLS_SSL_MAJOR_VERSION_3
+            && ssl->conf->max_minor_ver==MBEDTLS_SSL_MINOR_VERSION_4
+            && ssl->conf->min_minor_ver==MBEDTLS_SSL_MINOR_VERSION_4)
+            ret = mbedtls_ssl_handshake_server_step_tls1_3( ssl );
+        else
+            ret = mbedtls_ssl_handshake_server_step( ssl );
+#else
         ret = mbedtls_ssl_handshake_server_step( ssl );
+#endif
+    }
 #endif
 
     if( ret != 0 )

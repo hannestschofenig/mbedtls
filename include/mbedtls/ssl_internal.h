@@ -1169,6 +1169,8 @@ void mbedtls_ssl_handshake_free( mbedtls_ssl_context *ssl );
 
 int mbedtls_ssl_handshake_client_step( mbedtls_ssl_context *ssl );
 int mbedtls_ssl_handshake_server_step( mbedtls_ssl_context *ssl );
+int mbedtls_ssl_handshake_client_step_tls1_3( mbedtls_ssl_context *ssl );
+int mbedtls_ssl_handshake_server_step_tls1_3( mbedtls_ssl_context *ssl );
 void mbedtls_ssl_handshake_wrapup( mbedtls_ssl_context *ssl );
 
 int mbedtls_ssl_handle_pending_alert( mbedtls_ssl_context *ssl );

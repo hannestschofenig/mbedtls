@@ -4271,7 +4271,7 @@ static int ssl_certificate_request_postprocess( mbedtls_ssl_context* ssl )
 /*
  * TLS and DTLS 1.3 State Maschine -- server side
  */
-int mbedtls_ssl_handshake_server_step( mbedtls_ssl_context *ssl )
+int mbedtls_ssl_handshake_server_step_tls1_3( mbedtls_ssl_context *ssl )
 {
     int ret = 0;
 

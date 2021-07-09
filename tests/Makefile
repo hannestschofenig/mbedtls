@@ -69,9 +69,6 @@ endif
 APPS = $(basename $(subst suites/,,$(wildcard suites/test_suite_*.data)))
 
 # remove test_suite_ssl build from TLS1.3 tests
-ifeq ($(MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL),y)
-APPS :=$(filter-out test_suite_ssl,$(APPS))
-endif
 
 # Construct executable name by adding OS specific suffix $(EXEXT).
 BINARIES := $(addsuffix $(EXEXT),$(APPS))
