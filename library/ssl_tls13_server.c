@@ -2959,7 +2959,7 @@ static int ssl_client_hello_parse( mbedtls_ssl_context* ssl,
          * Create stateless transcript hash for HRR
          */
         MBEDTLS_SSL_DEBUG_MSG( 4, ( "Compress transcript hash for stateless HRR" ) );
-        ret = mbedtls_ssl_hash_transcript( ssl );
+        ret = mbedtls_ssl_reset_for_hrr( ssl );
         if( ret != 0 )
         {
             MBEDTLS_SSL_DEBUG_RET( 1, "mbedtls_ssl_hash_transcript", ret );

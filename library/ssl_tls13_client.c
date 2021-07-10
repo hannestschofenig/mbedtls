@@ -3889,26 +3889,40 @@ static int ssl_hrr_postprocess( mbedtls_ssl_context* ssl,
                                 size_t orig_msg_len )
 {
     int ret = 0;
+    unsigned char* buf;
 
-    ssl->handshake->hello_retry_requests_received++;
+    /* Make a local copy the HRR message, this is needed because the
+       SSL context will be reset. */
+    buf = mbedtls_calloc(1, orig_msg_len);
+    if( buf == NULL )
+    {
+        MBEDTLS_SSL_DEBUG_MSG( 1, ( "alloc(%d bytes) failed",
+                                    orig_msg_len ) );
+        return( MBEDTLS_ERR_SSL_ALLOC_FAILED );
+    }
+    memcpy(buf, orig_buf, orig_msg_len);
 
     MBEDTLS_SSL_DEBUG_MSG( 4, ( "Compress transcript hash for stateless HRR" ) );
-    ret = mbedtls_ssl_hash_transcript( ssl );
+    /*  Reset SSL context for HRR. */
+    ret = mbedtls_ssl_reset_for_hrr( ssl );
     if( ret != 0 )
     {
-        MBEDTLS_SSL_DEBUG_RET( 1, "mbedtls_ssl_hash_transcript", ret );
-        return( ret );
+        MBEDTLS_SSL_DEBUG_RET( 1, "mbedtls_ssl_reset_for_hrr", ret );
+        goto cleanup;
     }
+    ssl->handshake->hello_retry_requests_received++;
 
 #if defined(MBEDTLS_SSL_USE_MPS)
     mbedtls_ssl_add_hs_msg_to_checksum( ssl, MBEDTLS_SSL_HS_SERVER_HELLO,
                                         orig_buf, orig_msg_len );
 #else /* MBEDTLS_SSL_USE_MPS */
     /* Add transcript for HRR */
-    ssl->handshake->update_checksum( ssl, orig_buf, orig_msg_len );
+    ssl->handshake->update_checksum( ssl, buf, orig_msg_len );
 #endif /* MBEDTLS_SSL_USE_MPS */
 
-    return( 0 );
+cleanup:
+    mbedtls_free(buf);
+    return( ret );
 }
 
 /*

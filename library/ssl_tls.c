@@ -815,80 +815,142 @@ static int ssl_hash_transcript_core( mbedtls_ssl_context *ssl,
     return( 0 );
 }
 
-#if defined(MBEDTLS_SHA256_C)
-static int ssl_hash_transcript_sha256( mbedtls_ssl_context *ssl )
-{
-    int ret;
-    unsigned char transcript[ 32 + 4 ];
-    size_t olen;
-
-    ret = ssl_hash_transcript_core( ssl, MBEDTLS_MD_SHA256,
-                                    transcript,
-                                    sizeof( transcript ),
-                                    &olen );
-    if( ret != 0 )
-    {
-        MBEDTLS_SSL_DEBUG_RET( 4, "ssl_hash_transcript_core", ret );
-        return( ret );
-    }
-
-    MBEDTLS_SSL_DEBUG_BUF( 4, "Truncated SHA-256 handshake transcript",
-                           transcript, olen );
-
-    mbedtls_sha256_starts_ret( &ssl->handshake->fin_sha256, 0 );
-    ssl_update_checksum_sha256( ssl, transcript, olen );
-
-    return( 0 );
-}
-#endif /* MBEDTLS_SHA256_C */
-
-#if defined(MBEDTLS_SHA512_C)
-static int ssl_hash_transcript_sha384( mbedtls_ssl_context *ssl )
-{
-    int ret;
-    unsigned char transcript[ 48 + 4 ];
-    size_t olen;
-
-    ret = ssl_hash_transcript_core( ssl, MBEDTLS_MD_SHA384,
-                                    transcript,
-                                    sizeof( transcript ),
-                                    &olen );
-    if( ret != 0 )
-        return( ret );
-
-    MBEDTLS_SSL_DEBUG_BUF( 4, "Truncated SHA-384 handshake transcript",
-                           transcript, olen );
-
-    mbedtls_sha512_starts_ret( &ssl->handshake->fin_sha512, 1 );
-    ssl_update_checksum_sha384( ssl, transcript, olen );
-
-    return( 0 );
-}
-#endif /* MBEDTLS_SHA512_C */
-
-/* Replace Transcript-Hash(X) by
+/* Reset SSL context and update hash for handling HRR.
+ *
+ * Replace Transcript-Hash(X) by
  * Transcript-Hash( message_hash     ||
  *                 00 00 Hash.length ||
  *                 X )
+ * A few states of the handshake are preserved, including:
+ *   - session ID
+ *   - session ticket
+ *   - negotiated ciphersuite
  */
-int mbedtls_ssl_hash_transcript( mbedtls_ssl_context *ssl )
+int mbedtls_ssl_reset_for_hrr( mbedtls_ssl_context *ssl )
 {
     int ret = 0;
 
+    /* Save some states that are needed for second hello retry. */
+    /* session id */
+    unsigned char* session_id = NULL;
+    size_t session_id_len;
+    /* session ticket */
+    unsigned char* session_data = NULL;
+    size_t session_data_len;
+
+    void* negotiated_checksum;
+    mbedtls_ecp_group_id negotiated_grp_id;
+
+    session_id_len = ssl->session_negotiate->id_len;
+    session_id = mbedtls_calloc(1, session_id_len);
+    if( session_id == NULL )
+    {
+        MBEDTLS_SSL_DEBUG_MSG( 1, ( "alloc(%d bytes) failed",
+                                    session_id_len ) );
+        return( MBEDTLS_ERR_SSL_ALLOC_FAILED );
+    }
+    memcpy( session_id, ssl->session_negotiate->id, session_id_len );
+
+    if( ssl->handshake->resume != 0 )
+    {
+        mbedtls_ssl_session_save( ssl->session_negotiate, NULL, 0, &session_data_len );
+        session_data = mbedtls_calloc( 1, session_data_len );
+        if( session_data == NULL )
+        {
+            MBEDTLS_SSL_DEBUG_MSG( 1, ( "alloc(%d bytes) failed",
+                                        session_data_len ) );
+            goto cleanup;
+        }
+        if ( (ret = mbedtls_ssl_session_save( ssl->session_negotiate,
+                                              session_data, session_data_len, &session_data_len ) ) != 0 )
+        {
+            MBEDTLS_SSL_DEBUG_RET( 1, "mbedtls_ssl_session_save", ret );
+            goto cleanup;
+        }
+    }
+    negotiated_checksum = ssl->handshake->update_checksum;
+    negotiated_grp_id = ssl->handshake->key_shares_curve_list[0];
+
 #if defined(MBEDTLS_SHA256_C)
-    ret = ssl_hash_transcript_sha256( ssl );
+    unsigned char sha256_transcript[ 32 + 4 ];
+    size_t sha256_olen;
+
+    ret = ssl_hash_transcript_core( ssl, MBEDTLS_MD_SHA256,
+                                    sha256_transcript,
+                                    sizeof( sha256_transcript ),
+                                    &sha256_olen );
     if( ret != 0 )
-        goto exit;
+    {
+        MBEDTLS_SSL_DEBUG_RET( 4, "ssl_hash_transcript_core", ret );
+        goto cleanup;
+    }
+    MBEDTLS_SSL_DEBUG_BUF( 4, "Truncated SHA-256 handshake transcript",
+                           sha256_transcript, sha256_olen );
+#endif
+#if defined(MBEDTLS_SHA512_C)
+    unsigned char sha512_transcript[ 48 + 4 ];
+    size_t sha512_olen;
+
+    ret = ssl_hash_transcript_core( ssl, MBEDTLS_MD_SHA384,
+                                    sha512_transcript,
+                                    sizeof( sha512_transcript ),
+                                    &sha512_olen );
+    if( ret != 0 )
+    {
+        MBEDTLS_SSL_DEBUG_RET( 4, "ssl_hash_transcript_core", ret );
+        goto cleanup;
+    }
+    MBEDTLS_SSL_DEBUG_BUF( 4, "Truncated SHA-384 handshake transcript",
+                           sha512_transcript, sha512_olen );
+#endif
+
+    if( ( ret = mbedtls_ssl_session_reset_int( ssl, 1 ) ) != 0 )
+        goto cleanup;
+
+#if defined(MBEDTLS_SHA256_C)
+    mbedtls_sha256_starts_ret( &ssl->handshake->fin_sha256, 0 );
+    ssl_update_checksum_sha256( ssl, sha256_transcript, sha256_olen );
 #endif /* MBEDTLS_SHA256_C */
 
 #if defined(MBEDTLS_SHA512_C)
-    ret = ssl_hash_transcript_sha384( ssl );
-    if( ret != 0 )
-        goto exit;
+    mbedtls_sha512_starts_ret( &ssl->handshake->fin_sha512, 1 );
+    ssl_update_checksum_sha384( ssl, sha512_transcript, sha512_olen );
 #endif /* MBEDTLS_SHA512_C */
 
-exit:
-    return( 0 );
+    /* Restore session states. */
+
+    /* Restore session ticket if exists previously. */
+    if( session_data != NULL )
+    {
+        mbedtls_ssl_session session;
+        mbedtls_ssl_session_init(&session);
+        if( ( ret = mbedtls_ssl_session_load( &session, session_data, session_data_len ) ) != 0 )
+            goto cleanup;
+
+        if( ( ret = mbedtls_ssl_set_session( ssl, &session ) ) != 0)
+            goto cleanup;
+    }
+    /* Restore session ID.
+       This is needed as resumption does not restore session IDs. */
+    memcpy(ssl->session_negotiate->id, session_id, session_id_len);
+    ssl->session_negotiate->id_len = session_id_len;
+
+    /* Restore negotiated cipher suite. */
+    ssl->handshake->update_checksum = negotiated_checksum;
+
+    if( ssl->handshake->key_shares_curve_list == NULL )
+    {
+        ssl->handshake->key_shares_curve_list = mbedtls_calloc( 2, sizeof( mbedtls_ecp_group_id ) );
+    }
+    ssl->handshake->key_shares_curve_list[0] = negotiated_grp_id;
+    ssl->handshake->key_shares_curve_list[1] = MBEDTLS_ECP_DP_NONE;
+
+cleanup:
+    if( session_id != NULL )
+        mbedtls_free( session_id );
+    if ( session_data != NULL )
+        mbedtls_free( session_data );
+    return ret;
 }
 
 int mbedtls_ssl_get_handshake_transcript( mbedtls_ssl_context *ssl,
