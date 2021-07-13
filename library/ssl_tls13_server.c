@@ -2137,6 +2137,8 @@ static int ssl_client_hello_fetch( mbedtls_ssl_context* ssl,
     if( ( ret = mbedtls_ssl_fetch_input( ssl, 5 ) ) != 0 )
     {
         MBEDTLS_SSL_DEBUG_RET( 1, "mbedtls_ssl_fetch_input", ret );
+        if( ret == MBEDTLS_ERR_SSL_WANT_READ )
+            return ret;
         return( MBEDTLS_ERR_SSL_BAD_HS_CLIENT_HELLO );
     }
 
@@ -2219,6 +2221,7 @@ static int ssl_client_hello_fetch( mbedtls_ssl_context* ssl,
                       mbedtls_ssl_hdr_len( ssl ) + msg_len ) ) != 0 )
     {
         MBEDTLS_SSL_DEBUG_RET( 1, "mbedtls_ssl_fetch_input", ret );
+        if(MBEDTLS_ERR_SSL_WANT_READ==ret) return ret;
         return( MBEDTLS_ERR_SSL_BAD_HS_CLIENT_HELLO );
     }
 

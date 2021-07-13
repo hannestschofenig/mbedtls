@@ -1453,7 +1453,7 @@
  *
  * TODO: Document
  */
-#define MBEDTLS_SSL_USE_MPS
+//#define MBEDTLS_SSL_USE_MPS
 
 /**
  * \def MBEDTLS_SSL_DTLS_CONNECTION_ID

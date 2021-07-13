@@ -2984,7 +2984,8 @@ int mbedtls_ssl_write_handshake_msg_ext( mbedtls_ssl_context *ssl,
         if( ( ret = mbedtls_ssl_write_record( ssl, SSL_FORCE_FLUSH ) ) != 0 )
         {
             MBEDTLS_SSL_DEBUG_RET( 1, "ssl_write_record", ret );
-            return( ret );
+            if(ret != MBEDTLS_ERR_SSL_WANT_WRITE)
+                return( ret );
         }
     }
 
@@ -3179,7 +3180,8 @@ int mbedtls_ssl_write_record( mbedtls_ssl_context *ssl, uint8_t force_flush )
         ( ret = mbedtls_ssl_flush_output( ssl ) ) != 0 )
     {
         MBEDTLS_SSL_DEBUG_RET( 1, "mbedtls_ssl_flush_output", ret );
-        return( ret );
+        if(ret != MBEDTLS_ERR_SSL_WANT_WRITE)
+            return( ret );
     }
 
     MBEDTLS_SSL_DEBUG_MSG( 2, ( "<= write record" ) );
