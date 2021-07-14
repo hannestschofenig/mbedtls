@@ -1177,10 +1177,7 @@ struct mbedtls_ssl_session
 #endif /* MBEDTLS_X509_CRT_PARSE_C */
     uint32_t verify_result;          /*!<  verification result     */
 
-#if defined(MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL)
-    unsigned int key_exchange; /* Indication of the key exchange algorithm being negotiated*/
-    unsigned char key_exchange_modes; /*!< psk key exchange modes */
-#endif /* MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL */
+
 #if ( defined(MBEDTLS_SSL_SESSION_TICKETS) || defined(MBEDTLS_SSL_NEW_SESSION_TICKET) ) && defined(MBEDTLS_SSL_CLI_C)
     unsigned char *ticket;      /*!< RFC 5077 session ticket */
     size_t ticket_len;          /*!< session ticket length   */
@@ -4380,16 +4377,6 @@ const char *mbedtls_ssl_get_ciphersuite( const mbedtls_ssl_context *ssl );
 * \return         mbedtls_key_exchange_type_t
 */
 mbedtls_key_exchange_type_t mbedtls_ssl_get_key_exchange(const mbedtls_ssl_context* ssl);
-
-/**
-* \brief          Return the string identifying the negotiated key exchange mode
-*
-* \param ssl      SSL context
-*
-* \return         string identifying the key exchange mode
-*/
-
-const char* mbedtls_ssl_get_key_exchange_name(const mbedtls_ssl_context* ssl);
 
 #endif /* MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL */
 

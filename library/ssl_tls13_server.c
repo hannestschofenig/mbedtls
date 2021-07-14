@@ -1171,7 +1171,7 @@ static int ssl_parse_key_exchange_modes_ext( mbedtls_ssl_context *ssl,
         }
     }
 
-    ssl->session_negotiate->key_exchange_modes = psk_key_exchange_modes;
+    ssl->handshake->key_exchange_modes = psk_key_exchange_modes;
     return ( 0 );
 }
 #endif /* MBEDTLS_KEY_EXCHANGE_SOME_PSK_ENABLED */
@@ -2341,7 +2341,7 @@ static int ssl_client_hello_has_cert_extensions( mbedtls_ssl_context *ssl )
 static int ssl_client_hello_allows_psk_mode( mbedtls_ssl_context *ssl,
                                              unsigned psk_mode )
 {
-    if( ( ssl->session_negotiate->key_exchange_modes & psk_mode ) != 0 )
+    if( ( ssl->handshake->key_exchange_modes & psk_mode ) != 0 )
     {
         return( 1 );
     }
@@ -2371,7 +2371,7 @@ static int ssl_check_psk_key_exchange( mbedtls_ssl_context *ssl )
         ssl_client_hello_allows_pure_psk( ssl ) )
     {
         MBEDTLS_SSL_DEBUG_MSG( 3, ( "Using a PSK key exchange" ) );
-        ssl->session_negotiate->key_exchange = MBEDTLS_KEY_EXCHANGE_PSK;
+        ssl->handshake->key_exchange = MBEDTLS_KEY_EXCHANGE_PSK;
         return( 1 );
     }
 
@@ -2380,7 +2380,7 @@ static int ssl_check_psk_key_exchange( mbedtls_ssl_context *ssl )
         ssl_client_hello_allows_psk_ecdhe( ssl ) )
     {
         MBEDTLS_SSL_DEBUG_MSG( 3, ( "Using a ECDHE-PSK key exchange" ) );
-        ssl->session_negotiate->key_exchange = MBEDTLS_KEY_EXCHANGE_ECDHE_PSK;
+        ssl->handshake->key_exchange = MBEDTLS_KEY_EXCHANGE_ECDHE_PSK;
         return( 1 );
     }
 
@@ -2396,7 +2396,7 @@ static int ssl_check_certificate_key_exchange( mbedtls_ssl_context *ssl )
     if( !ssl_client_hello_has_cert_extensions( ssl ) )
         return( 0 );
 
-    ssl->session_negotiate->key_exchange = MBEDTLS_KEY_EXCHANGE_ECDHE_ECDSA;
+    ssl->handshake->key_exchange = MBEDTLS_KEY_EXCHANGE_ECDHE_ECDSA;
     return( 1 );
 }
 
@@ -2445,7 +2445,7 @@ static int ssl_client_hello_parse( mbedtls_ssl_context* ssl,
     const mbedtls_ssl_ciphersuite_t* ciphersuite_info;
 
     ssl->handshake->extensions_present = MBEDTLS_SSL_EXT_NONE;
-    ssl->session_negotiate->key_exchange = MBEDTLS_KEY_EXCHANGE_NONE;
+    ssl->handshake->key_exchange = MBEDTLS_KEY_EXCHANGE_NONE;
 
     /* TBD: Refactor */
     orig_buf = buf;
@@ -2906,7 +2906,7 @@ static int ssl_client_hello_parse( mbedtls_ssl_context* ssl,
      *  3 ) Certificate Mode
      */
 
-    ssl->session_negotiate->key_exchange = 0;
+    ssl->handshake->key_exchange = 0;
 
     if( !ssl_check_psk_key_exchange( ssl ) &&
         !ssl_check_certificate_key_exchange( ssl ) )
@@ -3689,8 +3689,8 @@ static int ssl_write_hello_retry_request_write( mbedtls_ssl_context* ssl,
     /* For a pure PSK-based ciphersuite there is no key share to declare.
      * Hence, we focus on ECDHE-EDSA and ECDHE-PSK.
      */
-    if( ssl->session_negotiate->key_exchange == MBEDTLS_KEY_EXCHANGE_ECDHE_ECDSA ||
-        ssl->session_negotiate->key_exchange == MBEDTLS_KEY_EXCHANGE_ECDHE_PSK )
+    if( ssl->handshake->key_exchange == MBEDTLS_KEY_EXCHANGE_ECDHE_ECDSA ||
+        ssl->handshake->key_exchange == MBEDTLS_KEY_EXCHANGE_ECDHE_PSK )
     {
         /* Write extension header */
         *p++ = (unsigned char)( ( MBEDTLS_TLS_EXT_KEY_SHARES >> 8 ) & 0xFF );
@@ -3973,8 +3973,8 @@ static int ssl_server_hello_write( mbedtls_ssl_context* ssl,
      * and if the key exchange supports PSK
      */
     if( ssl->handshake->extensions_present & MBEDTLS_SSL_EXT_PRE_SHARED_KEY && (
-            ssl->session_negotiate->key_exchange == MBEDTLS_KEY_EXCHANGE_ECDHE_PSK ||
-            ssl->session_negotiate->key_exchange == MBEDTLS_KEY_EXCHANGE_PSK ) )
+            ssl->handshake->key_exchange == MBEDTLS_KEY_EXCHANGE_ECDHE_PSK ||
+            ssl->handshake->key_exchange == MBEDTLS_KEY_EXCHANGE_PSK ) )
     {
         ret = ssl_write_server_pre_shared_key_ext( ssl, buf, end,
                                                    &cur_ext_len );
@@ -3995,8 +3995,8 @@ static int ssl_server_hello_write( mbedtls_ssl_context* ssl,
      * and if the appropriate key exchange mechanism was selected
      */
     if( ssl->handshake->extensions_present & MBEDTLS_SSL_EXT_KEY_SHARE && (
-            ssl->session_negotiate->key_exchange == MBEDTLS_KEY_EXCHANGE_ECDHE_PSK ||
-            ssl->session_negotiate->key_exchange == MBEDTLS_KEY_EXCHANGE_ECDHE_ECDSA ) )
+            ssl->handshake->key_exchange == MBEDTLS_KEY_EXCHANGE_ECDHE_PSK ||
+            ssl->handshake->key_exchange == MBEDTLS_KEY_EXCHANGE_ECDHE_ECDSA ) )
     {
         if( ( ret = ssl_write_key_shares_ext( ssl, buf, end, &cur_ext_len ) ) != 0 )
         {
@@ -4165,8 +4165,8 @@ static int ssl_certificate_request_coordinate( mbedtls_ssl_context* ssl )
 {
     int authmode;
 
-    if( ( ssl->session_negotiate->key_exchange == MBEDTLS_KEY_EXCHANGE_PSK ||
-          ssl->session_negotiate->key_exchange == MBEDTLS_KEY_EXCHANGE_ECDHE_PSK ) )
+    if( ( ssl->handshake->key_exchange == MBEDTLS_KEY_EXCHANGE_PSK ||
+          ssl->handshake->key_exchange == MBEDTLS_KEY_EXCHANGE_ECDHE_PSK ) )
         return( SSL_CERTIFICATE_REQUEST_SKIP );
 
 #if !defined(MBEDTLS_KEY_EXCHANGE_ECDHE_ECDSA_ENABLED)

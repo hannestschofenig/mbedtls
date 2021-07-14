@@ -499,6 +499,8 @@ struct mbedtls_ssl_handshake_params
      * Handshake specific crypto variables
      */
 #if defined(MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL)
+    unsigned int key_exchange; /* Indication of the key exchange algorithm being negotiated*/
+    unsigned char key_exchange_modes; /*!< psk key exchange modes */
 #if defined(MBEDTLS_X509_CRT_PARSE_C)
     int received_signature_schemes_list[MBEDTLS_SIGNATURE_SCHEMES_SIZE];              /*!<  Received signature algorithms */
 #endif /* MBEDTLS_X509_CRT_PARSE_C */
@@ -1379,8 +1381,8 @@ static inline int mbedtls_ssl_conf_tls13_pure_ecdhe_enabled( mbedtls_ssl_context
 
 static inline int mbedtls_ssl_tls13_key_exchange_with_psk( mbedtls_ssl_context *ssl )
 {
-    if( ssl->session_negotiate->key_exchange == MBEDTLS_KEY_EXCHANGE_PSK ||
-        ssl->session_negotiate->key_exchange == MBEDTLS_KEY_EXCHANGE_ECDHE_PSK )
+    if( ssl->handshake->key_exchange == MBEDTLS_KEY_EXCHANGE_PSK ||
+        ssl->handshake->key_exchange == MBEDTLS_KEY_EXCHANGE_ECDHE_PSK )
     {
         return( 1 );
     }

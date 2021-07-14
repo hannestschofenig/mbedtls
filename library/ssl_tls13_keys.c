@@ -926,9 +926,9 @@ static int ssl_tls1_3_complete_ephemeral_secret( mbedtls_ssl_context *ssl,
      * Compute ECDHE secret for second stage of secret evolution.
      */
 #if defined(MBEDTLS_KEY_EXCHANGE_SOME_ECDHE_ENABLED)
-    if( ssl->session_negotiate->key_exchange ==
+    if( ssl->handshake->key_exchange ==
           MBEDTLS_KEY_EXCHANGE_ECDHE_PSK ||
-        ssl->session_negotiate->key_exchange ==
+        ssl->handshake->key_exchange ==
           MBEDTLS_KEY_EXCHANGE_ECDHE_ECDSA )
     {
 

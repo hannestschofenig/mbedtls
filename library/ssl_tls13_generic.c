@@ -1028,7 +1028,7 @@ cleanup:
 
 static int ssl_read_certificate_verify_coordinate( mbedtls_ssl_context* ssl )
 {
-    if( ssl->session_negotiate->key_exchange != MBEDTLS_KEY_EXCHANGE_ECDHE_ECDSA )
+    if( ssl->handshake->key_exchange != MBEDTLS_KEY_EXCHANGE_ECDHE_ECDSA )
     {
         return( SSL_CERTIFICATE_VERIFY_SKIP );
     }
@@ -1373,8 +1373,8 @@ static int ssl_write_certificate_coordinate( mbedtls_ssl_context* ssl )
 #endif /* MBEDTLS_SSL_CLI_C */
 
     /* For PSK and ECDHE-PSK ciphersuites there is no certificate to exchange. */
-    if( ssl->session_negotiate->key_exchange == MBEDTLS_KEY_EXCHANGE_PSK ||
-        ssl->session_negotiate->key_exchange == MBEDTLS_KEY_EXCHANGE_ECDHE_PSK )
+    if( ssl->handshake->key_exchange == MBEDTLS_KEY_EXCHANGE_PSK ||
+        ssl->handshake->key_exchange == MBEDTLS_KEY_EXCHANGE_ECDHE_PSK )
     {
         MBEDTLS_SSL_DEBUG_MSG( 2, ( "<= skip write certificate" ) );
         return( SSL_WRITE_CERTIFICATE_SKIP );
@@ -1716,8 +1716,8 @@ static int ssl_read_certificate_coordinate( mbedtls_ssl_context* ssl )
     }
 #endif /* MBEDTLS_SSL_SRV_C */
 
-    if( ssl->session_negotiate->key_exchange == MBEDTLS_KEY_EXCHANGE_PSK ||
-        ssl->session_negotiate->key_exchange == MBEDTLS_KEY_EXCHANGE_ECDHE_PSK )
+    if( ssl->handshake->key_exchange == MBEDTLS_KEY_EXCHANGE_PSK ||
+        ssl->handshake->key_exchange == MBEDTLS_KEY_EXCHANGE_ECDHE_PSK )
     {
         return( SSL_CERTIFICATE_SKIP );
     }
@@ -2017,7 +2017,7 @@ static int ssl_read_certificate_validate( mbedtls_ssl_context* ssl )
 #endif /* MBEDTLS_ECP_C */
 
     if( mbedtls_ssl_check_cert_usage( ssl->session_negotiate->peer_cert,
-                                      ssl->session_negotiate->key_exchange,/*		ciphersuite_info, */
+                                      ssl->handshake->key_exchange,     /*		ciphersuite_info, */
                                       !ssl->conf->endpoint,
                                       &ssl->session_negotiate->verify_result ) != 0 )
     {

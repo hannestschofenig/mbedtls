@@ -3170,16 +3170,9 @@ int main( int argc, char *argv[] )
         }
     }
 
-#if defined(MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL)
-    mbedtls_printf(" ok\n    [ Protocol is %s ]\n    [ Ciphersuite is %s ]\n    [ Key Exchange Mode is %s ]\n",
-                    mbedtls_ssl_get_version(&ssl),
-                    mbedtls_ssl_get_ciphersuite(&ssl),
-                    mbedtls_ssl_get_key_exchange_name(&ssl));
-#else
     mbedtls_printf( " ok\n    [ Protocol is %s ]\n    [ Ciphersuite is %s ]\n",
                     mbedtls_ssl_get_version( &ssl ),
                     mbedtls_ssl_get_ciphersuite( &ssl ) );
-#endif /* MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL */
 
     if( ( ret = mbedtls_ssl_get_record_expansion( &ssl ) ) >= 0 )
         mbedtls_printf( "    [ Record expansion is %d ]\n", ret );
