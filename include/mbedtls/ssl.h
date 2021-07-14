@@ -50,7 +50,12 @@
 #include "mbedtls/dhm.h"
 #endif
 
-#if defined(MBEDTLS_ECDH_C)
+/* Adding guard for MBEDTLS_ECDSA_C to ensure no compile errors due
+ * to guards also being in ssl_srv.c and ssl_cli.c. There is a gap
+ * in functionality that access to ecdh_ctx structure is needed for
+ * MBEDTLS_ECDSA_C which does not seem correct.
+ */
+#if defined(MBEDTLS_ECDH_C) || defined(MBEDTLS_ECDSA_C)
 #include "mbedtls/ecdh.h"
 #endif
 
@@ -162,19 +167,19 @@
 #define MBEDTLS_ERR_LAST 0x7F80 /**< This definition points to the last error code to have a correct parsing in error.c */
 
  /* List of extensions used in ssl_internal.h / extensions_present in mbedtls_ssl_handshake_params */
-#define NO_EXTENSION 0
-#define PRE_SHARED_KEY_EXTENSION 1
-#define KEY_SHARE_EXTENSION 2
-#define SIGNATURE_ALGORITHM_EXTENSION 4
-#define SUPPORTED_GROUPS_EXTENSION 8
-#define MAX_FRAGMENT_LENGTH_EXTENSION 16
-#define ALPN_EXTENSION 32
-#define SUPPORTED_VERSION_EXTENSION 64
-#define PSK_KEY_EXCHANGE_MODES_EXTENSION 128
-#define EARLY_DATA_EXTENSION 256
-#define SERVERNAME_EXTENSION 512
-#define COOKIE_EXTENSION 1024
-#define CID_EXTENSION 2048
+#define MBEDTLS_SSL_EXT_NONE                      0
+#define MBEDTLS_SSL_EXT_PRE_SHARED_KEY            1
+#define MBEDTLS_SSL_EXT_KEY_SHARE                 2
+#define MBEDTLS_SSL_EXT_SIGNATURE_ALGORITHM       4
+#define MBEDTLS_SSL_EXT_SUPPORTED_GROUPS          8
+#define MBEDTLS_SSL_EXT_MAX_FRAGMENT_LENGTH       16
+#define MBEDTLS_SSL_EXT_ALPN                      32
+#define MBEDTLS_SSL_EXT_SUPPORTED_VERSION         64
+#define MBEDTLS_SSL_EXT_PSK_KEY_EXCHANGE_MODES    128
+#define MBEDTLS_SSL_EXT_EARLY_DATA                256
+#define MBEDTLS_SSL_EXT_SERVERNAME                512
+#define MBEDTLS_SSL_EXT_COOKIE                    1024
+#define MBEDTLS_SSL_EXT_CID                       2048
 
 
 /*
@@ -313,6 +318,8 @@
 
 #define  MBEDTLS_SSL_DIRECTION_IN 0
 #define  MBEDTLS_SSL_DIRECTION_OUT 1
+#define MBEDTLS_SSL_DTLS_SRTP_MKI_UNSUPPORTED    0
+#define MBEDTLS_SSL_DTLS_SRTP_MKI_SUPPORTED      1
 
 /*
  * Default range for DTLS retransmission timer value, in milliseconds.
@@ -529,6 +536,8 @@
 #define MBEDTLS_TLS_EXT_SUPPORTED_POINT_FORMATS     11
 
 #define MBEDTLS_TLS_EXT_SIG_ALG                     13
+
+#define MBEDTLS_TLS_EXT_USE_SRTP                    14
 
 #define MBEDTLS_TLS_EXT_ALPN                        16
 
@@ -1093,6 +1102,40 @@ typedef struct
     unsigned char resumption_master_secret           [ MBEDTLS_MD_MAX_SIZE ];
 #endif /* MBEDTLS_SSL_NEW_SESSION_TICKET */
 } mbedtls_ssl_tls1_3_application_secrets;
+#if defined(MBEDTLS_SSL_DTLS_SRTP)
+
+#define MBEDTLS_TLS_SRTP_MAX_MKI_LENGTH             255
+#define MBEDTLS_TLS_SRTP_MAX_PROFILE_LIST_LENGTH    4
+/*
+ * For code readability use a typedef for DTLS-SRTP profiles
+ *
+ * Use_srtp extension protection profiles values as defined in
+ * http://www.iana.org/assignments/srtp-protection/srtp-protection.xhtml
+ *
+ * Reminder: if this list is expanded mbedtls_ssl_check_srtp_profile_value
+ * must be updated too.
+ */
+#define MBEDTLS_TLS_SRTP_AES128_CM_HMAC_SHA1_80     ( (uint16_t) 0x0001)
+#define MBEDTLS_TLS_SRTP_AES128_CM_HMAC_SHA1_32     ( (uint16_t) 0x0002)
+#define MBEDTLS_TLS_SRTP_NULL_HMAC_SHA1_80          ( (uint16_t) 0x0005)
+#define MBEDTLS_TLS_SRTP_NULL_HMAC_SHA1_32          ( (uint16_t) 0x0006)
+/* This one is not iana defined, but for code readability. */
+#define MBEDTLS_TLS_SRTP_UNSET                      ( (uint16_t) 0x0000)
+
+typedef uint16_t mbedtls_ssl_srtp_profile;
+
+typedef struct mbedtls_dtls_srtp_info_t
+{
+    /*! The SRTP profile that was negotiated. */
+    mbedtls_ssl_srtp_profile chosen_dtls_srtp_profile;
+    /*! The length of mki_value. */
+    uint16_t mki_len;
+    /*! The mki_value used, with max size of 256 bytes. */
+    unsigned char mki_value[MBEDTLS_TLS_SRTP_MAX_MKI_LENGTH];
+}
+mbedtls_dtls_srtp_info;
+
+#endif /* MBEDTLS_SSL_DTLS_SRTP */
 
 /*
  * This structure is used for storing current session data.
@@ -1351,11 +1394,12 @@ struct mbedtls_ssl_config
 #if defined(MBEDTLS_KEY_EXCHANGE_SOME_PSK_ENABLED)
 
 #if defined(MBEDTLS_USE_PSA_CRYPTO)
-    psa_key_handle_t psk_opaque; /*!< PSA key slot holding opaque PSK.
-                                  *   This field should only be set via
-                                  *   mbedtls_ssl_conf_psk_opaque().
-                                  *   If either no PSK or a raw PSK have
-                                  *   been configured, this has value \c 0. */
+    psa_key_id_t psk_opaque; /*!< PSA key slot holding opaque PSK. This field
+                              *   should only be set via
+                              *   mbedtls_ssl_conf_psk_opaque().
+                              *   If either no PSK or a raw PSK have been
+                              *   configured, this has value \c 0.
+                              */
 #endif /* MBEDTLS_USE_PSA_CRYPTO */
 
     unsigned char *psk;      /*!< The raw pre-shared key. This field should
@@ -1382,25 +1426,29 @@ struct mbedtls_ssl_config
 
 #if defined(MBEDTLS_ZERO_RTT)
      /*!< Early data indication:
-      *   0  -- MBEDTLS_SSL_EARLY_DATA_DISABLED (for no early data), and
-      *   1  -- MBEDTLS_SSL_EARLY_DATA_ENABLED (for use early data)
+      *   - MBEDTLS_SSL_EARLY_DATA_DISABLED,
+      *   - MBEDTLS_SSL_EARLY_DATA_ENABLED
       */
-    int early_data;
-    // Pointer to early data buffer
-    char* early_data_buf;
-    // Length of early data
-    unsigned int early_data_len;
+    int early_data_enabled;
 #if defined(MBEDTLS_SSL_SRV_C)
-    // Callback function for early data processing is only used by the server-side
-    int(*early_data_callback)(mbedtls_ssl_context*, unsigned char*, size_t);
+    /* Max number of bytes of early data acceptable by the server. */
+    size_t max_early_data;
+    /* Callback function for early data processing (server only). */
+    int(*early_data_callback)(mbedtls_ssl_context*, const unsigned char*, size_t);
 #endif /* MBEDTLS_SSL_SRV_C */
 #endif /* MBEDTLS_ZERO_RTT */
-
 #endif /* MBEDTLS_KEY_EXCHANGE_SOME_PSK_ENABLED */
 
 #if defined(MBEDTLS_SSL_ALPN)
     const char **alpn_list;         /*!< ordered list of protocols          */
 #endif
+
+#if defined(MBEDTLS_SSL_DTLS_SRTP)
+    /*! ordered list of supported srtp profile */
+    const mbedtls_ssl_srtp_profile *dtls_srtp_profile_list;
+    /*! number of supported profiles */
+    size_t dtls_srtp_profile_list_len;
+#endif /* MBEDTLS_SSL_DTLS_SRTP */
 
     /*
      * Numerical settings (int then char)
@@ -1491,8 +1539,11 @@ struct mbedtls_ssl_config
                                              *   record with unexpected CID
                                              *   should lead to failure.    */
 #endif /* MBEDTLS_SSL_DTLS_CONNECTION_ID */
+#if defined(MBEDTLS_SSL_DTLS_SRTP)
+    unsigned int dtls_srtp_mki_support : 1; /* support having mki_value
+                                               in the use_srtp extension     */
+#endif
 };
-
 
 struct mbedtls_ssl_context
 {
@@ -1714,6 +1765,12 @@ struct mbedtls_ssl_context
     uint8_t record_numbers_sent[8];     /*<! Record number list for sent acks */
     uint8_t record_numbers_received[8];     /*<! Record number list for received acks */
 #endif /* MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL && MBEDTLS_SSL_PROTO_DTLS */
+#if defined(MBEDTLS_SSL_DTLS_SRTP)
+    /*
+     * use_srtp extension
+     */
+    mbedtls_dtls_srtp_info dtls_srtp_info;
+#endif /* MBEDTLS_SSL_DTLS_SRTP */
 
     /*
      * Information for DTLS hello verify
@@ -1752,6 +1809,22 @@ struct mbedtls_ssl_context
                             *   Possible values are #MBEDTLS_SSL_CID_ENABLED
                             *   and #MBEDTLS_SSL_CID_DISABLED. */
 #endif /* MBEDTLS_SSL_DTLS_CONNECTION_ID */
+
+#if defined(MBEDTLS_ZERO_RTT)
+
+#if defined(MBEDTLS_SSL_SRV_C)
+    /* Early data buffer allocated by the server. */
+    unsigned char* early_data_server_buf;
+    size_t early_data_server_buf_len;
+#endif /* MBEDTLS_SSL_SRV_C */
+
+#if defined(MBEDTLS_SSL_CLI_C)
+    /* Pointer to early data buffer to send. */
+    const unsigned char* early_data_buf;
+    /* Length of early data to send. */
+    size_t early_data_len;
+#endif /* MBEDTLS_SSL_CLI_C */
+#endif /* MBEDTLS_ZERO_RTT */
 
 #if defined(MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL) && \
     defined(MBEDTLS_ZERO_RTT) && defined(MBEDTLS_SSL_CLI_C)
@@ -1934,7 +2007,7 @@ void mbedtls_ssl_conf_authmode( mbedtls_ssl_config *conf, int authmode );
 * \brief          Set the early_data mode
 *                 Default: disabled on server and client
 *
-* \param conf     SSL configuration
+* \param ssl     SSL context
 * \param early_data can be:
 *
 *  MBEDTLS_SSL_EARLY_DATA_DISABLED:  early data functionality will not be used
@@ -1947,13 +2020,21 @@ void mbedtls_ssl_conf_authmode( mbedtls_ssl_config *conf, int authmode );
 *                        lack of replay protection of the early data application
 *                        payloads.
 *
-* \param buffer  Early data to be transmitted
-*
-* \param len     Length of early data
+* \param max_early_data  Max number of bytes allowed for early data (server only).
+* \param early_data_callback Callback function when early data is received (server
+*                            only).
 */
 #if defined(MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL) && defined(MBEDTLS_ZERO_RTT)
-void mbedtls_ssl_conf_early_data(mbedtls_ssl_config* conf, int early_data, char* buffer, unsigned int len, int(*early_data_callback)(mbedtls_ssl_context*,
-    unsigned char*, size_t));
+void mbedtls_ssl_conf_early_data( mbedtls_ssl_config* conf, int early_data,
+                                  size_t max_early_data,
+                                  int(*early_data_callback)( mbedtls_ssl_context*,
+                                                             const unsigned char*,
+                                                             size_t ) );
+
+#if defined(MBEDTLS_SSL_CLI_C)
+int mbedtls_ssl_set_early_data( mbedtls_ssl_context* ssl, const unsigned char* buffer,
+                                size_t len );
+#endif /* MBEDTLS_SSL_CLI_C */
 #endif /* MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL && MBEDTLS_ZERO_RTT */
 
 #if defined(MBEDTLS_X509_CRT_PARSE_C)
@@ -2550,6 +2631,8 @@ void mbedtls_ssl_conf_export_keys_cb( mbedtls_ssl_config *conf,
  *                  (Default: none.)
  *
  * \note            See \c mbedtls_ssl_export_keys_ext_t.
+ * \warning         Exported key material must not be used for any purpose
+ *                  before the (D)TLS handshake is completed
  *
  * \param conf      SSL configuration context
  * \param f_export_keys_ext Callback for exporting keys
@@ -3404,7 +3487,7 @@ int mbedtls_ssl_conf_psk( mbedtls_ssl_config *conf,
  * \return         An \c MBEDTLS_ERR_SSL_XXX error code on failure.
  */
 int mbedtls_ssl_conf_psk_opaque( mbedtls_ssl_config *conf,
-                                 psa_key_handle_t psk,
+                                 psa_key_id_t psk,
                                  const unsigned char *psk_identity,
                                  size_t psk_identity_len );
 #endif /* MBEDTLS_USE_PSA_CRYPTO */
@@ -3450,7 +3533,7 @@ int mbedtls_ssl_set_hs_psk( mbedtls_ssl_context *ssl,
  * \return         An \c MBEDTLS_ERR_SSL_XXX error code on failure.
  */
 int mbedtls_ssl_set_hs_psk_opaque( mbedtls_ssl_context *ssl,
-                                   psa_key_handle_t psk );
+                                   psa_key_id_t psk );
 #endif /* MBEDTLS_USE_PSA_CRYPTO */
 
 /**
@@ -3785,6 +3868,105 @@ int mbedtls_ssl_conf_alpn_protocols( mbedtls_ssl_config *conf, const char **prot
  */
 const char *mbedtls_ssl_get_alpn_protocol( const mbedtls_ssl_context *ssl );
 #endif /* MBEDTLS_SSL_ALPN */
+
+#if defined(MBEDTLS_SSL_DTLS_SRTP)
+#if defined(MBEDTLS_DEBUG_C)
+static inline const char *mbedtls_ssl_get_srtp_profile_as_string( mbedtls_ssl_srtp_profile profile )
+{
+    switch( profile )
+    {
+        case MBEDTLS_TLS_SRTP_AES128_CM_HMAC_SHA1_80:
+            return( "MBEDTLS_TLS_SRTP_AES128_CM_HMAC_SHA1_80" );
+        case MBEDTLS_TLS_SRTP_AES128_CM_HMAC_SHA1_32:
+            return( "MBEDTLS_TLS_SRTP_AES128_CM_HMAC_SHA1_32" );
+        case MBEDTLS_TLS_SRTP_NULL_HMAC_SHA1_80:
+            return( "MBEDTLS_TLS_SRTP_NULL_HMAC_SHA1_80" );
+        case MBEDTLS_TLS_SRTP_NULL_HMAC_SHA1_32:
+            return( "MBEDTLS_TLS_SRTP_NULL_HMAC_SHA1_32" );
+        default: break;
+    }
+    return( "" );
+}
+#endif /* MBEDTLS_DEBUG_C */
+/**
+ * \brief                   Manage support for mki(master key id) value
+ *                          in use_srtp extension.
+ *                          MKI is an optional part of SRTP used for key management
+ *                          and re-keying. See RFC3711 section 3.1 for details.
+ *                          The default value is
+ *                          #MBEDTLS_SSL_DTLS_SRTP_MKI_UNSUPPORTED.
+ *
+ * \param conf              The SSL configuration to manage mki support.
+ * \param support_mki_value Enable or disable mki usage. Values are
+ *                          #MBEDTLS_SSL_DTLS_SRTP_MKI_UNSUPPORTED
+ *                          or #MBEDTLS_SSL_DTLS_SRTP_MKI_SUPPORTED.
+ */
+void mbedtls_ssl_conf_srtp_mki_value_supported( mbedtls_ssl_config *conf,
+                                                int support_mki_value );
+
+/**
+ * \brief                   Set the supported DTLS-SRTP protection profiles.
+ *
+ * \param conf              SSL configuration
+ * \param profiles          Pointer to a List of MBEDTLS_TLS_SRTP_UNSET terminated
+ *                          supported protection profiles
+ *                          in decreasing preference order.
+ *                          The pointer to the list is recorded by the library
+ *                          for later reference as required, so the lifetime
+ *                          of the table must be at least as long as the lifetime
+ *                          of the SSL configuration structure.
+ *                          The list must not hold more than
+ *                          MBEDTLS_TLS_SRTP_MAX_PROFILE_LIST_LENGTH elements
+ *                          (excluding the terminating MBEDTLS_TLS_SRTP_UNSET).
+ *
+ * \return                  0 on success
+ * \return                  #MBEDTLS_ERR_SSL_BAD_INPUT_DATA when the list of
+ *                          protection profiles is incorrect.
+ */
+int mbedtls_ssl_conf_dtls_srtp_protection_profiles
+                               ( mbedtls_ssl_config *conf,
+                                 const mbedtls_ssl_srtp_profile *profiles );
+
+/**
+ * \brief                  Set the mki_value for the current DTLS-SRTP session.
+ *
+ * \param ssl              SSL context to use.
+ * \param mki_value        The MKI value to set.
+ * \param mki_len          The length of the MKI value.
+ *
+ * \note                   This function is relevant on client side only.
+ *                         The server discovers the mki value during handshake.
+ *                         A mki value set on server side using this function
+ *                         is ignored.
+ *
+ * \return                 0 on success
+ * \return                 #MBEDTLS_ERR_SSL_BAD_INPUT_DATA
+ * \return                 #MBEDTLS_ERR_SSL_FEATURE_UNAVAILABLE
+ */
+int mbedtls_ssl_dtls_srtp_set_mki_value( mbedtls_ssl_context *ssl,
+                                         unsigned char *mki_value,
+                                         uint16_t mki_len );
+/**
+ * \brief                  Get the negotiated DTLS-SRTP informations:
+ *                         Protection profile and MKI value.
+ *
+ * \warning                This function must be called after the handshake is
+ *                         completed. The value returned by this function must
+ *                         not be trusted or acted upon before the handshake completes.
+ *
+ * \param ssl              The SSL context to query.
+ * \param dtls_srtp_info   The negotiated DTLS-SRTP informations:
+ *                         - Protection profile in use.
+ *                         A direct mapping of the iana defined value for protection
+ *                         profile on an uint16_t.
+                   http://www.iana.org/assignments/srtp-protection/srtp-protection.xhtml
+ *                         #MBEDTLS_TLS_SRTP_UNSET if the use of SRTP was not negotiated
+ *                         or peer's Hello packet was not parsed yet.
+ *                         - mki size and value( if size is > 0 ).
+ */
+void mbedtls_ssl_get_dtls_srtp_negotiation_result( const mbedtls_ssl_context *ssl,
+                                                   mbedtls_dtls_srtp_info *dtls_srtp_info );
+#endif /* MBEDTLS_SSL_DTLS_SRTP */
 
 /**
  * \brief          Set the maximum supported version sent from the client side

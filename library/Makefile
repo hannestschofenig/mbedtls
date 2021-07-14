@@ -41,7 +41,7 @@ endif
 
 SOEXT_TLS=so.13
 SOEXT_X509=so.1
-SOEXT_CRYPTO=so.5
+SOEXT_CRYPTO=so.6
 
 # Set AR_DASH= (empty string) to use an ar implementation that does not accept
 # the - prefix for command line options (e.g. llvm-ar)
@@ -134,6 +134,10 @@ OBJS_CRYPTO= \
 	     version.o \
 	     version_features.o \
 	     xtea.o \
+		 ssl_tls13_client.o \
+		 ssl_tls13_generic.o \
+		 ssl_tls13_server.o \
+		 ssl_tls13_keys.o \
 	     # This line is intentionally left blank
 
 include ../3rdparty/Makefile.inc

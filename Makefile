@@ -1,5 +1,7 @@
 DESTDIR=/usr/local
 PREFIX=mbedtls_
+MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL=y
+export MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL
 
 .SILENT:
 
@@ -45,6 +47,7 @@ install: no_test
 
 uninstall:
 	rm -rf $(DESTDIR)/include/mbedtls
+	rm -rf $(DESTDIR)/include/psa
 	rm -f $(DESTDIR)/lib/libmbedtls.*
 	rm -f $(DESTDIR)/lib/libmbedx509.*
 	rm -f $(DESTDIR)/lib/libmbedcrypto.*
@@ -126,12 +129,28 @@ apidoc_clean:
 endif
 
 ## Editor navigation files
-C_SOURCE_FILES = $(wildcard include/*/*/*.h include/*/*.h library/*.[hc] library/*/*.[hc] programs/*/*.[hc] tests/suites/*.function)
+C_SOURCE_FILES = $(wildcard \
+	3rdparty/*/include/*/*.h 3rdparty/*/include/*/*/*.h 3rdparty/*/include/*/*/*/*.h \
+	3rdparty/*/*.c 3rdparty/*/*/*.c 3rdparty/*/*/*/*.c 3rdparty/*/*/*/*/*.c \
+	include/*/*.h \
+	include/*/*/*.h \
+	library/*.[hc] \
+	library/*/*.[hc] \
+	programs/*/*.[hc] \
+	tests/include/*/*.h tests/include/*/*/*.h \
+	tests/src/*.c tests/src/*/*.c \
+	tests/suites/*.function \
+)
 # Exuberant-ctags invocation. Other ctags implementations may require different options.
 CTAGS = ctags --langmap=c:+.h.function -o
 tags: $(C_SOURCE_FILES)
 	$(CTAGS) $@ $(C_SOURCE_FILES)
 TAGS: $(C_SOURCE_FILES)
 	etags -o $@ $(C_SOURCE_FILES)
+global: GPATH GRTAGS GSYMS GTAGS
 GPATH GRTAGS GSYMS GTAGS: $(C_SOURCE_FILES)
 	ls $(C_SOURCE_FILES) | gtags -f - --gtagsconf .globalrc
+cscope: cscope.in.out cscope.po.out cscope.out
+cscope.in.out cscope.po.out cscope.out: $(C_SOURCE_FILES)
+	cscope -bq -u -Iinclude -Ilibrary $(patsubst %,-I%,$(wildcard 3rdparty/*/include)) -Itests/include $(C_SOURCE_FILES)
+.PHONY: cscope global

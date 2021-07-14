@@ -256,26 +256,60 @@ static psa_status_t get_expected_key_size( const psa_key_attributes_t *attribute
                                            size_t *expected_size )
 {
     size_t buffer_size = 0;
-    if( PSA_KEY_LIFETIME_GET_LOCATION( attributes->core.lifetime ) == PSA_KEY_LOCATION_LOCAL_STORAGE )
-    {
-        buffer_size = PSA_KEY_EXPORT_MAX_SIZE( attributes->core.type,
-                                               attributes->core.bits );
+    psa_key_location_t location = PSA_KEY_LIFETIME_GET_LOCATION( attributes->core.lifetime );
+    psa_key_type_t key_type = attributes->core.type;
+    size_t key_bits = attributes->core.bits;
 
-        if( buffer_size == 0 )
+    switch( location )
+    {
+        case PSA_KEY_LOCATION_LOCAL_STORAGE:
+            buffer_size = PSA_KEY_EXPORT_MAX_SIZE( key_type, key_bits );
+
+            if( buffer_size == 0 )
+                return( PSA_ERROR_NOT_SUPPORTED );
+
+            *expected_size = buffer_size;
+            return( PSA_SUCCESS );
+
+#if defined(PSA_CRYPTO_DRIVER_TEST)
+        case PSA_CRYPTO_TEST_DRIVER_LIFETIME:
+#ifdef TEST_DRIVER_KEY_CONTEXT_SIZE_FUNCTION
+            *expected_size = test_size_function( key_type, key_bits );
+            return( PSA_SUCCESS );
+#else /* TEST_DRIVER_KEY_CONTEXT_SIZE_FUNCTION */
+            if( PSA_KEY_TYPE_IS_KEY_PAIR( key_type ) )
+            {
+                int public_key_overhead = ( ( TEST_DRIVER_KEY_CONTEXT_STORE_PUBLIC_KEY == 1 ) ?
+                                           PSA_KEY_EXPORT_MAX_SIZE( key_type, key_bits ) : 0 );
+                *expected_size = TEST_DRIVER_KEY_CONTEXT_BASE_SIZE
+                                 + TEST_DRIVER_KEY_CONTEXT_PUBLIC_KEY_SIZE
+                                 + public_key_overhead;
+            }
+            else if( PSA_KEY_TYPE_IS_PUBLIC_KEY( attributes->core.type ) )
+            {
+                *expected_size = TEST_DRIVER_KEY_CONTEXT_BASE_SIZE
+                                 + TEST_DRIVER_KEY_CONTEXT_PUBLIC_KEY_SIZE;
+            }
+            else if ( !PSA_KEY_TYPE_IS_KEY_PAIR( key_type ) &&
+                      !PSA_KEY_TYPE_IS_PUBLIC_KEY ( attributes->core.type ) )
+            {
+                *expected_size = TEST_DRIVER_KEY_CONTEXT_BASE_SIZE
+                                 + TEST_DRIVER_KEY_CONTEXT_SYMMETRIC_FACTOR
+                                 * ( ( key_bits + 7 ) / 8 );
+            }
+            else
+            {
+                return( PSA_ERROR_NOT_SUPPORTED );
+            }
+            return( PSA_SUCCESS );
+#endif /* TEST_DRIVER_KEY_CONTEXT_SIZE_FUNCTION */
+#endif /* PSA_CRYPTO_DRIVER_TEST */
+
+        default:
             return( PSA_ERROR_NOT_SUPPORTED );
-
-        *expected_size = buffer_size;
-        return( PSA_SUCCESS );
-    }
-    else
-    {
-        /* TBD: opaque driver support: need to calculate size through a
-         * driver-defined size function, since the size of an opaque (wrapped)
-         * key will be different for each implementation. */
-        return( PSA_ERROR_NOT_SUPPORTED );
     }
 }
-#endif /* PSA_CRYPTO_DRIVER_PRESENT */
+#endif /* PSA_CRYPTO_ACCELERATOR_DRIVER_PRESENT */
 
 psa_status_t psa_driver_wrapper_generate_key( const psa_key_attributes_t *attributes,
                                               psa_key_slot_t *slot )
@@ -374,6 +408,87 @@ psa_status_t psa_driver_wrapper_generate_key( const psa_key_attributes_t *attrib
 
     return( PSA_ERROR_NOT_SUPPORTED );
 #endif /* PSA_CRYPTO_DRIVER_PRESENT */
+}
+
+psa_status_t psa_driver_wrapper_validate_key( const psa_key_attributes_t *attributes,
+                                              const uint8_t *data,
+                                              size_t data_length,
+                                              size_t *bits )
+{
+#if defined(PSA_CRYPTO_ACCELERATOR_DRIVER_PRESENT)
+    psa_status_t status = PSA_ERROR_CORRUPTION_DETECTED;
+    /* Try accelerators in turn */
+#if defined(PSA_CRYPTO_DRIVER_TEST)
+    status = test_transparent_validate_key( attributes,
+                                            data,
+                                            data_length,
+                                            bits );
+    /* Declared with fallback == true */
+    if( status != PSA_ERROR_NOT_SUPPORTED )
+        return( status );
+#endif /* PSA_CRYPTO_DRIVER_TEST */
+
+    return( PSA_ERROR_NOT_SUPPORTED );
+#else /* PSA_CRYPTO_ACCELERATOR_DRIVER_PRESENT */
+    (void) attributes;
+    (void) data;
+    (void) data_length;
+    (void) bits;
+    return( PSA_ERROR_NOT_SUPPORTED );
+#endif /* PSA_CRYPTO_DRIVER_PRESENT */
+}
+
+psa_status_t psa_driver_wrapper_export_public_key( const psa_key_slot_t *slot,
+                                                   uint8_t *data,
+                                                   size_t data_size,
+                                                   size_t *data_length )
+{
+#if defined(PSA_CRYPTO_ACCELERATOR_DRIVER_PRESENT)
+    psa_status_t status = PSA_ERROR_INVALID_ARGUMENT;
+    psa_key_location_t location = PSA_KEY_LIFETIME_GET_LOCATION(slot->attr.lifetime);
+    psa_key_attributes_t attributes = {
+      .core = slot->attr
+    };
+
+    switch( location )
+    {
+        case PSA_KEY_LOCATION_LOCAL_STORAGE:
+            /* Key is stored in the slot in export representation, so
+             * cycle through all known transparent accelerators */
+#if defined(PSA_CRYPTO_DRIVER_TEST)
+            status = test_transparent_export_public_key( &attributes,
+                                                         slot->data.key.data,
+                                                         slot->data.key.bytes,
+                                                         data,
+                                                         data_size,
+                                                         data_length );
+            /* Declared with fallback == true */
+            if( status != PSA_ERROR_NOT_SUPPORTED )
+                return( status );
+#endif /* PSA_CRYPTO_DRIVER_TEST */
+            /* Fell through, meaning no accelerator supports this operation */
+            return( PSA_ERROR_NOT_SUPPORTED );
+        /* Add cases for opaque driver here */
+#if defined(PSA_CRYPTO_DRIVER_TEST)
+        case PSA_CRYPTO_TEST_DRIVER_LIFETIME:
+            return( test_opaque_export_public_key( &attributes,
+                                                   slot->data.key.data,
+                                                   slot->data.key.bytes,
+                                                   data,
+                                                   data_size,
+                                                   data_length ) );
+#endif /* PSA_CRYPTO_DRIVER_TEST */
+        default:
+            /* Key is declared with a lifetime not known to us */
+            return( status );
+    }
+#else /* PSA_CRYPTO_ACCELERATOR_DRIVER_PRESENT */
+    (void) slot;
+    (void) data;
+    (void) data_size;
+    (void) data_length;
+    return( PSA_ERROR_NOT_SUPPORTED );
+#endif /* PSA_CRYPTO_ACCELERATOR_DRIVER_PRESENT */
 }
 
 /*
@@ -583,7 +698,7 @@ psa_status_t psa_driver_wrapper_cipher_encrypt_setup(
 #endif /* PSA_CRYPTO_DRIVER_TEST */
         default:
             /* Key is declared with a lifetime not known to us */
-            return( PSA_ERROR_BAD_STATE );
+            return( PSA_ERROR_NOT_SUPPORTED );
     }
 #else /* PSA_CRYPTO_DRIVER_PRESENT */
     (void)slot;
@@ -664,7 +779,7 @@ psa_status_t psa_driver_wrapper_cipher_decrypt_setup(
 #endif /* PSA_CRYPTO_DRIVER_TEST */
         default:
             /* Key is declared with a lifetime not known to us */
-            return( PSA_ERROR_BAD_STATE );
+            return( PSA_ERROR_NOT_SUPPORTED );
     }
 #else /* PSA_CRYPTO_DRIVER_PRESENT */
     (void)slot;
