@@ -176,10 +176,13 @@ int ssl_write_early_data_process( mbedtls_ssl_context* ssl )
 #endif /* MBEDTLS_SSL_USE_MPS */
 
 #else /* MBEDTLS_ZERO_RTT */
+#if defined(MBEDTLS_SSL_USE_MPS)
         ((void) buf);
         ((void) buf_len);
         ((void) msg);
         ((void) msg_len);
+#endif /* MBEDTLS_SSL_USE_MPS */
+        
         /* Should never happen */
         return( MBEDTLS_ERR_SSL_INTERNAL_ERROR );
 
@@ -2725,6 +2728,9 @@ static int ssl_encrypted_extensions_parse( mbedtls_ssl_context* ssl,
     size_t ext_len;
     const unsigned char *ext;
 
+    /* ssl structure is not used when ALPN, 0RTT, and MFL extensions are not used. */
+    ((void) ssl);
+    
     if( buflen < 2 )
     {
         MBEDTLS_SSL_DEBUG_MSG( 1, ( "EncryptedExtension message too short" ) );

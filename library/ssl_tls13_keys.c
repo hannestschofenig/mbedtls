@@ -871,9 +871,12 @@ int mbedtls_ssl_tls1_3_generate_resumption_master_secret(
     int ret = 0;
 
     mbedtls_md_type_t md_type;
+    
+#if defined(MBEDTLS_DEBUG_C)  
     mbedtls_md_info_t const *md_info;
     size_t md_size;
-
+#endif
+    
     unsigned char transcript[MBEDTLS_MD_MAX_SIZE];
     size_t transcript_len;
 
@@ -881,9 +884,11 @@ int mbedtls_ssl_tls1_3_generate_resumption_master_secret(
           ( "=> mbedtls_ssl_tls1_3_generate_resumption_master_secret" ) );
 
     md_type = ssl->handshake->ciphersuite_info->mac;
+#if defined(MBEDTLS_DEBUG_C)
     md_info = mbedtls_md_info_from_type( md_type );
     md_size = mbedtls_md_get_size( md_info );
-
+#endif
+    
     ret = mbedtls_ssl_get_handshake_transcript( ssl, md_type,
                                                 transcript, sizeof( transcript ),
                                                 &transcript_len );
@@ -1153,6 +1158,10 @@ int mbedtls_ssl_tls1_3_create_psk_binder( mbedtls_ssl_context *ssl,
     mbedtls_md_info_t const *md_info = mbedtls_md_info_from_type( md_type );
     size_t const md_size = mbedtls_md_get_size( md_info );
 
+#if !defined(MBEDTLS_DEBUG_C)
+    ((void) ssl);
+#endif
+    
     ret = mbedtls_ssl_tls1_3_evolve_secret( md_type,
                                             NULL,          /* Old secret */
                                             psk, psk_len,  /* Input      */
