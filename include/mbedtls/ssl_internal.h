@@ -685,7 +685,7 @@ struct mbedtls_ssl_handshake_params
 #endif
 #endif /* MBEDTLS_SSL_PROTO_TLS1_2 || MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL */
 
-#if defined(MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL)
+#if 0
     void (*update_checksum)(mbedtls_ssl_context*, const unsigned char*, size_t);
     int (*calc_verify)(mbedtls_ssl_context*, unsigned char*, int);
     int(*calc_finished)(mbedtls_ssl_context*, unsigned char*, int);
@@ -839,12 +839,10 @@ struct mbedtls_ssl_handshake_params
     int early_data;
 #endif /* MBEDTLS_ZERO_RTT */
 
-#else
-    size_t pmslen;                      /*!<  premaster length        */
-
-    unsigned char premaster[MBEDTLS_PREMASTER_SIZE];
-    /*!<  premaster secret        */
 #endif /* MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL */
+    size_t pmslen;                                          /*!<  premaster length        */
+    unsigned char premaster[MBEDTLS_PREMASTER_SIZE];        /*!<  premaster secret        */
+
 
 
     int resume;                         /*!<  session resume indicator*/
@@ -1172,6 +1170,7 @@ int mbedtls_ssl_handshake_server_step( mbedtls_ssl_context *ssl );
 int mbedtls_ssl_handshake_client_step_tls1_3( mbedtls_ssl_context *ssl );
 int mbedtls_ssl_handshake_server_step_tls1_3( mbedtls_ssl_context *ssl );
 void mbedtls_ssl_handshake_wrapup( mbedtls_ssl_context *ssl );
+void mbedtls_ssl_handshake_wrapup_tls13( mbedtls_ssl_context *ssl );
 
 int mbedtls_ssl_handle_pending_alert( mbedtls_ssl_context *ssl );
 
@@ -1282,25 +1281,24 @@ int mbedtls_ssl_write_record( mbedtls_ssl_context *ssl, uint8_t force_flush );
 #if defined(MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL)
 int mbedtls_ssl_read_certificate_process(mbedtls_ssl_context* ssl);
 int mbedtls_ssl_write_certificate_process(mbedtls_ssl_context* ssl);
-#else
+#endif /* MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL */
 int mbedtls_ssl_parse_certificate( mbedtls_ssl_context *ssl );
 int mbedtls_ssl_write_certificate( mbedtls_ssl_context *ssl );
-#endif /* MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL */
+
 
 #if defined(MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL) && defined(MBEDTLS_SSL_TLS13_COMPATIBILITY_MODE)
 int mbedtls_ssl_write_change_cipher_spec_process( mbedtls_ssl_context* ssl );
-#else
+#endif  /* MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL && MBEDTLS_SSL_TLS13_COMPATIBILITY_MODE */
 int mbedtls_ssl_parse_change_cipher_spec( mbedtls_ssl_context *ssl );
 int mbedtls_ssl_write_change_cipher_spec( mbedtls_ssl_context *ssl );
-#endif  /* MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL && MBEDTLS_SSL_TLS13_COMPATIBILITY_MODE */
 
 #if defined(MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL)
 int mbedtls_ssl_finished_in_process( mbedtls_ssl_context* ssl );
 int mbedtls_ssl_finished_out_process( mbedtls_ssl_context* ssl );
-#else
+#endif /* MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL */
 int mbedtls_ssl_parse_finished( mbedtls_ssl_context *ssl );
 int mbedtls_ssl_write_finished( mbedtls_ssl_context *ssl );
-#endif /* MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL */
+
 
 #if defined(MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL)
 int mbedtls_ssl_new_session_ticket_process(mbedtls_ssl_context* ssl);
@@ -1666,16 +1664,15 @@ static inline mbedtls_x509_crt *mbedtls_ssl_own_cert( mbedtls_ssl_context *ssl )
  */
 
 #if defined(MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL)
-int mbedtls_ssl_check_cert_usage(const mbedtls_x509_crt* cert,
+int mbedtls_ssl_check_cert_usage_tls13(const mbedtls_x509_crt* cert,
     const mbedtls_key_exchange_type_t key_exchange,
     int cert_endpoint,
     uint32_t* flags);
-#else
+#endif /* MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL */
 int mbedtls_ssl_check_cert_usage( const mbedtls_x509_crt *cert,
                           const mbedtls_ssl_ciphersuite_t *ciphersuite,
                           int cert_endpoint,
                           uint32_t *flags );
-#endif /* MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL */
 
 #endif /* MBEDTLS_X509_CRT_PARSE_C */
 

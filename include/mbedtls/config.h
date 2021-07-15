@@ -1992,7 +1992,8 @@
  *
  * Comment this macro to disable support for key export
  */
-#define MBEDTLS_SSL_EXPORT_KEYS
+//#define MBEDTLS_SSL_EXPORT_KEYS // TODO: Disable it due to compile fail
+
 
 
 /**

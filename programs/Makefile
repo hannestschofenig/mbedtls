@@ -118,7 +118,7 @@ ifdef TEST_CPP
 APPS += test/cpp_dummy_build$(EXEXT)
 endif
 
-.SILENT:
+# .SILENT:
 
 .PHONY: all clean list fuzz
 

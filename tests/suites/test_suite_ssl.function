@@ -939,7 +939,7 @@ int mbedtls_endpoint_init( mbedtls_endpoint *ep, int endpoint_type, int pk_alg,
     ret = mbedtls_ssl_setup( &( ep->ssl ), &( ep->conf ) );
     TEST_ASSERT( ret == 0 );
 
-#if defined(MBEDTLS_SSL_PROTO_DTLS) && defined(MBEDTLS_SSL_SRV_C)
+#if defined(MBEDTLS_SSL_PROTO_DTLS) && defined(MBEDTLS_SSL_SRV_C) && defined(MBEDTLS_SSL_DTLS_HELLO_VERIFY)
     if( endpoint_type == MBEDTLS_SSL_IS_SERVER && dtls_context != NULL )
          mbedtls_ssl_conf_dtls_cookies( &( ep->conf ), NULL, NULL, NULL );
 #endif

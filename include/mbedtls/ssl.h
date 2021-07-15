@@ -2774,7 +2774,7 @@ void mbedtls_ssl_conf_cookies(mbedtls_ssl_config* conf,
     mbedtls_ssl_cookie_check_t* f_cookie_check,
     void* p_cookie,
     unsigned int rr_conf);
-#else
+#endif /* MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL */
 /**
  * \brief           Register callbacks for DTLS cookies
  *                  (Server only. DTLS only.)
@@ -2807,7 +2807,7 @@ void mbedtls_ssl_conf_dtls_cookies( mbedtls_ssl_config *conf,
                            mbedtls_ssl_cookie_write_t *f_cookie_write,
                            mbedtls_ssl_cookie_check_t *f_cookie_check,
                            void *p_cookie );
-#endif /* MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL */
+
 
 /**
  * \brief          Set client's transport-level identification info.
