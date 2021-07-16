@@ -2850,7 +2850,10 @@ int main( int argc, char *argv[] )
         mbedtls_printf( "Warning: event-driven IO mandates nbio=1 - overwrite\n" );
         opt.nbio = 1;
     }
-
+#if !defined(MBEDTLS_SSL_USE_MPS)
+    // TODO: if test issue #238 , This should be removed
+    opt.nbio = 0;
+#endif
 #if defined(MBEDTLS_DEBUG_C)
     mbedtls_debug_set_threshold( opt.debug_level );
 #endif
