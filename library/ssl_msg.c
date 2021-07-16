@@ -412,7 +412,8 @@ static int ssl_parse_inner_plaintext( unsigned char const *content,
 
 /* `add_data` must have size 13 Bytes if the CID extension is disabled,
  * and 13 + 1 + CID-length Bytes if the CID extension is enabled. */
-static void ssl_extract_add_data_from_record( unsigned char* add_data,
+#if defined(MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL)
+static void ssl_extract_add_data_from_record_tls1_3( unsigned char* add_data,
                                               size_t *add_data_len,
                                               mbedtls_record *rec,
                                               unsigned minor_ver,
@@ -453,7 +454,6 @@ static void ssl_extract_add_data_from_record( unsigned char* add_data,
     unsigned char *cur = add_data;
     size_t ad_len_field = rec->data_len;
 
-#if defined(MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL)
     if( minor_ver == MBEDTLS_SSL_MINOR_VERSION_4 )
     {
         /* In TLS 1.3, the AAD contains the length of the TLSCiphertext,
@@ -462,7 +462,7 @@ static void ssl_extract_add_data_from_record( unsigned char* add_data,
         ad_len_field += taglen;
     }
     else
-#endif /* MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL */
+
     {
         ((void) minor_ver);
         ((void) taglen);
@@ -499,6 +499,82 @@ static void ssl_extract_add_data_from_record( unsigned char* add_data,
 
     *add_data_len = cur - add_data;
 }
+#endif /* MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL */
+static void ssl_extract_add_data_from_record( unsigned char* add_data,
+                                              size_t *add_data_len,
+                                              mbedtls_record *rec,
+                                              unsigned minor_ver)
+{
+    /* Quoting RFC 5246 (TLS 1.2):
+     *
+     *    additional_data = seq_num + TLSCompressed.type +
+     *                      TLSCompressed.version + TLSCompressed.length;
+     *
+     * For the CID extension, this is extended as follows
+     * (quoting draft-ietf-tls-dtls-connection-id-05,
+     *  https://tools.ietf.org/html/draft-ietf-tls-dtls-connection-id-05):
+     *
+     *       additional_data = seq_num + DTLSPlaintext.type +
+     *                         DTLSPlaintext.version +
+     *                         cid +
+     *                         cid_length +
+     *                         length_of_DTLSInnerPlaintext;
+     *
+     * For TLS 1.3, the record sequence number is dropped from the AAD
+     * and encoded within the nonce of the AEAD operation instead.
+     * Moreover, the additional data involves the length of the TLS
+     * ciphertext, not the TLS plaintext as in earlier versions.
+     * Quoting RFC 8446 (TLS 1.3):
+     *
+     *      additional_data = TLSCiphertext.opaque_type ||
+     *                        TLSCiphertext.legacy_record_version ||
+     *                        TLSCiphertext.length
+     *
+     * We pass the tag length to this function in order to compute the
+     * ciphertext length from the inner plaintext length rec->data_len via
+     *
+     *     TLSCiphertext.length = TLSInnerPlaintext.length + taglen.
+     *
+     */
+
+    unsigned char *cur = add_data;
+    size_t ad_len_field = rec->data_len;
+
+
+    ((void) minor_ver);
+    memcpy( cur, rec->ctr, sizeof( rec->ctr ) );
+    cur += sizeof( rec->ctr );
+
+    *cur = rec->type;
+    cur++;
+
+    memcpy( cur, rec->ver, sizeof( rec->ver ) );
+    cur += sizeof( rec->ver );
+
+#if defined(MBEDTLS_SSL_DTLS_CONNECTION_ID)
+    if( rec->cid_len != 0 )
+    {
+        memcpy( cur, rec->cid, rec->cid_len );
+        cur += rec->cid_len;
+
+        *cur = rec->cid_len;
+        cur++;
+
+        cur[0] = ( ad_len_field >> 8 ) & 0xFF;
+        cur[1] = ( ad_len_field >> 0 ) & 0xFF;
+        cur += 2;
+    }
+    else
+#endif /* MBEDTLS_SSL_DTLS_CONNECTION_ID */
+    {
+        cur[0] = ( ad_len_field >> 8 ) & 0xFF;
+        cur[1] = ( ad_len_field >> 0 ) & 0xFF;
+        cur += 2;
+    }
+
+    *add_data_len = cur - add_data;
+}
+
 
 #if defined(MBEDTLS_SSL_PROTO_SSL3)
 
@@ -998,10 +1074,14 @@ int mbedtls_ssl_encrypt_buf( mbedtls_ssl_context *ssl,
          * Build additional data for AEAD encryption.
          * This depends on the TLS version.
          */
-        ssl_extract_add_data_from_record( add_data, &add_data_len, rec,
+#if defined(MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL)
+        ssl_extract_add_data_from_record_tls1_3( add_data, &add_data_len, rec,
                                           transform->minor_ver,
                                           transform->taglen );
-
+#else
+        ssl_extract_add_data_from_record( add_data, &add_data_len, rec,
+                                          transform->minor_ver);
+#endif
         MBEDTLS_SSL_DEBUG_BUF( 4, "IV used (internal)",
                                iv, transform->ivlen );
         MBEDTLS_SSL_DEBUG_BUF( 4, "IV used (transmitted)",
@@ -1573,9 +1653,14 @@ int mbedtls_ssl_decrypt_buf( mbedtls_ssl_context const *ssl,
         }
 
         rec->data_len -= transform->taglen;
-        ssl_extract_add_data_from_record( add_data, &add_data_len, rec,
+#if defined(MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL)
+        ssl_extract_add_data_from_record_tls1_3( add_data, &add_data_len, rec,
                                           transform->minor_ver,
                                           transform->taglen );
+#else
+        ssl_extract_add_data_from_record( add_data, &add_data_len, rec,
+                                          transform->minor_ver);
+#endif /* MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL */
         MBEDTLS_SSL_DEBUG_BUF( 4, "additional data used for AEAD",
                                add_data, add_data_len );
 
@@ -2792,6 +2877,12 @@ void mbedtls_ssl_recv_flight_completed( mbedtls_ssl_context *ssl )
         ssl->handshake->retransmit_state = MBEDTLS_SSL_RETRANS_PREPARING;
 }
 
+static void ssl_reset_retransmit_timeout( mbedtls_ssl_context *ssl )
+{
+    ssl->handshake->retransmit_timeout = ssl->conf->hs_timeout_min;
+    MBEDTLS_SSL_DEBUG_MSG( 3, ( "update timeout value to %lu millisecs",
+                        (unsigned long) ssl->handshake->retransmit_timeout ) );
+}
 /*
  * To be called when the last message of an outgoing flight is send.
  */
@@ -5854,7 +5945,7 @@ static int ssl_handle_hs_message_post_handshake_tls12( mbedtls_ssl_context *ssl 
      * - For server-side, expect CLIENT_HELLO.
      * - Fail (TLS) or silently drop record (DTLS) in other cases.
      */
-
+    int ret; // TODO: optimizied later base on SSL options
 #if defined(MBEDTLS_SSL_CLI_C)
     if( ssl->conf->endpoint == MBEDTLS_SSL_IS_CLIENT &&
         ( ssl->in_msg[0] != MBEDTLS_SSL_HS_HELLO_REQUEST ||

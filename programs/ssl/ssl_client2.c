@@ -2151,7 +2151,10 @@ int main( int argc, char *argv[] )
         mbedtls_printf( "Warning: event-driven IO mandates nbio=1 - overwrite\n" );
         opt.nbio = 1;
     }
-
+#if !defined(MBEDTLS_SSL_USE_MPS)
+    // TODO: if test issue #238 , This should be removed
+    opt.nbio = 0;
+#endif
 #if defined(MBEDTLS_DEBUG_C)
     mbedtls_debug_set_threshold( opt.debug_level );
 #endif
@@ -3017,10 +3020,12 @@ int main( int argc, char *argv[] )
 #endif /* MBEDTLS_KEY_EXCHANGE_SOME_PSK_ENABLED */
 
     if( opt.min_version != DFL_MIN_VERSION )
+        // TAG for Jerry Yu, This is important for TLS1.3 now
         mbedtls_ssl_conf_min_version( &conf, MBEDTLS_SSL_MAJOR_VERSION_3,
                                       opt.min_version );
 
     if( opt.max_version != DFL_MAX_VERSION )
+        // TAG for Jerry Yu, This is important for TLS1.3 now
         mbedtls_ssl_conf_max_version( &conf, MBEDTLS_SSL_MAJOR_VERSION_3,
                                       opt.max_version );
 

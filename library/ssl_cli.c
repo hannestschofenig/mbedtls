@@ -1717,7 +1717,11 @@ static int ssl_parse_supported_point_formats_ext( mbedtls_ssl_context *ssl,
             p[0] == MBEDTLS_ECP_PF_COMPRESSED )
         {
 #if defined(MBEDTLS_ECDH_C) || defined(MBEDTLS_ECDSA_C)
+#if defined(MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL)
+            ssl->handshake->ecdh_ctx[0].point_format = p[0];
+#else
             ssl->handshake->ecdh_ctx.point_format = p[0];
+#endif
 #endif
 #if defined(MBEDTLS_KEY_EXCHANGE_ECJPAKE_ENABLED)
             ssl->handshake->ecjpake_ctx.point_format = p[0];
@@ -2655,7 +2659,11 @@ static int ssl_check_server_ecdh_params( const mbedtls_ssl_context *ssl )
     const mbedtls_ecp_curve_info *curve_info;
     mbedtls_ecp_group_id grp_id;
 #if defined(MBEDTLS_ECDH_LEGACY_CONTEXT)
+#if defined(MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL)
+    grp_id = ssl->handshake->ecdh_ctx[0].grp.id;
+#else
     grp_id = ssl->handshake->ecdh_ctx.grp.id;
+#endif
 #else
     grp_id = ssl->handshake->ecdh_ctx.grp_id;
 #endif
@@ -2677,7 +2685,11 @@ static int ssl_check_server_ecdh_params( const mbedtls_ssl_context *ssl )
 #endif
         return( -1 );
 
+#if defined(MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL)
+    MBEDTLS_SSL_DEBUG_ECDH( 3, &ssl->handshake->ecdh_ctx[0],
+#else
     MBEDTLS_SSL_DEBUG_ECDH( 3, &ssl->handshake->ecdh_ctx,
+#endif
                             MBEDTLS_DEBUG_ECDH_QP );
 
     return( 0 );
@@ -2767,7 +2779,11 @@ static int ssl_parse_server_ecdh_params( mbedtls_ssl_context *ssl,
      *     ECPoint      public;
      * } ServerECDHParams;
      */
+#if defined(MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL)
+    if( ( ret = mbedtls_ecdh_read_params( &ssl->handshake->ecdh_ctx[0],
+#else
     if( ( ret = mbedtls_ecdh_read_params( &ssl->handshake->ecdh_ctx,
+#endif
                                   (const unsigned char **) p, end ) ) != 0 )
     {
         MBEDTLS_SSL_DEBUG_RET( 1, ( "mbedtls_ecdh_read_params" ), ret );
@@ -3834,7 +3850,11 @@ static int ssl_write_client_key_exchange( mbedtls_ssl_context *ssl )
         }
 #endif
 
+#if defined(MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL)
+        ret = mbedtls_ecdh_make_public( &ssl->handshake->ecdh_ctx[0],
+#else
         ret = mbedtls_ecdh_make_public( &ssl->handshake->ecdh_ctx,
+#endif
                                 &content_len,
                                 &ssl->out_msg[header_len], 1000,
                                 ssl->conf->f_rng, ssl->conf->p_rng );
@@ -3848,7 +3868,11 @@ static int ssl_write_client_key_exchange( mbedtls_ssl_context *ssl )
             return( ret );
         }
 
+#if defined(MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL)
+        MBEDTLS_SSL_DEBUG_ECDH( 3, &ssl->handshake->ecdh_ctx[0],
+#else
         MBEDTLS_SSL_DEBUG_ECDH( 3, &ssl->handshake->ecdh_ctx,
+#endif
                                 MBEDTLS_DEBUG_ECDH_Q );
 
 #if defined(MBEDTLS_SSL_ECP_RESTARTABLE_ENABLED)
@@ -3862,7 +3886,11 @@ ecdh_calc_secret:
         if( ssl->handshake->ecrs_enabled )
             content_len = ssl->handshake->ecrs_n;
 #endif
+#if defined(MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL)
+        if( ( ret = mbedtls_ecdh_calc_secret( &ssl->handshake->ecdh_ctx[0],
+#else
         if( ( ret = mbedtls_ecdh_calc_secret( &ssl->handshake->ecdh_ctx,
+#endif
                                   &ssl->handshake->pmslen,
                                   ssl->handshake->premaster,
                                   MBEDTLS_MPI_MAX_SIZE,
@@ -3876,7 +3904,11 @@ ecdh_calc_secret:
             return( ret );
         }
 
+#if defined(MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL)
+        MBEDTLS_SSL_DEBUG_ECDH( 3, &ssl->handshake->ecdh_ctx[0],
+#else
         MBEDTLS_SSL_DEBUG_ECDH( 3, &ssl->handshake->ecdh_ctx,
+#endif
                                 MBEDTLS_DEBUG_ECDH_Z );
     }
     else
@@ -3987,7 +4019,11 @@ ecdh_calc_secret:
             /*
              * ClientECDiffieHellmanPublic public;
              */
+#if defined(MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL)
+            ret = mbedtls_ecdh_make_public( &ssl->handshake->ecdh_ctx[0],
+#else
             ret = mbedtls_ecdh_make_public( &ssl->handshake->ecdh_ctx,
+#endif
                     &content_len,
                     &ssl->out_msg[header_len],
                     MBEDTLS_SSL_OUT_CONTENT_LEN - header_len,
@@ -3998,7 +4034,11 @@ ecdh_calc_secret:
                 return( ret );
             }
 
+#if defined(MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL)
+            MBEDTLS_SSL_DEBUG_ECDH( 3, &ssl->handshake->ecdh_ctx[0],
+#else
             MBEDTLS_SSL_DEBUG_ECDH( 3, &ssl->handshake->ecdh_ctx,
+#endif
                                     MBEDTLS_DEBUG_ECDH_Q );
         }
         else

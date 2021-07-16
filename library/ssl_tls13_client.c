@@ -3914,7 +3914,7 @@ static int ssl_hrr_postprocess( mbedtls_ssl_context* ssl,
 /*
  * TLS and DTLS 1.3 State Maschine -- client side
  */
-int mbedtls_ssl_handshake_client_step( mbedtls_ssl_context *ssl )
+int mbedtls_ssl_handshake_client_step_tls1_3( mbedtls_ssl_context *ssl )
 {
     int ret = 0;
 
@@ -4271,7 +4271,7 @@ int mbedtls_ssl_handshake_client_step( mbedtls_ssl_context *ssl )
             mbedtls_ssl_set_outbound_transform( ssl, ssl->transform_application );
 #endif /* MBEDTLS_SSL_USE_MPS */
 
-            mbedtls_ssl_handshake_wrapup( ssl );
+            mbedtls_ssl_handshake_wrapup_tls13( ssl );
             mbedtls_ssl_handshake_set_state( ssl, MBEDTLS_SSL_HANDSHAKE_OVER );
             break;
 
