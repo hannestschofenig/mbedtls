@@ -527,7 +527,7 @@ static void build_mock_transforms( mbedtls_mps_transform_wrap_t *ptr0,
     ptr1->mock.enabled = enabled;
     ptr1->mock.pad     = pad;
 }
-
+#if 0 //dirty fix compile warning
 static void write_version( int major, int minor, int transport,
                            unsigned char ver[2] )
 {
@@ -571,7 +571,7 @@ static void read_version( int *major, int *minor, int transport,
         *minor = ver[1];
     }
 }
-
+#endif //dirty fix compile warning
 #define CHK( x )                                \
     do                                          \
     {                                           \
