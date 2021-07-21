@@ -1899,6 +1899,13 @@ int mbedtls_ssl_get_early_data_status( mbedtls_ssl_context *ssl )
     return( ssl->early_data_status );
 }
 
+int mbedtls_ssl_is_init_finished( mbedtls_ssl_context *ssl )
+{
+    if( ssl->state != MBEDTLS_SSL_HANDSHAKE_OVER )
+        return 0;
+    return 1;
+}
+
 #endif /* MBEDTLS_ZERO_RTT */
 
 #if ( defined(MBEDTLS_ECDH_C) || defined(MBEDTLS_ECDSA_C) )
