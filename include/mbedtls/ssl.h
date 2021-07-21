@@ -821,6 +821,16 @@ typedef struct mbedtls_ssl_flight_item mbedtls_ssl_flight_item;
  *                 of 0-RTT and the server has accepted it.
  */
 int mbedtls_ssl_get_early_data_status( mbedtls_ssl_context *ssl );
+
+/**
+ * \brief Get whether the init of the SSL has finised.
+ *
+ * \param ssl  The SSL context to query.
+ *
+ * \returns    1 if SSL init has finished, i.e., handshake has completed.
+ */
+int mbedtls_ssl_is_init_finished( mbedtls_ssl_context *ssl );
+
 #endif /* MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL && MBEDTLS_ZERO_RTT && MBEDTLS_SSL_CLI_C */
 
 #if defined(MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL) && defined(MBEDTLS_SSL_NEW_SESSION_TICKET)
