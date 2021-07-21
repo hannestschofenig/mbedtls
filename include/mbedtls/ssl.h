@@ -168,19 +168,19 @@
 #define MBEDTLS_ERR_LAST 0x7F80 /**< This definition points to the last error code to have a correct parsing in error.c */
 
  /* List of extensions used in ssl_internal.h / extensions_present in mbedtls_ssl_handshake_params */
-#define NO_EXTENSION 0
-#define PRE_SHARED_KEY_EXTENSION 1
-#define KEY_SHARE_EXTENSION 2
-#define SIGNATURE_ALGORITHM_EXTENSION 4
-#define SUPPORTED_GROUPS_EXTENSION 8
-#define MAX_FRAGMENT_LENGTH_EXTENSION 16
-#define ALPN_EXTENSION 32
-#define SUPPORTED_VERSION_EXTENSION 64
-#define PSK_KEY_EXCHANGE_MODES_EXTENSION 128
-#define EARLY_DATA_EXTENSION 256
-#define SERVERNAME_EXTENSION 512
-#define COOKIE_EXTENSION 1024
-#define CID_EXTENSION 2048
+#define MBEDTLS_SSL_EXT_NONE                      0
+#define MBEDTLS_SSL_EXT_PRE_SHARED_KEY            1
+#define MBEDTLS_SSL_EXT_KEY_SHARE                 2
+#define MBEDTLS_SSL_EXT_SIGNATURE_ALGORITHM       4
+#define MBEDTLS_SSL_EXT_SUPPORTED_GROUPS          8
+#define MBEDTLS_SSL_EXT_MAX_FRAGMENT_LENGTH       16
+#define MBEDTLS_SSL_EXT_ALPN                      32
+#define MBEDTLS_SSL_EXT_SUPPORTED_VERSION         64
+#define MBEDTLS_SSL_EXT_PSK_KEY_EXCHANGE_MODES    128
+#define MBEDTLS_SSL_EXT_EARLY_DATA                256
+#define MBEDTLS_SSL_EXT_SERVERNAME                512
+#define MBEDTLS_SSL_EXT_COOKIE                    1024
+#define MBEDTLS_SSL_EXT_CID                       2048
 
 
 /*
@@ -612,42 +612,7 @@ union mbedtls_ssl_premaster_secret
 extern "C" {
 #endif
 
-#if defined(MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL)
-    typedef enum
-    {
-        MBEDTLS_SSL_HELLO_REQUEST,
-        MBEDTLS_SSL_CLIENT_HELLO,
-        MBEDTLS_SSL_SERVER_HELLO,
-        MBEDTLS_SSL_HELLO_RETRY_REQUEST,
-        MBEDTLS_SSL_SECOND_CLIENT_HELLO,
-        MBEDTLS_SSL_SECOND_SERVER_HELLO,
-        MBEDTLS_SSL_CERTIFICATE_REQUEST,
-        MBEDTLS_SSL_SERVER_CERTIFICATE,
-        MBEDTLS_SSL_CERTIFICATE_VERIFY,
-        MBEDTLS_SSL_SERVER_FINISHED,
-        MBEDTLS_SSL_EARLY_DATA,
-        MBEDTLS_SSL_END_OF_EARLY_DATA,
-        MBEDTLS_SSL_CLIENT_CERTIFICATE,
-        MBEDTLS_SSL_CLIENT_CERTIFICATE_VERIFY,
-        MBEDTLS_SSL_CLIENT_FINISHED,
-        MBEDTLS_SSL_ENCRYPTED_EXTENSIONS,
-        MBEDTLS_SSL_FLUSH_BUFFERS,
-        MBEDTLS_SSL_HANDSHAKE_WRAPUP,
-        MBEDTLS_SSL_HANDSHAKE_FINISH_ACK,
-        MBEDTLS_SSL_HANDSHAKE_OVER,
-        MBEDTLS_SSL_SERVER_NEW_SESSION_TICKET,
-        MBEDTLS_SSL_CLIENT_NEW_SESSION_TICKET,
-#if defined(MBEDTLS_SSL_TLS13_COMPATIBILITY_MODE)
-        MBEDTLS_SSL_CLIENT_CCS_BEFORE_2ND_CLIENT_HELLO,
-        MBEDTLS_SSL_CLIENT_CCS_AFTER_SERVER_FINISHED,
-        MBEDTLS_SSL_CLIENT_CCS_AFTER_CLIENT_HELLO,
-        MBEDTLS_SSL_SERVER_CCS_AFTER_SERVER_HELLO,
-        MBEDTLS_SSL_SERVER_CCS_AFTER_HRR,
-#endif /* MBEDTLS_SSL_TLS13_COMPATIBILITY_MODE */
-        MBEDTLS_SSL_EARLY_APP_DATA
-    }
-    mbedtls_ssl_states;
-#else
+
 /*
  * SSL state machine
  */
@@ -672,9 +637,27 @@ typedef enum
     MBEDTLS_SSL_HANDSHAKE_OVER,
     MBEDTLS_SSL_SERVER_NEW_SESSION_TICKET,
     MBEDTLS_SSL_SERVER_HELLO_VERIFY_REQUEST_SENT,
+#if defined(MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL)
+    MBEDTLS_SSL_HELLO_RETRY_REQUEST,
+    MBEDTLS_SSL_SECOND_CLIENT_HELLO,
+    MBEDTLS_SSL_SECOND_SERVER_HELLO,
+    MBEDTLS_SSL_EARLY_DATA,
+    MBEDTLS_SSL_END_OF_EARLY_DATA,
+    MBEDTLS_SSL_CLIENT_CERTIFICATE_VERIFY,
+    MBEDTLS_SSL_ENCRYPTED_EXTENSIONS,
+    MBEDTLS_SSL_HANDSHAKE_FINISH_ACK,
+    MBEDTLS_SSL_CLIENT_NEW_SESSION_TICKET,
+#if defined(MBEDTLS_SSL_TLS13_COMPATIBILITY_MODE)
+    MBEDTLS_SSL_CLIENT_CCS_BEFORE_2ND_CLIENT_HELLO,
+    MBEDTLS_SSL_CLIENT_CCS_AFTER_SERVER_FINISHED,
+    MBEDTLS_SSL_CLIENT_CCS_AFTER_CLIENT_HELLO,
+    MBEDTLS_SSL_SERVER_CCS_AFTER_SERVER_HELLO,
+    MBEDTLS_SSL_SERVER_CCS_AFTER_HRR,
+#endif /* MBEDTLS_SSL_TLS13_COMPATIBILITY_MODE */
+    MBEDTLS_SSL_EARLY_APP_DATA
+#endif
 }
 mbedtls_ssl_states;
-#endif /* MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL */
 
 /*
  * The tls_prf function types.
@@ -1179,10 +1162,7 @@ struct mbedtls_ssl_session
 #endif /* MBEDTLS_X509_CRT_PARSE_C */
     uint32_t verify_result;          /*!<  verification result     */
 
-#if defined(MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL)
-    unsigned int key_exchange; /* Indication of the key exchange algorithm being negotiated*/
-    unsigned char key_exchange_modes; /*!< psk key exchange modes */
-#endif /* MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL */
+
 #if ( defined(MBEDTLS_SSL_SESSION_TICKETS) || defined(MBEDTLS_SSL_NEW_SESSION_TICKET) ) && defined(MBEDTLS_SSL_CLI_C)
     unsigned char *ticket;      /*!< RFC 5077 session ticket */
     size_t ticket_len;          /*!< session ticket length   */
@@ -4376,16 +4356,6 @@ const char *mbedtls_ssl_get_ciphersuite( const mbedtls_ssl_context *ssl );
 * \return         mbedtls_key_exchange_type_t
 */
 mbedtls_key_exchange_type_t mbedtls_ssl_get_key_exchange(const mbedtls_ssl_context* ssl);
-
-/**
-* \brief          Return the string identifying the negotiated key exchange mode
-*
-* \param ssl      SSL context
-*
-* \return         string identifying the key exchange mode
-*/
-
-const char* mbedtls_ssl_get_key_exchange_name(const mbedtls_ssl_context* ssl);
 
 #endif /* MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL */
 

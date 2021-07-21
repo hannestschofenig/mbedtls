@@ -917,16 +917,29 @@ setup_arguments()
 
     if [ `minor_ver "$MODE"` -ge 4 ]
     then
-        O_SERVER_ARGS="-accept $PORT -ciphersuites TLS_AES_128_GCM_SHA256:TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256:TLS_AES_128_CCM_SHA256:TLS_AES_128_CCM_8_SHA256 --$MODE -dhparam data_files/dhparams.pem"
+        O_SERVER_ARGS="-accept $PORT -ciphersuites TLS_AES_128_GCM_SHA256:TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256:TLS_AES_128_CCM_SHA256:TLS_AES_128_CCM_8_SHA256 --$MODE"
         M_SERVER_ARGS="server_port=$PORT server_addr=0.0.0.0 force_version=$MODE"
         G_SERVER_PRIO="NONE:${G_PRIO_CCM}+SHA256:+SHA384:+COMP-NULL:+GROUP-SECP256R1:+GROUP-SECP384R1:+CTYPE-ALL:+ECDHE-ECDSA:+CIPHER-ALL:+MAC-ALL:-SHA1:-AES-128-CBC:+SIGN-ECDSA-SECP384R1-SHA384:+SIGN-ECDSA-SECP256R1-SHA256:+ECDHE-ECDSA:${G_PRIO_MODE}"
     else 
-        O_SERVER_ARGS="-accept $PORT -cipher NULL,ALL -$MODE -dhparam data_files/dhparams.pem"   
+        O_SERVER_ARGS="-accept $PORT -cipher NULL,ALL -$MODE"
         M_SERVER_ARGS="server_port=$PORT server_addr=0.0.0.0 force_version=$MODE arc4=1"
         G_SERVER_PRIO="NORMAL:${G_PRIO_CCM}+ARCFOUR-128:+NULL:+MD5:+PSK:+DHE-PSK:+ECDHE-PSK:+SHA256:+SHA384:+RSA-PSK:-VERS-TLS-ALL:$G_PRIO_MODE"
     fi    
 
     G_SERVER_ARGS="-p $PORT --http $G_MODE"
+
+    # The default prime for `openssl s_server` depends on the version:
+    # * OpenSSL <= 1.0.2a: 512-bit
+    # * OpenSSL 1.0.2b to 1.1.1b: 1024-bit
+    # * OpenSSL >= 1.1.1c: 2048-bit
+    # Mbed TLS wants >=1024, so force that for older versions. Don't force
+    # it for newer versions, which reject a 1024-bit prime. Indifferently
+    # force it or not for intermediate versions.
+    case $($OPENSSL_CMD version) in
+        "OpenSSL 1.0"*)
+            O_SERVER_ARGS="$O_SERVER_ARGS -dhparam data_files/dhparams.pem"
+            ;;
+    esac
 
     # with OpenSSL 1.0.1h, -www, -WWW and -HTTP break DTLS handshakes
     if is_dtls "$MODE"; then

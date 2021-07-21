@@ -396,57 +396,40 @@ int mbedtls_ssl_write_signature_algorithms_ext( mbedtls_ssl_context *ssl,
 
     *olen = 6 + sig_alg_len;
 
-    ssl->handshake->extensions_present |= SIGNATURE_ALGORITHM_EXTENSION;
+    ssl->handshake->extensions_present |= MBEDTLS_SSL_EXT_SIGNATURE_ALGORITHM;
     return( 0 );
 }
 
 int mbedtls_ssl_parse_signature_algorithms_ext( mbedtls_ssl_context *ssl,
                                         const unsigned char *buf,
-                                        size_t len )
+                                        size_t buf_len )
 {
     size_t sig_alg_list_size; /* size of receive signature algorithms list */
     const unsigned char *p; /* pointer to individual signature algorithm */
-    const unsigned char *end = buf + len; /* end of buffer */
+    const unsigned char *end = buf + buf_len; /* end of buffer */
     const int *md_cur; /* iterate through configured signature schemes */
     int signature_scheme; /* store received signature algorithm scheme */
-    int got_common_sig_alg = 0;  /* record whether there is a match between configured and received signature algorithms */
-    size_t num_supported_hashes;
-    uint32_t i; /* iterature through received_signature_schemes_list */
+    uint32_t common_idx = 0; /* iterate through received_signature_schemes_list */
 
-    sig_alg_list_size = ( ( buf[0] << 8 ) | ( buf[1] ) );
-    if( sig_alg_list_size + 2 != len ||
-        sig_alg_list_size % 2 != 0 )
+    if( buf_len < 2 )
     {
         MBEDTLS_SSL_DEBUG_MSG( 1, ( "bad signature_algorithms extension" ) );
         return( MBEDTLS_ERR_SSL_BAD_HS_CLIENT_HELLO );
     }
 
-    /* Determine the number of signature algorithms we support. */
-    num_supported_hashes = 0;
-    if( ssl->conf->sig_hashes != NULL )
+    sig_alg_list_size = ( ( size_t) buf[0] << 8 ) | ( (size_t) buf[1] );
+    if( sig_alg_list_size + 2 != buf_len ||
+        sig_alg_list_size % 2 != 0 )
     {
-        for( md_cur = ssl->conf->sig_hashes; *md_cur != SIGNATURE_NONE; md_cur++ )
-            num_supported_hashes++;
+        MBEDTLS_SSL_DEBUG_MSG( 1, ( "bad signature_algorithms extension" ) );
+        return( MBEDTLS_ERR_SSL_BAD_HS_CLIENT_HELLO );
     }
+    memset( ssl->handshake->received_signature_schemes_list,
+        0, sizeof( ssl->handshake->received_signature_schemes_list ) );
 
-    /* Clear previously allocated memory */
-    if( ssl->handshake->received_signature_schemes_list != NULL )
-        mbedtls_free( ssl->handshake->received_signature_schemes_list );
-
-    /* Store the received and compatible signature algorithms for later use. */
-    ssl->handshake->received_signature_schemes_list =
-        mbedtls_calloc( num_supported_hashes + 1, sizeof(uint32_t) );
-    /* TODO: Remove heap buffer here */
-    if( ssl->handshake->received_signature_schemes_list == NULL )
+    for( p = buf + 2; p < end && common_idx + 1 < MBEDTLS_SIGNATURE_SCHEMES_SIZE; p += 2 )
     {
-        MBEDTLS_SSL_DEBUG_MSG( 1, ( "malloc failed in ssl_parse_signature_algorithms_ext( )" ) );
-        return( MBEDTLS_ERR_SSL_ALLOC_FAILED );
-    }
-
-    i = 0;
-    for( p = buf + 2; p < end; p += 2 )
-    {
-        signature_scheme = ( p[0] << 8 ) | p[1];
+        signature_scheme = ( (int) p[0] << 8 ) | ( ( int ) p[1] );
 
         MBEDTLS_SSL_DEBUG_MSG( 4, ( "received signature algorithm: 0x%x", signature_scheme ) );
 
@@ -454,22 +437,20 @@ int mbedtls_ssl_parse_signature_algorithms_ext( mbedtls_ssl_context *ssl,
         {
             if( *md_cur == signature_scheme )
             {
-                ssl->handshake->received_signature_schemes_list[i] = signature_scheme;
-                i++;
-                got_common_sig_alg = 1;
+                ssl->handshake->received_signature_schemes_list[common_idx] = signature_scheme;
+                common_idx++;
+                break;
             }
         }
-
     }
 
-    if( got_common_sig_alg == 0 )
+    if( common_idx == 0 )
     {
         MBEDTLS_SSL_DEBUG_MSG( 3, ( "no signature algorithm in common" ) );
-        mbedtls_free( ssl->handshake->received_signature_schemes_list );
         return( MBEDTLS_ERR_SSL_NO_USABLE_CIPHERSUITE );
     }
 
-    ssl->handshake->received_signature_schemes_list[i] = SIGNATURE_NONE;
+    ssl->handshake->received_signature_schemes_list[common_idx] = SIGNATURE_NONE;
 
     return( 0 );
 }
@@ -555,17 +536,17 @@ static void ssl_create_verify_structure( unsigned char *transcript_hash,
  */
 
 /* Main entry point: orchestrates the other functions. */
-int mbedtls_ssl_certificate_verify_process( mbedtls_ssl_context* ssl );
+int mbedtls_ssl_write_certificate_verify_process( mbedtls_ssl_context* ssl );
 
 /* Coordinate: Check whether a certificate verify message should be sent.
  * Returns a negative value on failure, and otherwise
- * - SSL_CERTIFICATE_VERIFY_SKIP
- * - SSL_CERTIFICATE_VERIFY_SEND
+ * - SSL_WRITE_CERTIFICATE_VERIFY_SKIP
+ * - SSL_WRITE_CERTIFICATE_VERIFY_SEND
  * to indicate if the CertificateVerify message should be sent or not.
  */
-#define SSL_CERTIFICATE_VERIFY_SKIP 0
-#define SSL_CERTIFICATE_VERIFY_SEND 1
-static int ssl_certificate_verify_coordinate( mbedtls_ssl_context* ssl );
+#define SSL_WRITE_CERTIFICATE_VERIFY_SKIP 0
+#define SSL_WRITE_CERTIFICATE_VERIFY_SEND 1
+static int ssl_write_certificate_verify_coordinate( mbedtls_ssl_context* ssl );
 #if defined(MBEDTLS_KEY_EXCHANGE_ECDHE_ECDSA_ENABLED)
 static int ssl_certificate_verify_write( mbedtls_ssl_context* ssl,
                                          unsigned char* buf,
@@ -578,15 +559,15 @@ static int ssl_certificate_verify_postprocess( mbedtls_ssl_context* ssl );
  * Implementation
  */
 
-int mbedtls_ssl_certificate_verify_process( mbedtls_ssl_context* ssl )
+int mbedtls_ssl_write_certificate_verify_process( mbedtls_ssl_context* ssl )
 {
     int ret = 0;
     MBEDTLS_SSL_DEBUG_MSG( 2, ( "=> write certificate verify" ) );
 
     /* Coordination step: Check if we need to send a CertificateVerify */
-    MBEDTLS_SSL_PROC_CHK_NEG( ssl_certificate_verify_coordinate( ssl ) );
+    MBEDTLS_SSL_PROC_CHK_NEG( ssl_write_certificate_verify_coordinate( ssl ) );
 
-    if( ret == SSL_CERTIFICATE_VERIFY_SEND )
+    if( ret == SSL_WRITE_CERTIFICATE_VERIFY_SEND )
     {
 #if defined(MBEDTLS_SSL_USE_MPS)
         mbedtls_mps_handshake_out msg;
@@ -655,7 +636,7 @@ cleanup:
     return( ret );
 }
 
-static int ssl_certificate_verify_coordinate( mbedtls_ssl_context* ssl )
+static int ssl_write_certificate_verify_coordinate( mbedtls_ssl_context* ssl )
 {
     int have_own_cert = 1;
     int ret;
@@ -663,7 +644,7 @@ static int ssl_certificate_verify_coordinate( mbedtls_ssl_context* ssl )
     if( mbedtls_ssl_tls13_key_exchange_with_psk( ssl ) )
     {
         MBEDTLS_SSL_DEBUG_MSG( 2, ( "<= skip write certificate verify" ) );
-        return( SSL_CERTIFICATE_VERIFY_SKIP );
+        return( SSL_WRITE_CERTIFICATE_VERIFY_SKIP );
     }
 
 #if !defined(MBEDTLS_KEY_EXCHANGE_ECDHE_ECDSA_ENABLED)
@@ -680,7 +661,7 @@ static int ssl_certificate_verify_coordinate( mbedtls_ssl_context* ssl )
             ssl->conf->authmode == MBEDTLS_SSL_VERIFY_NONE )
         {
             MBEDTLS_SSL_DEBUG_MSG( 2, ( "<= skip write certificate verify" ) );
-            return( SSL_CERTIFICATE_VERIFY_SKIP );
+            return( SSL_WRITE_CERTIFICATE_VERIFY_SKIP );
         }
     }
 
@@ -716,7 +697,7 @@ static int ssl_certificate_verify_coordinate( mbedtls_ssl_context* ssl )
         ssl->handshake->state_local.certificate_verify_out.handshake_hash,
         ssl->handshake->state_local.certificate_verify_out.handshake_hash_len);
 
-    return( SSL_CERTIFICATE_VERIFY_SEND );
+    return( SSL_WRITE_CERTIFICATE_VERIFY_SEND );
 #endif /* MBEDTLS_KEY_EXCHANGE_ECDHE_ECDSA_ENABLED */
 }
 
@@ -740,6 +721,8 @@ static int ssl_certificate_verify_write( mbedtls_ssl_context* ssl,
     size_t verify_hash_len;
     unsigned char *p;
     const mbedtls_md_info_t *md_info;
+    /* Verify whether we can use signature algorithm */
+    int signature_scheme_client;
 
 #if defined(MBEDTLS_SSL_USE_MPS)
     p = buf;
@@ -797,34 +780,30 @@ static int ssl_certificate_verify_write( mbedtls_ssl_context* ssl,
     }
     else
     {
-            MBEDTLS_SSL_DEBUG_MSG( 1, ( "should never happen" ) );
-            return( MBEDTLS_ERR_SSL_INTERNAL_ERROR );
+        MBEDTLS_SSL_DEBUG_MSG( 1, ( "should never happen" ) );
+        return( MBEDTLS_ERR_SSL_INTERNAL_ERROR );
     }
 
-    /* Verify whether we can use signature algorithm */
-    ssl->handshake->signature_scheme_client = SIGNATURE_NONE;
+    signature_scheme_client = SIGNATURE_NONE;
 
-    if( ssl->handshake->received_signature_schemes_list != NULL )
+    for( sig_scheme = ssl->handshake->received_signature_schemes_list;
+        *sig_scheme != SIGNATURE_NONE; sig_scheme++ )
     {
-        for( sig_scheme = ssl->handshake->received_signature_schemes_list;
-             *sig_scheme != SIGNATURE_NONE; sig_scheme++ )
+        if( *sig_scheme == sig_alg )
         {
-            if( *sig_scheme == sig_alg )
-            {
-                ssl->handshake->signature_scheme_client = *sig_scheme;
-                break;
-            }
+            signature_scheme_client = *sig_scheme;
+            break;
         }
     }
 
-    if( ssl->handshake->signature_scheme_client == SIGNATURE_NONE )
+    if( signature_scheme_client == SIGNATURE_NONE )
     {
-            MBEDTLS_SSL_DEBUG_MSG( 1, ( "should never happen" ) );
-            return( MBEDTLS_ERR_SSL_INTERNAL_ERROR );
+        MBEDTLS_SSL_DEBUG_MSG( 1, ( "should never happen" ) );
+        return( MBEDTLS_ERR_SSL_INTERNAL_ERROR );
     }
 
-    *(p++) = (unsigned char)( ( ssl->handshake->signature_scheme_client >> 8 ) & 0xFF );
-    *(p++) = (unsigned char)( ( ssl->handshake->signature_scheme_client >> 0 ) & 0xFF );
+    *(p++) = (unsigned char)( ( signature_scheme_client >> 8 ) & 0xFF );
+    *(p++) = (unsigned char)( ( signature_scheme_client >> 0 ) & 0xFF );
 
     /* Hash verify buffer with indicated hash function */
     md_info = mbedtls_md_info_from_type( md_alg );
@@ -838,8 +817,7 @@ static int ssl_certificate_verify_write( mbedtls_ssl_context* ssl,
     verify_hash_len = mbedtls_md_get_size( md_info );
     MBEDTLS_SSL_DEBUG_BUF( 3, "verify hash", verify_hash, verify_hash_len );
 
-    if( ( ret = mbedtls_pk_sign( mbedtls_ssl_own_key( ssl ),
-                                 md_alg,
+    if( ( ret = mbedtls_pk_sign( own_key, md_alg,
                                  verify_hash, verify_hash_len,
                                  p + 2, &n,
                                  ssl->conf->f_rng, ssl->conf->p_rng ) ) != 0 )
@@ -1050,7 +1028,7 @@ cleanup:
 
 static int ssl_read_certificate_verify_coordinate( mbedtls_ssl_context* ssl )
 {
-    if( ssl->session_negotiate->key_exchange != MBEDTLS_KEY_EXCHANGE_ECDHE_ECDSA )
+    if( ssl->handshake->key_exchange != MBEDTLS_KEY_EXCHANGE_ECDHE_ECDSA )
     {
         return( SSL_CERTIFICATE_VERIFY_SKIP );
     }
@@ -1395,8 +1373,8 @@ static int ssl_write_certificate_coordinate( mbedtls_ssl_context* ssl )
 #endif /* MBEDTLS_SSL_CLI_C */
 
     /* For PSK and ECDHE-PSK ciphersuites there is no certificate to exchange. */
-    if( ssl->session_negotiate->key_exchange == MBEDTLS_KEY_EXCHANGE_PSK ||
-        ssl->session_negotiate->key_exchange == MBEDTLS_KEY_EXCHANGE_ECDHE_PSK )
+    if( ssl->handshake->key_exchange == MBEDTLS_KEY_EXCHANGE_PSK ||
+        ssl->handshake->key_exchange == MBEDTLS_KEY_EXCHANGE_ECDHE_PSK )
     {
         MBEDTLS_SSL_DEBUG_MSG( 2, ( "<= skip write certificate" ) );
         return( SSL_WRITE_CERTIFICATE_SKIP );
@@ -1738,8 +1716,8 @@ static int ssl_read_certificate_coordinate( mbedtls_ssl_context* ssl )
     }
 #endif /* MBEDTLS_SSL_SRV_C */
 
-    if( ssl->session_negotiate->key_exchange == MBEDTLS_KEY_EXCHANGE_PSK ||
-        ssl->session_negotiate->key_exchange == MBEDTLS_KEY_EXCHANGE_ECDHE_PSK )
+    if( ssl->handshake->key_exchange == MBEDTLS_KEY_EXCHANGE_PSK ||
+        ssl->handshake->key_exchange == MBEDTLS_KEY_EXCHANGE_ECDHE_PSK )
     {
         return( SSL_CERTIFICATE_SKIP );
     }
@@ -2039,7 +2017,7 @@ static int ssl_read_certificate_validate( mbedtls_ssl_context* ssl )
 #endif /* MBEDTLS_ECP_C */
 
     if( mbedtls_ssl_check_cert_usage( ssl->session_negotiate->peer_cert,
-                                      ssl->session_negotiate->key_exchange,/*		ciphersuite_info, */
+                                      ssl->handshake->key_exchange,     /*		ciphersuite_info, */
                                       !ssl->conf->endpoint,
                                       &ssl->session_negotiate->verify_result ) != 0 )
     {
@@ -3082,22 +3060,6 @@ int mbedtls_ssl_write_early_data_ext( mbedtls_ssl_context *ssl,
 
     *olen = 0;
 
-#if defined(MBEDTLS_SSL_SRV_C)
-    if( ssl->conf->endpoint == MBEDTLS_SSL_IS_SERVER )
-    {
-        if( ( ssl->handshake->extensions_present & EARLY_DATA_EXTENSION ) == 0 )
-            return( 0 );
-
-        if( ssl->conf->key_exchange_modes != MBEDTLS_SSL_TLS13_KEY_EXCHANGE_MODE_PSK_KE ||
-            ssl->conf->early_data_enabled == MBEDTLS_SSL_EARLY_DATA_DISABLED )
-        {
-            MBEDTLS_SSL_DEBUG_MSG( 2, ( "skip write early_data extension" ) );
-            ssl->handshake->early_data = MBEDTLS_SSL_EARLY_DATA_STATE_DISABLED;
-            return( 0 );
-        }
-    }
-#endif /* MBEDTLS_SSL_SRV_C */
-
 #if defined(MBEDTLS_SSL_CLI_C)
     if( ssl->conf->endpoint == MBEDTLS_SSL_IS_CLIENT )
     {
@@ -3111,6 +3073,23 @@ int mbedtls_ssl_write_early_data_ext( mbedtls_ssl_context *ssl,
         }
     }
 #endif /* MBEDTLS_SSL_CLI_C */
+
+#if defined(MBEDTLS_SSL_SRV_C)
+    if( ssl->conf->endpoint == MBEDTLS_SSL_IS_SERVER )
+    {
+        if( ( ssl->handshake->extensions_present & MBEDTLS_SSL_EXT_EARLY_DATA ) == 0 )
+            return( 0 );
+
+        if( ssl->conf->key_exchange_modes !=
+                   MBEDTLS_SSL_TLS13_KEY_EXCHANGE_MODE_PSK_KE ||
+            ssl->conf->early_data_enabled == MBEDTLS_SSL_EARLY_DATA_DISABLED )
+        {
+            MBEDTLS_SSL_DEBUG_MSG( 2, ( "<= skip write early_data extension" ) );
+            ssl->handshake->early_data = MBEDTLS_SSL_EARLY_DATA_STATE_DISABLED;
+            return( 0 );
+        }
+    }
+#endif /* MBEDTLS_SSL_SRV_C */
 
     if( buflen < 4 )
     {

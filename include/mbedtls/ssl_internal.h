@@ -262,6 +262,9 @@
 /* Maximum amount of early data to buffer on the server. */
 #define MBEDTLS_SSL_MAX_EARLY_DATA             1024
 
+#if defined(MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL)
+#define MBEDTLS_SIGNATURE_SCHEMES_SIZE         20
+#endif /* MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL */
 /*
  * Check that we obey the standard's message size bounds
  */
@@ -496,10 +499,10 @@ struct mbedtls_ssl_handshake_params
      * Handshake specific crypto variables
      */
 #if defined(MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL)
-    int signature_scheme;                        /*!<  Signature scheme  */
-    int signature_scheme_client;  /*!<  Signature scheme to use by client-initiated CertificateVerify */
+    unsigned int key_exchange; /* Indication of the key exchange algorithm being negotiated*/
+    unsigned char key_exchange_modes; /*!< psk key exchange modes */
 #if defined(MBEDTLS_X509_CRT_PARSE_C)
-    int *received_signature_schemes_list;              /*!<  Received signature algorithms */
+    int received_signature_schemes_list[MBEDTLS_SIGNATURE_SCHEMES_SIZE];              /*!<  Received signature algorithms */
 #endif /* MBEDTLS_X509_CRT_PARSE_C */
     mbedtls_ecp_curve_info server_preferred_curve; /*!<  Preferred curve requested by server (obtained in HelloRetryRequest  */
 #if defined(MBEDTLS_SSL_CLI_C)
@@ -1379,8 +1382,8 @@ static inline int mbedtls_ssl_conf_tls13_pure_ecdhe_enabled( mbedtls_ssl_context
 
 static inline int mbedtls_ssl_tls13_key_exchange_with_psk( mbedtls_ssl_context *ssl )
 {
-    if( ssl->session_negotiate->key_exchange == MBEDTLS_KEY_EXCHANGE_PSK ||
-        ssl->session_negotiate->key_exchange == MBEDTLS_KEY_EXCHANGE_ECDHE_PSK )
+    if( ssl->handshake->key_exchange == MBEDTLS_KEY_EXCHANGE_PSK ||
+        ssl->handshake->key_exchange == MBEDTLS_KEY_EXCHANGE_ECDHE_PSK )
     {
         return( 1 );
     }
@@ -1404,7 +1407,7 @@ static inline int mbedtls_ssl_conf_tls13_0rtt_enabled( mbedtls_ssl_context *ssl 
 }
 
 int mbedtls_ssl_read_certificate_verify_process(mbedtls_ssl_context* ssl);
-int mbedtls_ssl_certificate_verify_process(mbedtls_ssl_context* ssl);
+int mbedtls_ssl_write_certificate_verify_process(mbedtls_ssl_context* ssl);
 
 int mbedtls_ssl_tls13_populate_transform( mbedtls_ssl_transform *transform,
                                           int endpoint,
@@ -1524,10 +1527,11 @@ static inline int mbedtls_ssl_get_psk( const mbedtls_ssl_context *ssl,
     return( 0 );
 }
 
-/* Check if we have any PSK to offer, and if so, return the first. */
+/* Check if we have any PSK to offer, returns 0 if PSK is available. Assign the
+   psk and ticket if pointers are present.  */
 static inline int mbedtls_ssl_get_psk_to_offer( const mbedtls_ssl_context *ssl,
-                     const unsigned char **psk, size_t *psk_len,
-                     const unsigned char **psk_identity, size_t *psk_identity_len )
+    const unsigned char **psk, size_t *psk_len,
+    const unsigned char **psk_identity, size_t *psk_identity_len )
 {
     int ptrs_present = 0;
 
@@ -1537,7 +1541,7 @@ static inline int mbedtls_ssl_get_psk_to_offer( const mbedtls_ssl_context *ssl,
         ptrs_present = 1;
     }
 
-    /* Check if a ticket has been configuredd. */
+    /* Check if a ticket has been configured. */
     if( ssl->session_negotiate != NULL         &&
         ssl->session_negotiate->ticket != NULL )
     {

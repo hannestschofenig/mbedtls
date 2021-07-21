@@ -1127,8 +1127,8 @@ SRV_DELAY_SECONDS=0
 P_SRV="$P_SRV server_addr=127.0.0.1 server_port=$SRV_PORT"
 P_CLI="$P_CLI server_addr=127.0.0.1 server_port=+SRV_PORT"
 P_PXY="$P_PXY server_addr=127.0.0.1 server_port=$SRV_PORT listen_addr=127.0.0.1 listen_port=$PXY_PORT ${SEED:+"seed=$SEED"}"
-O_SRV="$O_SRV -accept $SRV_PORT -dhparam data_files/dhparams.pem"
-O_SRV_RSA="$O_SRV_RSA -accept $SRV_PORT -dhparam data_files/dhparams.pem"
+O_SRV="$O_SRV -accept $SRV_PORT"
+O_SRV_RSA="$O_SRV_RSA -accept $SRV_PORT"
 O_CLI="$O_CLI -connect localhost:+SRV_PORT"
 G_SRV="$G_SRV -p $SRV_PORT"
 G_CLI="$G_CLI -p +SRV_PORT"
@@ -1562,6 +1562,20 @@ run_test    "TLS 1.3, TLS_AES_128_CCM_8_SHA256, ext PSK, early data" \
 	    -c "<= write EndOfEarlyData"                    \
 	    -s "<= parse early data"                        \
 	    -s "<= parse end_of_early_data"
+
+requires_config_enabled MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL
+requires_config_enabled MBEDTLS_DEBUG_C
+requires_config_disabled MBEDTLS_RSA_C
+requires_config_enabled MBEDTLS_ZERO_RTT
+run_test    "TLS 1.3, TLS_AES_256_GCM_SHA384, ECDHE-ECDSA, client tries early data without PSK, and falls back to 1-RTT" \
+            "$P_SRV nbio=2 debug_level=4 force_version=tls1_3" \
+            "$P_CLI nbio=2 debug_level=4 force_version=tls1_3 force_ciphersuite=TLS_AES_256_GCM_SHA384 early_data=1" \
+            0 \
+      -s "Protocol is TLSv1.3"                                        \
+      -c "<= skip write early_data extension"                         \
+      -c "Protocol is TLSv1.3"                                        \
+      -c "Ciphersuite is TLS_AES_256_GCM_SHA384"                      \
+      -c "early data status = 0"
 
 requires_config_enabled MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL
 requires_config_enabled MBEDTLS_DEBUG_C

@@ -975,6 +975,7 @@ static mbedtls_tls_prf_types tls_prf_get_type( mbedtls_ssl_tls_prf_cb *tls_prf )
     return( MBEDTLS_SSL_TLS_PRF_NONE );
 }
 #endif /* MBEDTLS_SSL_EXPORT_KEYS */
+#endif /* !defined(MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL) */
 
 int  mbedtls_ssl_tls_prf( const mbedtls_tls_prf_types prf,
                           const unsigned char *secret, size_t slen,
@@ -1015,7 +1016,7 @@ int  mbedtls_ssl_tls_prf( const mbedtls_tls_prf_types prf,
 
     return( tls_prf( secret, slen, label, random, rlen, dstbuf, dlen ) );
 }
-
+#if !defined(MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL)
 /* Type for the TLS PRF */
 typedef int ssl_tls_prf_t(const unsigned char *, size_t, const char *,
                           const unsigned char *, size_t,
@@ -4010,10 +4011,6 @@ static void ssl_handshake_params_init( mbedtls_ssl_handshake_params *handshake )
 
     handshake->update_checksum = ssl_update_checksum_start;
 
-#if defined(MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL)
-    handshake->signature_scheme = SIGNATURE_NONE; // initially set to zero
-#endif /* MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL */
-
 #if defined(MBEDTLS_SSL_PROTO_TLS1_2) && \
     defined(MBEDTLS_KEY_EXCHANGE_WITH_CERT_ENABLED)
     mbedtls_ssl_sig_hash_set_init( &handshake->hash_algs );
@@ -5190,7 +5187,12 @@ int mbedtls_ssl_set_hs_psk( mbedtls_ssl_context *ssl,
         return( MBEDTLS_ERR_SSL_BAD_INPUT_DATA );
 
     if( psk_len > MBEDTLS_PSK_MAX_LEN )
+    {
+        MBEDTLS_SSL_DEBUG_MSG( 1, 
+            ( "PSK length has exceeded MBEDTLS_PSK_MAX_LEN (%u)",
+              (unsigned) MBEDTLS_PSK_MAX_LEN ) );
         return( MBEDTLS_ERR_SSL_BAD_INPUT_DATA );
+    }
 
     mbedtls_ssl_remove_hs_psk( ssl );
 
@@ -5776,37 +5778,12 @@ const char *mbedtls_ssl_get_version( const mbedtls_ssl_context *ssl )
 }
 
 #if defined(MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL)
-const char* mbedtls_ssl_get_key_exchange_name( const mbedtls_ssl_context* ssl ) {
-
-    if( ssl == NULL || ssl->session == NULL )
-        return( NULL );
-
-    switch( ssl->session->key_exchange ) {
-
-    case MBEDTLS_KEY_EXCHANGE_PSK:
-        return ( "PSK" );
-        break;
-
-    case MBEDTLS_KEY_EXCHANGE_ECDHE_PSK:
-        return ( "ECDHE-PSK" );
-        break;
-
-    case MBEDTLS_KEY_EXCHANGE_ECDHE_ECDSA:
-        return ( "ECDHE-ECDSA" );
-        break;
-
-    default:
-        return ( "Unknown" );
-    }
-
-}
-
 mbedtls_key_exchange_type_t mbedtls_ssl_get_key_exchange( const mbedtls_ssl_context* ssl )
 {
     if( ssl == NULL || ssl->session == NULL )
         return( MBEDTLS_KEY_EXCHANGE_NONE );
 
-    return ( ssl->session->key_exchange );
+    return ( ssl->handshake->key_exchange );
 }
 #endif /* MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL */
 #if defined(MBEDTLS_SSL_MAX_FRAGMENT_LENGTH)
@@ -6321,7 +6298,7 @@ static int ssl_session_save( const mbedtls_ssl_session *session,
     }
 #else
     {
-        return ( MBEDTLS_ERR_SSL_INTERNAL_ERROR );
+        return ( MBEDTLS_ERR_SSL_INTERNAL_ERROR ); //TODO::MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL report this error
     }
 #endif /* MBEDTLS_SSL_PROTO_TLS1_2_OR_EARLIER */
 
@@ -7155,12 +7132,6 @@ void mbedtls_ssl_handshake_free( mbedtls_ssl_context *ssl )
         mbedtls_free( handshake->psk );
     }
 #endif
-
-#if defined(MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL)
-#if defined(MBEDTLS_X509_CRT_PARSE_C)
-    mbedtls_free( handshake->received_signature_schemes_list );
-#endif /* MBEDTLS_X509_CRT_PARSE_C */
-#endif /* MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL */
 
 #if defined(MBEDTLS_X509_CRT_PARSE_C) && \
     defined(MBEDTLS_SSL_SERVER_NAME_INDICATION)
