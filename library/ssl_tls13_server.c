@@ -2267,6 +2267,12 @@ static int ssl_client_hello_fetch( mbedtls_ssl_context* ssl,
 
 #endif /* MBEDTLS_SSL_USE_MPS */
 
+#if !defined(MBEDTLS_DEBUG_C)
+static void ssl_debug_print_client_hello_exts( mbedtls_ssl_context *ssl )
+{
+    ((void) ssl);
+}
+#else
 static void ssl_debug_print_client_hello_exts( mbedtls_ssl_context *ssl )
 {
     MBEDTLS_SSL_DEBUG_MSG( 3, ( "Supported Extensions:" ) );
@@ -2314,6 +2320,7 @@ static void ssl_debug_print_client_hello_exts( mbedtls_ssl_context *ssl )
                                 "TRUE" : "FALSE" ) );
 #endif /* MBEDTLS_ZERO_RTT*/
 }
+#endif /* !MBEDTLS_DEBUG_C */
 
 static int ssl_client_hello_has_psk_extensions( mbedtls_ssl_context *ssl )
 {
