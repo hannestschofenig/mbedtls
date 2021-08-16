@@ -6526,7 +6526,8 @@ static int ssl_session_load( mbedtls_ssl_session *session,
 
         session->resumption_key_len = *p++;
 
-        if( session->resumption_key_len > (size_t)( end - p ) )
+        if( session->resumption_key_len > (size_t)( end - p ) ||
+            session->resumption_key_len > sizeof( session->key ) )
             return( MBEDTLS_ERR_SSL_BAD_INPUT_DATA );
 
         memcpy( session->key, p, session->resumption_key_len );
