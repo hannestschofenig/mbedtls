@@ -133,11 +133,9 @@ int ssl_write_early_data_process( mbedtls_ssl_context* ssl )
         return( MBEDTLS_ERR_SSL_INTERNAL_ERROR );
 #endif /* MBEDTLS_ZERO_RTT */
     }
-    else
-    {
-        /* Update state */
-        MBEDTLS_SSL_PROC_CHK( ssl_write_early_data_postprocess( ssl ) );
-    }
+
+    /* Update state */
+    MBEDTLS_SSL_PROC_CHK( ssl_write_early_data_postprocess( ssl ) );
 
 #if defined(MBEDTLS_ZERO_RTT)
     if( early_data_status == SSL_EARLY_DATA_WRITE ) {

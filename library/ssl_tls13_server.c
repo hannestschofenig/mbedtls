@@ -1994,7 +1994,7 @@ static int ssl_read_early_data_parse( mbedtls_ssl_context* ssl,
     else
     {
         MBEDTLS_SSL_DEBUG_MSG( 1, ( "Buffer too small (recv %" MBEDTLS_PRINTF_SIZET " bytes, buffer %" MBEDTLS_PRINTF_SIZET " bytes)",
-                                    buflen, ssl->early_data_server_buf ) );
+                                    buflen, ssl->conf->max_early_data ) );
         return ( MBEDTLS_ERR_SSL_ALLOC_FAILED );
     }
 
