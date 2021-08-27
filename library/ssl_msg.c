@@ -6018,19 +6018,15 @@ int mbedtls_ssl_write( mbedtls_ssl_context *ssl, const unsigned char *buf, size_
     }
 #endif
 
-#if defined(MBEDTLS_ZERO_RTT)
-    /* TODO: What's the purpose of this check? */
-    if( ( ssl->handshake != NULL ) &&
-        ( ssl->handshake->early_data == MBEDTLS_SSL_EARLY_DATA_OFF ) )
-#endif /* MBEDTLS_ZERO_RTT */
+    if( ssl->state != MBEDTLS_SSL_HANDSHAKE_OVER )
     {
-        if( ssl->state != MBEDTLS_SSL_HANDSHAKE_OVER )
+        ret = mbedtls_ssl_handshake( ssl );
+        if( ret == MBEDTLS_ERR_SSL_HANDSHAKE_EARLY_RETURN )
+            ret = mbedtls_ssl_handshake( ssl );
+        if( ret != 0 )
         {
-            if( ( ret = mbedtls_ssl_handshake( ssl ) ) != 0 )
-            {
-                MBEDTLS_SSL_DEBUG_RET( 1, "mbedtls_ssl_handshake", ret );
-                return( ret );
-            }
+            MBEDTLS_SSL_DEBUG_RET( 1, "mbedtls_ssl_handshake", ret );
+            return( ret );
         }
     }
 
@@ -6040,6 +6036,49 @@ int mbedtls_ssl_write( mbedtls_ssl_context *ssl, const unsigned char *buf, size_
 
     return( ret );
 }
+
+#if defined(MBEDTLS_ZERO_RTT)
+/*
+ * Write application data as early data (public-facing wrapper)
+ */
+int mbedtls_ssl_write_early_data( mbedtls_ssl_context *ssl, const unsigned char *buf, size_t len )
+{
+    int ret = MBEDTLS_ERR_ERROR_CORRUPTION_DETECTED;
+
+    MBEDTLS_SSL_DEBUG_MSG( 2, ( "=> write early_data" ) );
+
+    if( ssl == NULL || ssl->conf == NULL )
+        return( MBEDTLS_ERR_SSL_BAD_INPUT_DATA );
+
+    if( ( ssl->state == MBEDTLS_SSL_HANDSHAKE_OVER ) ||
+        ( ssl->handshake->early_data != MBEDTLS_SSL_EARLY_DATA_STATE_ON ) )
+    {
+        MBEDTLS_SSL_DEBUG_MSG( 2, ( "cannot send early_data" ) );
+        return( MBEDTLS_ERR_SSL_BAD_INPUT_DATA ); // TODO: use a different error code.
+    }
+
+#if defined(MBEDTLS_SSL_RENEGOTIATION)
+    if( ( ret = ssl_check_ctr_renegotiate( ssl ) ) != 0 )
+    {
+        MBEDTLS_SSL_DEBUG_RET( 1, "ssl_check_ctr_renegotiate", ret );
+        return( ret );
+    }
+#endif
+
+    ret = mbedtls_ssl_flush_output( ssl );
+    if ( ret != 0 )
+    {
+        MBEDTLS_SSL_DEBUG_RET( 1, "mbedtls_ssl_flush_output", ret );
+        return ret;
+    }
+
+    ret = ssl_write_real( ssl, buf, len );
+
+    MBEDTLS_SSL_DEBUG_MSG( 2, ( "<= write early_data" ) );
+
+    return( ret );
+}
+#endif /* MBEDTLS_ZERO_RTT*/
 
 /*
  * Notify the peer that the connection is being closed
