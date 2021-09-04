@@ -24,6 +24,7 @@
 
 #if defined(MBEDTLS_PLATFORM_C)
 #include "mbedtls/platform.h"
+#include "mbedtls/platform_time.h"
 #else
 #include <stdio.h>
 #include <stdlib.h>

@@ -1529,6 +1529,14 @@
 #define MBEDTLS_ZERO_RTT
 
 /**
+* \def MBEDTLS_TLS13_EARLY_DATA
+*
+* Allows to add extension early_data for TLS 1.3
+*
+*/
+#define MBEDTLS_TLS13_EARLY_DATA
+
+/**
 * \def MBEDTLS_SSL_DEBUG_HANDSHAKE_HASHES
 *
 * Enables debug output for handshake hashes

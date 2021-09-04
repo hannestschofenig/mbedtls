@@ -708,7 +708,7 @@ int mbedtls_ssl_parse_client_psk_identity_ext(
                     if( diff > MBEDTLS_SSL_TICKET_AGE_TOLERANCE )
                     {
                         MBEDTLS_SSL_DEBUG_MSG( 3,
-                            ( "Ticket age outside tolerance window ( diff=%lld )",
+                            ( "Ticket age outside tolerance window ( diff=%ld )",
                               diff ) );
                         ret = MBEDTLS_ERR_SSL_SESSION_TICKET_EXPIRED;
                     }
@@ -724,7 +724,7 @@ int mbedtls_ssl_parse_client_psk_identity_ext(
                         else
                         {
                             MBEDTLS_SSL_DEBUG_MSG( 3,
-                            ( "0-RTT is disabled ( diff=%lld exceeds "\
+                            ( "0-RTT is disabled ( diff=%ld exceeds "\
                               "MBEDTLS_SSL_EARLY_DATA_MAX_DELAY )", diff ) );
                             ssl->session_negotiate->process_early_data =
                                 MBEDTLS_SSL_EARLY_DATA_DISABLED;
@@ -1803,16 +1803,16 @@ static int ssl_early_data_fetch( mbedtls_ssl_context* ssl,
                                  size_t* buflen );
 #endif /* MBEDTLS_SSL_USE_MPS */
 #endif /* MBEDTLS_ZERO_RTT */
-
+#if defined(MBEDTLS_TLS13_EARLY_DATA)
 static int ssl_read_early_data_coordinate( mbedtls_ssl_context* ssl );
-
+#endif
 #if defined(MBEDTLS_ZERO_RTT)
 /* Parse early data send by the peer. */
 static int ssl_read_early_data_parse( mbedtls_ssl_context* ssl,
     unsigned char const* buf,
     size_t buflen );
 #endif /* MBEDTLS_ZERO_RTT */
-
+#if defined(MBEDTLS_TLS13_EARLY_DATA)
 /* Update the state after handling the incoming early data message. */
 static int ssl_read_early_data_postprocess( mbedtls_ssl_context* ssl );
 
@@ -1873,6 +1873,7 @@ cleanup:
     MBEDTLS_SSL_DEBUG_MSG( 2, ( "<= parse early data" ) );
     return( ret );
 }
+#endif
 
 #if defined(MBEDTLS_ZERO_RTT)
 #if defined(MBEDTLS_SSL_USE_MPS)
@@ -1923,11 +1924,13 @@ cleanup:
 #endif /* MBEDTLS_ZERO_RTT */
 
 #if !defined(MBEDTLS_ZERO_RTT)
+#if defined(MBEDTLS_TLS13_EARLY_DATA)
 static int ssl_read_early_data_coordinate( mbedtls_ssl_context* ssl )
 {
     ((void) ssl);
     return( SSL_EARLY_DATA_SKIP );
 }
+#endif
 #else /* MBEDTLS_ZERO_RTT */
 static int ssl_read_early_data_coordinate( mbedtls_ssl_context* ssl )
 {
@@ -2002,11 +2005,13 @@ static int ssl_read_early_data_parse( mbedtls_ssl_context* ssl,
 }
 #endif /* MBEDTLS_ZERO_RTT */
 
+#if defined(MBEDTLS_TLS13_EARLY_DATA)
 static int ssl_read_early_data_postprocess( mbedtls_ssl_context* ssl )
 {
     mbedtls_ssl_handshake_set_state( ssl, MBEDTLS_SSL_END_OF_EARLY_DATA );
     return ( 0 );
 }
+#endif /* MBEDTLS_TLS13_EARLY_DATA */
 
 
 /*
@@ -2257,13 +2262,15 @@ static int ssl_client_hello_parse( mbedtls_ssl_context* ssl,
     int ret;
     size_t i, j;
     size_t comp_len, sess_len;
-    size_t ciph_len, ext_len, ext_len_psk_ext = 0;
+    size_t ciph_len, ext_len;
     unsigned char *orig_buf, *end = buf + buflen;
     unsigned char *ciph_offset;
     unsigned char *p = NULL;
     unsigned char *ext = NULL;
     unsigned char *ext_psk_ptr = NULL;
-
+#if defined(MBEDTLS_KEY_EXCHANGE_SOME_PSK_ENABLED)
+    size_t ext_len_psk_ext = 0;
+#endif
     const int* ciphersuites;
     const mbedtls_ssl_ciphersuite_t* ciphersuite_info;
 
@@ -2728,6 +2735,7 @@ static int ssl_client_hello_parse( mbedtls_ssl_context* ssl,
         return( ret );
 #endif /* MBEDTLS_ZERO_RTT */
 
+#if defined(MBEDTLS_KEY_EXCHANGE_SOME_PSK_ENABLED)
     /* If we've settled on a PSK-based exchange, parse PSK identity ext */
     if( mbedtls_ssl_tls13_kex_with_psk( ssl ) )
     {
@@ -2741,7 +2749,7 @@ static int ssl_client_hello_parse( mbedtls_ssl_context* ssl,
             return( ret );
         }
     }
-
+#endif 
 #if defined(MBEDTLS_SSL_COOKIE_C)
     /* If we failed to see a cookie extension, and we required it through the
      * configuration settings ( rr_config ), then we need to send a HRR msg.
@@ -3080,14 +3088,24 @@ static int ssl_encrypted_extensions_write( mbedtls_ssl_context* ssl,
                                            size_t buflen,
                                            size_t* olen )
 {
-    int ret;
-    size_t n, enc_ext_len;
-    unsigned char *p, *end, *len;
 
-    /* If all extensions are disabled then olen is 0. */
-    *olen = 0;
+    size_t enc_ext_len;
+    unsigned char *p, *len;
+#if defined(MBEDTLS_SSL_SERVER_NAME_INDICATION) || \
+    defined(MBEDTLS_SSL_ALPN)                   || \
+    defined(MBEDTLS_SSL_MAX_FRAGMENT_LENGTH)    || \
+    defined(MBEDTLS_ZERO_RTT)
+    int ret;
+    size_t n;
+    unsigned char *end;
 
     end = buf + buflen;
+#else
+    ((void) ssl);
+    ((void) buflen);
+#endif
+    /* If all extensions are disabled then olen is 0. */
+    *olen = 0;
     p = buf;
 
     /*
@@ -3336,7 +3354,7 @@ static int ssl_write_hello_retry_request_write( mbedtls_ssl_context* ssl,
     int ret;
     unsigned char *p = buf;
     unsigned char *end = buf + buflen;
-    unsigned char *ext_len_byte;
+
     size_t ext_length;
     size_t total_ext_len = 0;
     unsigned char *extension_start;
@@ -3406,7 +3424,7 @@ static int ssl_write_hello_retry_request_write( mbedtls_ssl_context* ssl,
      * } Cookie;
      *
      */
-
+    unsigned char *ext_len_byte;
     /* Write extension header */
     *p++ = (unsigned char)( ( MBEDTLS_TLS_EXT_COOKIE >> 8 ) & 0xFF );
     *p++ = (unsigned char)( ( MBEDTLS_TLS_EXT_COOKIE >> 0 ) & 0xFF );
@@ -3896,7 +3914,7 @@ int mbedtls_ssl_handshake_server_step_tls1_3( mbedtls_ssl_context *ssl )
     if( ssl->state == MBEDTLS_SSL_HANDSHAKE_OVER || ssl->handshake == NULL )
         return( MBEDTLS_ERR_SSL_BAD_INPUT_DATA );
 
-    MBEDTLS_SSL_DEBUG_MSG( 2, ( "server state: %d", ssl->state ) );
+    MBEDTLS_SSL_DEBUG_MSG( 2, ( "server state: %s(%d)", mbedtls_debug_get_state_string(ssl->state), ssl->state ) );
 
 #if !defined(MBEDTLS_SSL_USE_MPS)
     if( ( ret = mbedtls_ssl_flush_output( ssl ) ) != 0 )
@@ -3931,6 +3949,7 @@ int mbedtls_ssl_handshake_server_step_tls1_3( mbedtls_ssl_context *ssl )
 
             break;
 
+#if defined(MBEDTLS_TLS13_EARLY_DATA)
             /* ----- WRITE EARLY APP DATA  ----*/
         case MBEDTLS_SSL_EARLY_APP_DATA:
 
@@ -3940,9 +3959,11 @@ int mbedtls_ssl_handshake_server_step_tls1_3( mbedtls_ssl_context *ssl )
                 MBEDTLS_SSL_DEBUG_RET( 1, "ssl_read_early_data_process", ret );
                 return ( ret );
             }
-
             break;
-
+        case MBEDTLS_SSL_END_OF_EARLY_DATA:
+            ret = ssl_read_end_of_early_data_process( ssl );
+            break;
+#endif
             /* ----- WRITE HELLO RETRY REQUEST ----*/
 
         case MBEDTLS_SSL_HELLO_RETRY_REQUEST:
@@ -4064,10 +4085,6 @@ int mbedtls_ssl_handshake_server_step_tls1_3( mbedtls_ssl_context *ssl )
             ret = mbedtls_ssl_read_certificate_verify_process( ssl );
             break;
 
-        case MBEDTLS_SSL_END_OF_EARLY_DATA:
-            ret = ssl_read_end_of_early_data_process( ssl );
-            break;
-
             /* ----- READ FINISHED ----*/
 
         case MBEDTLS_SSL_CLIENT_FINISHED:
@@ -4095,22 +4112,21 @@ int mbedtls_ssl_handshake_server_step_tls1_3( mbedtls_ssl_context *ssl )
 #endif /* MBEDTLS_SSL_USE_MPS */
 
             mbedtls_ssl_handshake_wrapup_tls13( ssl );
+#if defined(MBEDTLS_SSL_NEW_SESSION_TICKET)
             mbedtls_ssl_handshake_set_state( ssl, MBEDTLS_SSL_SERVER_NEW_SESSION_TICKET );
-
+#else
+            mbedtls_ssl_handshake_set_state( ssl, MBEDTLS_SSL_HANDSHAKE_OVER );
+#endif
             break;
 
-        case MBEDTLS_SSL_SERVER_NEW_SESSION_TICKET:
-
 #if defined(MBEDTLS_SSL_NEW_SESSION_TICKET)
-
+        case MBEDTLS_SSL_SERVER_NEW_SESSION_TICKET:
             ret = ssl_write_new_session_ticket_process( ssl );
             if( ret != 0 )
             {
                 MBEDTLS_SSL_DEBUG_RET( 1, "ssl_write_new_session_ticket ", ret );
                 return( ret );
             }
-#endif /* MBEDTLS_SSL_NEW_SESSION_TICKET */
-
             break;
 
         case MBEDTLS_SSL_SERVER_NEW_SESSION_TICKET_FLUSH:
@@ -4119,6 +4135,7 @@ int mbedtls_ssl_handshake_server_step_tls1_3( mbedtls_ssl_context *ssl )
                 return( ret );
             mbedtls_ssl_handshake_set_state( ssl, MBEDTLS_SSL_HANDSHAKE_OVER );
             break;
+#endif /* MBEDTLS_SSL_NEW_SESSION_TICKET */
 
         default:
             MBEDTLS_SSL_DEBUG_MSG( 1, ( "invalid state %d", ssl->state ) );

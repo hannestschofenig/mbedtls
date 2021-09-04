@@ -1254,11 +1254,16 @@ int mbedtls_ssl_tls1_3_key_schedule_stage_early_data(
         return( MBEDTLS_ERR_SSL_INTERNAL_ERROR );
     }
     mbedtls_md_type_t const md_type = ssl->handshake->ciphersuite_info->mac;
-
+    const unsigned char *input = NULL;
+    size_t input_len = 0;
+#if defined(MBEDTLS_KEY_EXCHANGE_SOME_PSK_ENABLED)
+    input = ssl->handshake->psk;
+    input_len = ssl->handshake->psk_len;
+#endif
     ret = mbedtls_ssl_tls1_3_evolve_secret( md_type,
                               NULL,          /* Old secret */
-                              ssl->handshake->psk,
-                              ssl->handshake->psk_len,
+                              input,
+                              input_len,
                               ssl->handshake->tls1_3_master_secrets.early );
     if( ret != 0 )
     {

@@ -652,10 +652,10 @@ int mbedtls_ssl_tls1_3_calc_finished( mbedtls_ssl_context* ssl,
                                       size_t *actual_len,
                                       int from );
 
-#if defined(MBEDTLS_KEY_EXCHANGE_SOME_PSK_ENABLED)
 #define MBEDTLS_SSL_TLS1_3_PSK_EXTERNAL   0
 #define MBEDTLS_SSL_TLS1_3_PSK_RESUMPTION 1
 
+#if defined(MBEDTLS_KEY_EXCHANGE_SOME_PSK_ENABLED)
 /**
  * \brief             Calculate a TLS 1.3 PSK binder.
  *

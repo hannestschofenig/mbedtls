@@ -4405,15 +4405,7 @@ int mbedtls_ssl_conf_psk( mbedtls_ssl_config *conf,
 }
 
 
-#if defined(MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL)
-/* mbedtls_ssl_conf_tls13_key_exchange( ) allows to set the key exchange mode. */
-int mbedtls_ssl_conf_tls13_key_exchange( mbedtls_ssl_config* conf,
-    const int key_exchange_mode )
-{
-    conf->key_exchange_modes = key_exchange_mode;
-    return 0;
-}
-#endif /* MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL */
+
 
 
 void mbedtls_ssl_remove_hs_psk( mbedtls_ssl_context* ssl )
@@ -4508,6 +4500,16 @@ void mbedtls_ssl_conf_psk_cb( mbedtls_ssl_config *conf,
     conf->p_psk = p_psk;
 }
 #endif /* MBEDTLS_KEY_EXCHANGE_SOME_PSK_ENABLED */
+
+#if defined(MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL)
+/* mbedtls_ssl_conf_tls13_key_exchange( ) allows to set the key exchange mode. */
+int mbedtls_ssl_conf_tls13_key_exchange( mbedtls_ssl_config* conf,
+    const int key_exchange_mode )
+{
+    conf->key_exchange_modes = key_exchange_mode;
+    return 0;
+}
+#endif /* MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL */
 
 #if defined(MBEDTLS_DHM_C) && defined(MBEDTLS_SSL_SRV_C)
 int mbedtls_ssl_conf_dh_param_bin( mbedtls_ssl_config *conf,

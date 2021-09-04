@@ -383,7 +383,11 @@ static int ssl_write_change_cipher_spec_postprocess( mbedtls_ssl_context* ssl )
         switch( ssl->state )
         {
             case MBEDTLS_SSL_CLIENT_CCS_AFTER_CLIENT_HELLO:
+#if defined(MBEDTLS_TLS13_EARLY_DATA)
                 mbedtls_ssl_handshake_set_state( ssl, MBEDTLS_SSL_EARLY_APP_DATA );
+#else
+                mbedtls_ssl_handshake_set_state( ssl, MBEDTLS_SSL_SERVER_HELLO );
+#endif
                 break;
             case MBEDTLS_SSL_CLIENT_CCS_BEFORE_2ND_CLIENT_HELLO:
                 mbedtls_ssl_handshake_set_state( ssl, MBEDTLS_SSL_CLIENT_HELLO );
@@ -2269,8 +2273,11 @@ static int ssl_finished_out_postprocess( mbedtls_ssl_context* ssl )
         if( ret != 0 )
             return( ret );
 #endif /* MBEDTLS_SSL_USE_MPS */
-
+#if defined(MBEDTLS_TLS13_EARLY_DATA)
         mbedtls_ssl_handshake_set_state( ssl, MBEDTLS_SSL_EARLY_APP_DATA );
+#else
+        mbedtls_ssl_handshake_set_state( ssl, MBEDTLS_SSL_CLIENT_CERTIFICATE );
+#endif
     }
     else
 #endif /* MBEDTLS_SSL_SRV_C */
@@ -2457,8 +2464,13 @@ static int ssl_finished_in_postprocess_cli( mbedtls_ssl_context *ssl )
     if( ret != 0 )
         return( ret );
 #endif /* MBEDTLS_SSL_USE_MPS */
-
+#if defined(MBEDTLS_TLS13_EARLY_DATA)
     mbedtls_ssl_handshake_set_state( ssl, MBEDTLS_SSL_END_OF_EARLY_DATA );
+#elif defined(MBEDTLS_SSL_TLS13_COMPATIBILITY_MODE)
+    mbedtls_ssl_handshake_set_state( ssl, MBEDTLS_SSL_CLIENT_CCS_AFTER_SERVER_FINISHED );
+#else
+    mbedtls_ssl_handshake_set_state( ssl, MBEDTLS_SSL_CLIENT_CERTIFICATE );
+#endif
     return( 0 );
 }
 #endif /* MBEDTLS_SSL_CLI_C */

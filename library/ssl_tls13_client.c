@@ -178,10 +178,12 @@ int ssl_write_early_data_process( mbedtls_ssl_context* ssl )
 #endif /* MBEDTLS_SSL_USE_MPS */
 
 #else /* MBEDTLS_ZERO_RTT */
+#if defined(MBEDTLS_SSL_USE_MPS)
         ((void) buf);
         ((void) buf_len);
         ((void) msg);
         ((void) msg_len);
+#endif
         /* Should never happen */
         return( MBEDTLS_ERR_SSL_INTERNAL_ERROR );
 
@@ -339,9 +341,10 @@ static int ssl_write_early_data_coordinate( mbedtls_ssl_context* ssl )
 
 static int ssl_write_early_data_postprocess( mbedtls_ssl_context* ssl )
 {
+#if defined(MBEDTLS_KEY_EXCHANGE_SOME_PSK_ENABLED)
     /* Clear PSK we've used for the 0-RTT. */
     mbedtls_ssl_remove_hs_psk( ssl );
-
+#endif
     mbedtls_ssl_handshake_set_state( ssl, MBEDTLS_SSL_SERVER_HELLO );
     return ( 0 );
 }
@@ -1006,7 +1009,7 @@ int mbedtls_ssl_write_pre_shared_key_ext( mbedtls_ssl_context *ssl,
 
 #endif	/* MBEDTLS_KEY_EXCHANGE_SOME_PSK_ENABLED  */
 
-
+#if defined(MBEDTLS_SSL_COOKIE_C)
 static int ssl_write_cookie_ext( mbedtls_ssl_context *ssl,
                                 unsigned char* buf,
                                 unsigned char* end,
@@ -1054,6 +1057,7 @@ static int ssl_write_cookie_ext( mbedtls_ssl_context *ssl,
 
     return( 0 );
 }
+#endif /* MBEDTLS_SSL_COOKIE_C */
 
 #if defined(MBEDTLS_ECDH_C)
 /*
@@ -1406,8 +1410,10 @@ static int ssl_client_hello_postprocess( mbedtls_ssl_context* ssl )
 {
 #if defined(MBEDTLS_SSL_TLS13_COMPATIBILITY_MODE)
     mbedtls_ssl_handshake_set_state( ssl, MBEDTLS_SSL_CLIENT_CCS_AFTER_CLIENT_HELLO );
-#else
+#elif defined(MBEDTLS_TLS13_EARLY_DATA)
     mbedtls_ssl_handshake_set_state( ssl, MBEDTLS_SSL_EARLY_APP_DATA );
+#else
+    mbedtls_ssl_handshake_set_state( ssl, MBEDTLS_SSL_SERVER_HELLO );
 #endif /* MBEDTLS_SSL_TLS13_COMPATIBILITY_MODE */
 
     return( 0 );
@@ -1661,11 +1667,49 @@ static int ssl_client_hello_write_partial( mbedtls_ssl_context* ssl,
     total_ext_len += cur_ext_len;
     buf += cur_ext_len;
 
+#if defined(MBEDTLS_KEY_EXCHANGE_WITH_CERT_ENABLED)
+    /* The supported_groups and the key_share extensions are
+     * REQUIRED for ECDHE ciphersuites.
+     */
+    ret = ssl_write_supported_groups_ext( ssl, buf, end, &cur_ext_len );
+    if( ret != 0 )
+        return( ret );
+
+    total_ext_len += cur_ext_len;
+    buf += cur_ext_len;
+
+    /* The supported_signature_algorithms extension is REQUIRED for
+     * certificate authenticated ciphersuites. */
+    ret = mbedtls_ssl_write_signature_algorithms_ext( ssl, buf, end, &cur_ext_len );
+    if( ret != 0 )
+        return( ret );
+
+    total_ext_len += cur_ext_len;
+    buf += cur_ext_len;
+
+    /* We need to send the key shares under three conditions:
+     * 1 ) A certificate-based ciphersuite is being offered. In this case
+     *    supported_groups and supported_signature extensions have been successfully added.
+     * 2 ) A PSK-based ciphersuite with ECDHE is offered. In this case the
+     *    psk_key_exchange_modes has been added as the last extension.
+     * 3 ) Or, in case all ciphers are supported ( which includes #1 and #2 from above )
+     */
+
+    ret = ssl_write_key_shares_ext( ssl, buf, end, &cur_ext_len );
+    if( ret != 0 )
+        return( ret );
+
+    total_ext_len += cur_ext_len;
+    buf += cur_ext_len;
+#endif /* MBEDTLS_KEY_EXCHANGE_WITH_CERT_ENABLED */
+
+#if defined(MBEDTLS_SSL_COOKIE_C)
     /* For TLS / DTLS 1.3 we need to support the use of cookies
      * ( if the server provided them ) */
     ssl_write_cookie_ext( ssl, buf, end, &cur_ext_len );
     total_ext_len += cur_ext_len;
     buf += cur_ext_len;
+#endif /* MBEDTLS_SSL_COOKIE_C */
 
 #if defined(MBEDTLS_SSL_ALPN)
     ssl_write_alpn_ext( ssl, buf, end, &cur_ext_len );
@@ -1718,42 +1762,6 @@ static int ssl_client_hello_write_partial( mbedtls_ssl_context* ssl,
     total_ext_len += cur_ext_len;
     buf += cur_ext_len;
 #endif /* MBEDTLS_KEY_EXCHANGE_SOME_PSK_ENABLED */
-
-#if defined(MBEDTLS_KEY_EXCHANGE_WITH_CERT_ENABLED)
-    /* The supported_groups and the key_share extensions are
-     * REQUIRED for ECDHE ciphersuites.
-     */
-    ret = ssl_write_supported_groups_ext( ssl, buf, end, &cur_ext_len );
-    if( ret != 0 )
-        return( ret );
-
-    total_ext_len += cur_ext_len;
-    buf += cur_ext_len;
-
-    /* The supported_signature_algorithms extension is REQUIRED for
-     * certificate authenticated ciphersuites. */
-    ret = mbedtls_ssl_write_signature_algorithms_ext( ssl, buf, end, &cur_ext_len );
-    if( ret != 0 )
-        return( ret );
-
-    total_ext_len += cur_ext_len;
-    buf += cur_ext_len;
-
-    /* We need to send the key shares under three conditions:
-     * 1 ) A certificate-based ciphersuite is being offered. In this case
-     *    supported_groups and supported_signature extensions have been successfully added.
-     * 2 ) A PSK-based ciphersuite with ECDHE is offered. In this case the
-     *    psk_key_exchange_modes has been added as the last extension.
-     * 3 ) Or, in case all ciphers are supported ( which includes #1 and #2 from above )
-     */
-
-    ret = ssl_write_key_shares_ext( ssl, buf, end, &cur_ext_len );
-    if( ret != 0 )
-        return( ret );
-
-    total_ext_len += cur_ext_len;
-    buf += cur_ext_len;
-#endif /* MBEDTLS_KEY_EXCHANGE_WITH_CERT_ENABLED */
 
 #if defined(MBEDTLS_KEY_EXCHANGE_SOME_PSK_ENABLED)
     {
@@ -2459,7 +2467,7 @@ static int ssl_encrypted_extensions_process( mbedtls_ssl_context* ssl )
     MBEDTLS_SSL_PROC_CHK( mbedtls_ssl_fetch_handshake_msg( ssl,
                                              MBEDTLS_SSL_HS_ENCRYPTED_EXTENSION,
                                              &buf, &buflen ) );
-
+    MBEDTLS_SSL_DEBUG_MSG( 2, ( "=> parse encrypted extensions" ) );
     /* Process the message contents */
     MBEDTLS_SSL_PROC_CHK( ssl_encrypted_extensions_parse( ssl, buf, buflen ) );
 
@@ -3926,7 +3934,7 @@ int mbedtls_ssl_handshake_client_step_tls1_3( mbedtls_ssl_context *ssl )
         MBEDTLS_SSL_DEBUG_MSG( 2, ( "Handshake completed but ssl->handshake is NULL.\n" ) );
         return( MBEDTLS_ERR_SSL_BAD_INPUT_DATA );
     }
-    MBEDTLS_SSL_DEBUG_MSG( 2, ( "client state: %d", ssl->state ) );
+    MBEDTLS_SSL_DEBUG_MSG( 2, ( "client state: %s(%d)", mbedtls_debug_get_state_string(ssl->state), ssl->state ) );
 
     if( ( ret = mbedtls_ssl_flush_output( ssl ) ) != 0 )
         return( ret );
@@ -3945,10 +3953,20 @@ int mbedtls_ssl_handshake_client_step_tls1_3( mbedtls_ssl_context *ssl )
             ret = ssl_client_hello_process( ssl );
             break;
 
+#if defined(MBEDTLS_TLS13_EARLY_DATA)
         case MBEDTLS_SSL_EARLY_APP_DATA:
             ret = ssl_write_early_data_process( ssl );
             break;
-
+        /*
+         *  ==>   (EndOfEarlyData)
+         *        (Certificate)
+         *        (CertificateVerify)
+         *        (Finished)
+         */
+        case MBEDTLS_SSL_END_OF_EARLY_DATA:
+            ret = ssl_write_end_of_early_data_process( ssl );
+            break;
+#endif /* MBEDTLS_TLS13_EARLY_DATA */
         /*
          *  <==   ServerHello / HelloRetryRequest
          *        EncryptedExtensions
@@ -3981,16 +3999,6 @@ int mbedtls_ssl_handshake_client_step_tls1_3( mbedtls_ssl_context *ssl )
             ret = mbedtls_ssl_finished_in_process( ssl );
             break;
 
-        /*
-         *  ==>   (EndOfEarlyData)
-         *        (Certificate)
-         *        (CertificateVerify)
-         *        (Finished)
-         */
-        case MBEDTLS_SSL_END_OF_EARLY_DATA:
-            ret = ssl_write_end_of_early_data_process( ssl );
-            break;
-
         case MBEDTLS_SSL_CLIENT_CERTIFICATE:
             ret = mbedtls_ssl_write_certificate_process( ssl );
             break;
@@ -4003,6 +4011,7 @@ int mbedtls_ssl_handshake_client_step_tls1_3( mbedtls_ssl_context *ssl )
             ret = mbedtls_ssl_finished_out_process( ssl );
             break;
 
+#if defined(MBEDTLS_SSL_NEW_SESSION_TICKET)
         /*
          *  <==   NewSessionTicket
          */
@@ -4014,6 +4023,7 @@ int mbedtls_ssl_handshake_client_step_tls1_3( mbedtls_ssl_context *ssl )
 
             ret = MBEDTLS_ERR_SSL_RECEIVED_NEW_SESSION_TICKET;
             break;
+#endif /* MBEDTLS_SSL_NEW_SESSION_TICKET */
 
         /*
          * Injection of dummy-CCS's for middlebox compatibility
