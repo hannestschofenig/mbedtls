@@ -2276,13 +2276,7 @@ int main( int argc, char *argv[] )
 
     while( ( ret = mbedtls_ssl_handshake( &ssl ) ) != 0 )
     {
-        if ( ret == MBEDTLS_ERR_SSL_HANDSHAKE_EARLY_RETURN &&
-             opt.early_data == MBEDTLS_SSL_EARLY_DATA_ENABLED )
-        {
-            ret = mbedtls_ssl_write_early_data( &ssl, (const unsigned char*) early_data, strlen(early_data) );
-        }
-        if( ret < 0 &&
-            ret != MBEDTLS_ERR_SSL_WANT_READ &&
+        if( ret != MBEDTLS_ERR_SSL_WANT_READ &&
             ret != MBEDTLS_ERR_SSL_WANT_WRITE &&
             ret != MBEDTLS_ERR_SSL_CRYPTO_IN_PROGRESS )
         {
@@ -3220,16 +3214,25 @@ reconnect:
             goto exit;
         }
 
-        while( ( ret = mbedtls_ssl_handshake( &ssl ) ) != 0 )
-        {
-            if ( ret == MBEDTLS_ERR_SSL_HANDSHAKE_EARLY_RETURN &&
-                 opt.early_data == MBEDTLS_SSL_EARLY_DATA_ENABLED )
-            {
-                ret = mbedtls_ssl_write_early_data( &ssl, (const unsigned char*) early_data, strlen(early_data) );
-            }
-
+        if( opt.early_data == MBEDTLS_SSL_EARLY_DATA_ENABLED ) {
+            mbedtls_printf( "\n  . Writing early_data..." );
+            fflush( stdout );
+            ret = mbedtls_ssl_write_early_data( &ssl, (const unsigned char*) early_data, strlen(early_data) );
             if( ret < 0 &&
                 ret != MBEDTLS_ERR_SSL_WANT_READ &&
+                ret != MBEDTLS_ERR_SSL_WANT_WRITE &&
+                ret != MBEDTLS_ERR_SSL_CRYPTO_IN_PROGRESS )
+            {
+                mbedtls_printf( " failed\n  ! mbedtls_ssl_write_early_data returned -0x%x\n",
+                                (unsigned int) -ret );
+                mbedtls_printf( "\n" );
+                goto exit;
+            }
+        }
+
+        while( ( ret = mbedtls_ssl_handshake( &ssl ) ) != 0 )
+        {
+            if( ret != MBEDTLS_ERR_SSL_WANT_READ &&
                 ret != MBEDTLS_ERR_SSL_WANT_WRITE &&
                 ret != MBEDTLS_ERR_SSL_CRYPTO_IN_PROGRESS )
             {

@@ -6050,11 +6050,24 @@ int mbedtls_ssl_write_early_data( mbedtls_ssl_context *ssl, const unsigned char 
     if( ssl == NULL || ssl->conf == NULL )
         return( MBEDTLS_ERR_SSL_BAD_INPUT_DATA );
 
+    // Perform early handshake if necessary
+    if( ssl->state == MBEDTLS_SSL_HELLO_REQUEST ||
+        ssl->state == MBEDTLS_SSL_CLIENT_HELLO ||
+        ssl->state == MBEDTLS_SSL_EARLY_APP_DATA )
+    {
+        ret = mbedtls_ssl_handshake( ssl );
+        if( ret != MBEDTLS_ERR_SSL_HANDSHAKE_EARLY_RETURN && ret != 0 )
+        {
+            MBEDTLS_SSL_DEBUG_RET( 1, "mbedtls_ssl_handshake", ret );
+            return( ret );
+        }
+    }
+
     if( ( ssl->state == MBEDTLS_SSL_HANDSHAKE_OVER ) ||
         ( ssl->handshake->early_data != MBEDTLS_SSL_EARLY_DATA_STATE_ON ) )
     {
         MBEDTLS_SSL_DEBUG_MSG( 2, ( "cannot send early_data" ) );
-        return( MBEDTLS_ERR_SSL_BAD_INPUT_DATA ); // TODO: use a different error code.
+        return( MBEDTLS_ERR_SSL_INTERNAL_ERROR );
     }
 
 #if defined(MBEDTLS_SSL_RENEGOTIATION)
