@@ -1273,6 +1273,9 @@ trap cleanup INT TERM HUP
 # TLS 1.3 specific tests
 #
 
+run_test    "PQC Bike test" \
+            "$P_SRV"
+
 requires_config_enabled MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL
 requires_config_disabled MBEDTLS_RSA_C
 run_test    "TLS 1.3, default suite, PSK" \

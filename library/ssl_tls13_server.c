@@ -1,4 +1,4 @@
-/*
+/*0;
  *  TLS 1.3 server-side functionality
  *
  *  Copyright The Mbed TLS Contributors
@@ -3259,8 +3259,8 @@ static int ssl_write_hrr_key_share_ext( mbedtls_ssl_context *ssl,
                                         unsigned char* end,
                                         size_t* olen )
 {
-    const mbedtls_ecp_group_id *gid;
-    const mbedtls_ecp_curve_info **curve = NULL;
+    const uint16_t *our_tls_id;
+    const uint16_t *thier_tls_id;
 
     size_t total_len = 0;
 
@@ -3303,25 +3303,25 @@ static int ssl_write_hrr_key_share_ext( mbedtls_ssl_context *ssl,
     *buf++ = 2;
 
     /* Find common curve */
-    for( gid = ssl->conf->curve_list; *gid != MBEDTLS_ECP_DP_NONE; gid++ )
+    for( our_tls_id = mbedtls_ssl_get_groups(); *our_tls_id != 0; our_tls_id++ )
     {
-        for( curve = ssl->handshake->curves; *curve != NULL; curve++ )
+        for( their_tls_id = ssl->handshake->groups; *their_tls_id != NULL; their_tls_id++ )
         {
-            if( (*curve)->grp_id == *gid )
+            if( ( our_tls_id == their_tls_id )
                 goto curve_matching_done;
         }
     }
 
 curve_matching_done:
-    if( curve == NULL || *curve == NULL )
+    if( their_tls_id == NULL )
     {
         MBEDTLS_SSL_DEBUG_MSG( 1, ( "no matching named group found" ) );
         return( MBEDTLS_ERR_SSL_HANDSHAKE_FAILURE );
     }
 
     /* Write selected group */
-    *buf++ = (*curve)->tls_id >> 8;
-    *buf++ = (*curve)->tls_id & 0xFF;
+    *buf++ = their_tls_id >> 8;
+    *buf++ = their_tls_id & 0xFF;
 
     MBEDTLS_SSL_DEBUG_MSG( 3, ( "NamedGroup in HRR: %s", (*curve)->name ) );
     *olen = total_len;

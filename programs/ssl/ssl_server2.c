@@ -118,7 +118,7 @@ int main( void )
 #define DFL_CACHE_TIMEOUT       -1
 #define DFL_SNI                 NULL
 #define DFL_ALPN_STRING         NULL
-#define DFL_CURVES              NULL
+#define DFL_GROUPS              NULL
 #define DFL_DHM_FILE            NULL
 #define DFL_TRANSPORT           MBEDTLS_SSL_TRANSPORT_STREAM
 #define DFL_COOKIES             1
@@ -453,11 +453,11 @@ int main( void )
 
 #if defined(MBEDTLS_ECP_C)
 #define USAGE_CURVES \
-    "    curves=a,b,c,d      default: \"default\" (library default)\n"  \
+    "    groups=a,b,c,d      default: \"default\" (library default)\n"  \
     "                        example: \"secp521r1,brainpoolP512r1\"\n"  \
     "                        - use \"none\" for empty list\n"           \
     "                        - see mbedtls_ecp_curve_list()\n"          \
-    "                          for acceptable curve names\n"
+    "                          for acceptable groups names\n"
 #else
 #define USAGE_CURVES ""
 #endif
@@ -655,7 +655,7 @@ struct options
     int cache_max;              /* max number of session cache entries      */
     int cache_timeout;          /* expiration delay of session cache entries */
     char *sni;                  /* string describing sni information        */
-    const char *curves;         /* list of supported elliptic curves        */
+    const char *groups;         /* list of supported elliptic groups        */
     const char *alpn_string;    /* ALPN supported protocols                 */
     const char *dhm_file;       /* the file with the DH parameters          */
     int extended_ms;            /* allow negotiation of extended MS?        */
@@ -1433,8 +1433,8 @@ int main( int argc, char *argv[] )
 #if defined(SNI_OPTION)
     sni_entry *sni_info = NULL;
 #endif
-#if defined(MBEDTLS_ECP_C)
-    mbedtls_ecp_group_id curve_list[CURVE_LIST_SIZE];
+#if defined(MBEDTLS_ECP_C) || define(MBEDTLS_ENABLE_LIBOQS)
+    uint16_t tls_list[CURVE_LIST_SIZE];
     const mbedtls_ecp_curve_info * curve_cur;
 #endif
 #if defined(MBEDTLS_SSL_ALPN)
@@ -1644,7 +1644,7 @@ int main( int argc, char *argv[] )
     opt.cache_timeout       = DFL_CACHE_TIMEOUT;
     opt.sni                 = DFL_SNI;
     opt.alpn_string         = DFL_ALPN_STRING;
-    opt.curves              = DFL_CURVES;
+    opt.groups              = DFL_GROUPS;
     opt.dhm_file            = DFL_DHM_FILE;
     opt.transport           = DFL_TRANSPORT;
     opt.cookies             = DFL_COOKIES;
@@ -1810,8 +1810,8 @@ int main( int argc, char *argv[] )
             }
             opt.force_ciphersuite[1] = 0;
         }
-        else if( strcmp( p, "curves" ) == 0 )
-            opt.curves = q;
+        else if( strcmp( p, "groups" ) == 0 )
+            opt.groups = q;
         else if( strcmp( p, "renegotiation" ) == 0 )
         {
             opt.renegotiation = (atoi( q )) ?
@@ -2334,19 +2334,19 @@ int main( int argc, char *argv[] )
     }
 #endif /* MBEDTLS_KEY_EXCHANGE_SOME_PSK_ENABLED */
 
-#if defined(MBEDTLS_ECP_C)
-    if( opt.curves != NULL )
+#if defined(MBEDTLS_ECP_C) || defined(MBEDTLS_ENABLE_LIBOQS)
+    if( opt.groups != NULL )
     {
-        p = (char *) opt.curves;
+        p = (char *) opt.groups;
         i = 0;
 
         if( strcmp( p, "none" ) == 0 )
         {
-            curve_list[0] = MBEDTLS_ECP_DP_NONE;
+            tls_list[0] = 0;
         }
         else if( strcmp( p, "default" ) != 0 )
         {
-            /* Leave room for a final NULL in curve list */
+            /* Leave room for a final NULL in tls list */
             while( i < CURVE_LIST_SIZE - 1 && *p != '\0' )
             {
                 q = p;
@@ -2357,14 +2357,19 @@ int main( int argc, char *argv[] )
                 if( *p == ',' )
                     *p++ = '\0';
 
-                if( ( curve_cur = mbedtls_ecp_curve_info_from_name( q ) ) != NULL )
-                {
-                    curve_list[i++] = curve_cur->grp_id;
-                }
+                if( 0 ) (void)( 0 ); /** Dummy if **/
+                #if defined(MBEDTLS_ECP_C)
+                else if( ( curve_cur = mbedtls_ecp_curve_info_from_name( q ) ) != 0 )
+                    tls_list[i++] = curve_cur->tls_id;
+                #endif
+                #if defined(MBEDTLS_ENABLE_LIBOQS)
+                else if( OQS_KEM_TO_NAMED_GROUP( q ) != 0 )
+                    tls_list[i++] = OQS_KEM_TO_NAMED_GROUP( q );
+                #endif
                 else
                 {
-                    mbedtls_printf( "unknown curve %s\n", q );
-                    mbedtls_printf( "supported curves: " );
+                    mbedtls_printf( "unknown group %s\n", q );
+                    mbedtls_printf( "supported groups: " );
                     for( curve_cur = mbedtls_ecp_curve_list();
                          curve_cur->grp_id != MBEDTLS_ECP_DP_NONE;
                          curve_cur++ )
@@ -2376,19 +2381,19 @@ int main( int argc, char *argv[] )
                 }
             }
 
-            mbedtls_printf("Number of curves: %d\n", i );
+            mbedtls_printf("Number of groups: %d\n", i );
 
             if( i == CURVE_LIST_SIZE - 1 && *p != '\0' )
             {
-                mbedtls_printf( "curves list too long, maximum %d",
+                mbedtls_printf( "groups list too long, maximum %d",
                                 CURVE_LIST_SIZE - 1  );
                 goto exit;
             }
 
-            curve_list[i] = MBEDTLS_ECP_DP_NONE;
+            tls_list[i] = 0;
         }
     }
-#endif /* MBEDTLS_ECP_C */
+#endif /* MBEDTLS_ECP_C || MBEDTLS_ENABLE_LIBOQS */
 
 #if defined(MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL) && defined(MBEDTLS_ECP_C)
     if( opt.sig_algs != NULL )
@@ -3154,10 +3159,10 @@ int main( int argc, char *argv[] )
         mbedtls_ssl_conf_curves( &conf, named_groups_list );
 #endif /* MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL */
     /* Configure default curves */
-    if( opt.curves != NULL &&
-        strcmp( opt.curves, "default" ) != 0 )
+    if( opt.groups != NULL &&
+        strcmp( opt.groups, "default" ) != 0 )
     {
-        mbedtls_ssl_conf_curves( &conf, curve_list );
+        mbedtls_ssl_conf_groups( &conf, tls_list );
     }
 #if defined(MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL)
     /* Configure default signature algorithms */
