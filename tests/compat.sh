@@ -71,6 +71,7 @@ MODES="tls1_2 dtls1_2"
 VERIFIES="NO YES"
 TYPES="ECDSA RSA PSK"
 FILTER=""
+BOXES="NO YES"
 # exclude:
 # - NULL: excluded from our default config
 #   avoid plain DES but keep 3DES-EDE-CBC (mbedTLS), DES-CBC3 (OpenSSL)
@@ -97,6 +98,7 @@ print_usage() {
     printf "  -p|--peers\tWhich peers to use (Default: '%s')\n" "$PEERS"
     printf "            \tAlso available: GnuTLS (needs v3.2.15 or higher)\n"
     printf "  -M|--memcheck\tCheck memory leaks and errors.\n"
+    printf "  -C|--compatibility\tTest TLS 1.3 compatibility mode (Default: '%s')\n" "$BOXES"
     printf "  -v|--verbose\tSet verbose output.\n"
 }
 
@@ -117,6 +119,9 @@ get_options() {
                 ;;
             -V|--verify)
                 shift; VERIFIES=$1
+                ;;
+            -C|--compatibility)
+                shift; BOXES=$1
                 ;;
             -p|--peers)
                 shift; PEERS=$1
@@ -903,6 +908,16 @@ setup_arguments()
     G_CLIENT_ARGS="-p $PORT --debug 3 $G_MODE"
     G_CLIENT_PRIO="NONE:$G_PRIO_MODE:+COMP-NULL:+CURVE-ALL:+SIGN-ALL"
 
+
+    if [ "X$BOX" = "XNO" ];
+    then 
+       if [ `minor_ver "$MODE"` -ge 4 ]
+       then
+         O_SERVER_ARGS="$O_SERVER_ARGS -no_middlebox"
+         O_CLIENT_ARGS="$O_CLIENT_ARGS -no_middlebox"
+       fi
+    fi
+
     if [ "X$VERIFY" = "XYES" ];
     then
         M_SERVER_ARGS="$M_SERVER_ARGS ca_file=data_files/test-ca_cat12.crt auth_mode=required"
@@ -1299,27 +1314,28 @@ trap cleanup INT TERM HUP
 for VERIFY in $VERIFIES; do
     for MODE in $MODES; do
         for TYPE in $TYPES; do
-            for PEER in $PEERS; do
+            for BOX in $BOXES; do
+                for PEER in $PEERS; do
 
-            setup_arguments
+                    setup_arguments
 
-            case "$PEER" in
+                    case "$PEER" in
 
-                [Oo]pen*)
+                        [Oo]pen*)
 
-                    if test "$OSSL_NO_DTLS" -gt 0 && is_dtls "$MODE"; then
-                        continue;
-                    fi
+                            if test "$OSSL_NO_DTLS" -gt 0 && is_dtls "$MODE"; then
+                                continue;
+                            fi
 
                     reset_ciphersuites
                     if [ `minor_ver "$MODE"` -ge 4 ]
                     then
                         M_CIPHERS="$M_CIPHERS               \
-                            TLS1-3-AES-128-GCM-SHA256          \
-                            TLS1-3-AES-256-GCM-SHA384          \
-                            TLS1-3-AES-128-CCM-SHA256          \
-                            TLS1-3-AES-128-CCM-8-SHA256        \
-                            TLS1-3-CHACHA20-POLY1305-SHA256    \
+                            TLS1-3-AES-128-GCM-SHA256       \
+                            TLS1-3-AES-256-GCM-SHA384       \
+                            TLS1-3-AES-128-CCM-SHA256       \
+                            TLS1-3-AES-128-CCM-8-SHA256     \
+                            TLS1-3-CHACHA20-POLY1305-SHA256 \
                             "
                         O_CIPHERS="$O_CIPHERS               \
                             TLS_AES_128_GCM_SHA256          \
@@ -1438,8 +1454,8 @@ for VERIFY in $VERIFIES; do
                     exit 1
                     ;;
 
-                esac
-
+                    esac
+                done
             done
         done
     done
