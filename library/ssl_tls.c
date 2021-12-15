@@ -3966,10 +3966,6 @@ void mbedtls_ssl_session_reset_msg_layer( mbedtls_ssl_context *ssl,
     ssl_mps_init( ssl );
 #endif /* MBEDTLS_SSL_USE_MPS */
 
-#if defined(MBEDTLS_ZERO_RTT) && defined(MBEDTLS_SSL_CLI_C)
-    ssl->early_data_buf = NULL;
-    ssl->early_data_len = 0;
-#endif /* MBEDTLS_ZERO_RTT && MBEDTLS_SSL_CLI_C */
 #endif /* MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL */
 }
 

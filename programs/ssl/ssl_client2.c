@@ -2201,8 +2201,6 @@ int main( int argc, char *argv[] )
 
 #if defined(MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL) && defined(MBEDTLS_ZERO_RTT)
     mbedtls_ssl_conf_early_data( &conf, opt.early_data, 0, NULL );
-    mbedtls_ssl_set_early_data( &ssl, (const unsigned char*) early_data,
-                                strlen( early_data ) );
 #endif /* MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL && MBEDTLS_ZERO_RTT */
 
     if( ( ret = mbedtls_ssl_setup( &ssl, &conf ) ) != 0 )
@@ -3271,12 +3269,6 @@ reconnect:
             &conf, MBEDTLS_SSL_TLS13_KEY_EXCHANGE_MODE_PSK_EPHEMERAL );
 #endif /* MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL */
 
-#if defined(MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL) && defined(MBEDTLS_ZERO_RTT)
-        mbedtls_ssl_set_early_data( &ssl, (const unsigned char*) early_data,
-                                    strlen( early_data ) );
-#endif /* MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL && MBEDTLS_ZERO_RTT */
-
-
         if( ( ret = mbedtls_net_connect( &server_fd,
                         opt.server_addr, opt.server_port,
                         opt.transport == MBEDTLS_SSL_TRANSPORT_STREAM ?
@@ -3296,6 +3288,22 @@ reconnect:
             mbedtls_printf( " failed\n  ! net_set_(non)block() returned -0x%x\n\n",
                             (unsigned int) -ret );
             goto exit;
+        }
+
+        if( opt.early_data == MBEDTLS_SSL_EARLY_DATA_ENABLED ) {
+            mbedtls_printf( "\n  . Writing early_data..." );
+            fflush( stdout );
+            ret = mbedtls_ssl_write_early_data( &ssl, (const unsigned char*) early_data, strlen(early_data) );
+            if( ret < 0 &&
+                ret != MBEDTLS_ERR_SSL_WANT_READ &&
+                ret != MBEDTLS_ERR_SSL_WANT_WRITE &&
+                ret != MBEDTLS_ERR_SSL_CRYPTO_IN_PROGRESS )
+            {
+                mbedtls_printf( " failed\n  ! mbedtls_ssl_write_early_data returned -0x%x\n",
+                                (unsigned int) -ret );
+                mbedtls_printf( "\n" );
+                goto exit;
+            }
         }
 
         while( ( ret = mbedtls_ssl_handshake( &ssl ) ) != 0 )
