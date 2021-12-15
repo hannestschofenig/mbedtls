@@ -2456,6 +2456,7 @@ run_test    "TLS 1.3, TLS1-3-AES-256-GCM-SHA384, ext PSK, early data status - ac
             "$P_CLI nbio=2 debug_level=5 force_version=tls1_3 force_ciphersuite=TLS1-3-AES-256-GCM-SHA384 tls13_kex_modes=psk early_data=1 psk=010203 psk_identity=0a0b0c" \
             0 \
 	    -c "early data status = 2"  \
+	    -s "15 bytes early data received: early data test"
 
 requires_config_enabled MBEDTLS_SSL_PROTO_TLS1_3_EXPERIMENTAL
 requires_config_enabled MBEDTLS_DEBUG_C

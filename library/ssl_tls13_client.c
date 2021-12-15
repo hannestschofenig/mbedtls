@@ -760,15 +760,8 @@ static int ssl_write_early_data_write( mbedtls_ssl_context* ssl,
     {
         memcpy( buf, ssl->early_data_buf, ssl->early_data_len );
 
-#if defined(MBEDTLS_SSL_USE_MPS)
         *olen = ssl->early_data_len;
         MBEDTLS_SSL_DEBUG_BUF( 3, "Early Data", buf, ssl->early_data_len );
-#else
-        buf[ssl->early_data_len] = MBEDTLS_SSL_MSG_APPLICATION_DATA;
-        *olen = ssl->early_data_len + 1;
-
-        MBEDTLS_SSL_DEBUG_BUF( 3, "Early Data", ssl->out_msg, *olen );
-#endif /* MBEDTLS_SSL_USE_MPS */
     }
 
     return( 0 );
