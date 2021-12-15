@@ -308,4 +308,7 @@ void mbedtls_debug_printf_ecdh( const mbedtls_ssl_context *ssl, int level,
 }
 #endif
 
+const char * mbedtls_debug_get_state_string( mbedtls_ssl_states stat);
+
+
 #endif /* debug.h */

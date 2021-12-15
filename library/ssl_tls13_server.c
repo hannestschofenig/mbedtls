@@ -3895,7 +3895,7 @@ int mbedtls_ssl_tls13_handshake_server_step( mbedtls_ssl_context *ssl )
     if( ssl->state == MBEDTLS_SSL_HANDSHAKE_OVER || ssl->handshake == NULL )
         return( MBEDTLS_ERR_SSL_BAD_INPUT_DATA );
 
-    MBEDTLS_SSL_DEBUG_MSG( 2, ( "server state: %d", ssl->state ) );
+    MBEDTLS_SSL_DEBUG_MSG( 2, ( "server state: %s(%d)", mbedtls_debug_get_state_string(ssl->state), ssl->state ) );
 
 #if !defined(MBEDTLS_SSL_USE_MPS)
     if( ( ret = mbedtls_ssl_flush_output( ssl ) ) != 0 )
