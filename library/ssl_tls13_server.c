@@ -363,7 +363,9 @@ static int ssl_parse_key_shares_ext( mbedtls_ssl_context *ssl,
     {
         uint16_t their_group;
         mbedtls_ecp_group_id their_curve;
+#if defined(MBEDTLS_DEBUG_C)
         mbedtls_ecp_curve_info const *their_curve_info;
+#endif /* MBEDTLS_DEBUG_C */
         unsigned char const *end_of_share;
 
         /*
@@ -439,7 +441,9 @@ static int ssl_parse_key_shares_ext( mbedtls_ssl_context *ssl,
          * - Apply further curve checks
          */
 
+#if defined(MBEDTLS_DEBUG_C)
         their_curve_info = mbedtls_ecp_curve_info_from_grp_id( their_curve );
+#endif /* MBEDTLS_DEBUG_C */
         MBEDTLS_SSL_DEBUG_MSG( 2, ( "ECDH curve: %s", their_curve_info->name ) );
 
         ret = mbedtls_ecdh_setup( &ssl->handshake->ecdh_ctx, their_curve );
