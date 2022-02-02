@@ -1672,28 +1672,9 @@ static int ssl_tls13_write_change_cipher_spec_postprocess( mbedtls_ssl_context *
                 return( MBEDTLS_ERR_SSL_INTERNAL_ERROR );
         }
     }
+#else
+    (void)ssl;
 #endif /* MBEDTLS_SSL_SRV_C */
-
-#if defined(MBEDTLS_SSL_CLI_C)
-    if( ssl->conf->endpoint == MBEDTLS_SSL_IS_CLIENT )
-    {
-        switch( ssl->state )
-        {
-            case MBEDTLS_SSL_CLIENT_CCS_AFTER_CLIENT_HELLO:
-                mbedtls_ssl_handshake_set_state( ssl, MBEDTLS_SSL_EARLY_APP_DATA );
-                break;
-            case MBEDTLS_SSL_CLIENT_CCS_BEFORE_2ND_CLIENT_HELLO:
-                mbedtls_ssl_handshake_set_state( ssl, MBEDTLS_SSL_CLIENT_HELLO );
-                break;
-            case MBEDTLS_SSL_CLIENT_CCS_AFTER_SERVER_FINISHED:
-                mbedtls_ssl_handshake_set_state( ssl, MBEDTLS_SSL_CLIENT_CERTIFICATE );
-                break;
-            default:
-                MBEDTLS_SSL_DEBUG_MSG( 1, ( "should never happen" ) );
-                return( MBEDTLS_ERR_SSL_INTERNAL_ERROR );
-        }
-    }
-#endif /* MBEDTLS_SSL_CLI_C */
 
     return( 0 );
 }
