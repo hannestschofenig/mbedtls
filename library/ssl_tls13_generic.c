@@ -210,7 +210,7 @@ int mbedtls_ssl_tls13_finish_handshake_msg( mbedtls_ssl_context *ssl,
     /* Add reserved 4 bytes for handshake header */
     msg_with_header_len = msg_len + 4;
     ssl->out_msglen = msg_with_header_len;
-    MBEDTLS_SSL_PROC_CHK( mbedtls_ssl_write_handshake_msg_ext( ssl, 0 ) );
+    MBEDTLS_SSL_PROC_CHK( mbedtls_ssl_write_handshake_msg_ext( ssl, 0, 0 ) );
 
 cleanup:
     return( ret );
@@ -1545,7 +1545,6 @@ int mbedtls_ssl_tls13_write_finished_message( mbedtls_ssl_context *ssl )
     MBEDTLS_SSL_PROC_CHK( ssl_tls13_finalize_finished_message( ssl ) );
     MBEDTLS_SSL_PROC_CHK( mbedtls_ssl_tls13_finish_handshake_msg( ssl,
                                               buf_len, msg_len ) );
-    MBEDTLS_SSL_PROC_CHK( mbedtls_ssl_flush_output( ssl ) );
 
 cleanup:
 
@@ -1695,9 +1694,6 @@ int mbedtls_ssl_tls13_write_change_cipher_spec_process( mbedtls_ssl_context *ssl
         MBEDTLS_SSL_PROC_CHK( ssl_tls13_write_change_cipher_spec_postprocess( ssl ) );
 
 #else /* MBEDTLS_SSL_USE_MPS */
-        /* Make sure we can write a new message. */
-        MBEDTLS_SSL_PROC_CHK( mbedtls_ssl_flush_output( ssl ) );
-
         /* Write CCS message */
         MBEDTLS_SSL_PROC_CHK( ssl_tls13_write_change_cipher_spec_body(
                                   ssl, ssl->out_msg,
@@ -1710,7 +1706,7 @@ int mbedtls_ssl_tls13_write_change_cipher_spec_process( mbedtls_ssl_context *ssl
         MBEDTLS_SSL_PROC_CHK( ssl_tls13_write_change_cipher_spec_postprocess( ssl ) );
 
         /* Dispatch message */
-        MBEDTLS_SSL_PROC_CHK( mbedtls_ssl_write_record( ssl, SSL_FORCE_FLUSH ) );
+        MBEDTLS_SSL_PROC_CHK( mbedtls_ssl_write_record( ssl, 0 ) );
 
 #endif /* MBEDTLS_SSL_USE_MPS */
     }

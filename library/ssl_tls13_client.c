@@ -3040,7 +3040,7 @@ int ssl_tls13_write_early_data_process( mbedtls_ssl_context *ssl )
         MBEDTLS_SSL_PROC_CHK( ssl_tls13_write_early_data_postprocess( ssl ) );
 
         /* Dispatch message */
-        MBEDTLS_SSL_PROC_CHK( mbedtls_ssl_write_record( ssl, SSL_FORCE_FLUSH ) );
+        MBEDTLS_SSL_PROC_CHK( mbedtls_ssl_write_record( ssl, 0 ) );
 
 #endif /* MBEDTLS_SSL_USE_MPS */
 
