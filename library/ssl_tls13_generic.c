@@ -1437,8 +1437,6 @@ static int ssl_tls13_finalize_finished_message( mbedtls_ssl_context *ssl )
                     "mbedtls_ssl_tls13_generate_resumption_master_secret ", ret );
             return ( ret );
         }
-
-        mbedtls_ssl_handshake_set_state( ssl, MBEDTLS_SSL_FLUSH_BUFFERS );
     }
     else
 #endif /* MBEDTLS_SSL_CLI_C */
