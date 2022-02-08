@@ -1455,17 +1455,6 @@ static int ssl_tls13_write_client_hello_body( mbedtls_ssl_context *ssl,
     return( 0 );
 }
 
-static int ssl_tls13_finalize_client_hello( mbedtls_ssl_context *ssl )
-{
-#if defined(MBEDTLS_SSL_TLS1_3_COMPATIBILITY_MODE)
-    mbedtls_ssl_handshake_set_state( ssl, MBEDTLS_SSL_CLIENT_CCS_AFTER_CLIENT_HELLO );
-#else
-    mbedtls_ssl_handshake_set_state( ssl, MBEDTLS_SSL_EARLY_APP_DATA );
-#endif /* MBEDTLS_SSL_TLS1_3_COMPATIBILITY_MODE */
-
-    return( 0 );
-}
-
 static int ssl_tls13_prepare_client_hello( mbedtls_ssl_context *ssl )
 {
     int ret;
@@ -1554,10 +1543,15 @@ static int ssl_tls13_write_client_hello( mbedtls_ssl_context *ssl )
     }
 #endif /* MBEDTLS_KEY_EXCHANGE_SOME_PSK_ENABLED */
 
-    MBEDTLS_SSL_PROC_CHK( ssl_tls13_finalize_client_hello( ssl ) );
     MBEDTLS_SSL_PROC_CHK( mbedtls_ssl_tls13_finish_handshake_msg( ssl,
                                                                   buf_len,
                                                                   msg_len ) );
+
+#if defined(MBEDTLS_SSL_TLS1_3_COMPATIBILITY_MODE)
+    mbedtls_ssl_handshake_set_state( ssl, MBEDTLS_SSL_CLIENT_CCS_AFTER_CLIENT_HELLO );
+#else
+    mbedtls_ssl_handshake_set_state( ssl, MBEDTLS_SSL_EARLY_APP_DATA );
+#endif /* MBEDTLS_SSL_TLS1_3_COMPATIBILITY_MODE */
 
 cleanup:
 
