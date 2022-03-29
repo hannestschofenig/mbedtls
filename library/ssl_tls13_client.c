@@ -1106,7 +1106,7 @@ int mbedtls_ssl_tls13_write_pre_shared_key_ext(
             }
 
             obfuscated_ticket_age =
-                (uint32_t)( now - ssl->session_negotiate->ticket_received ) +
+                (uint32_t)( ( now - ssl->session_negotiate->ticket_received ) * 1000 ) +
                 ssl->session_negotiate->ticket_age_add;
 
             MBEDTLS_SSL_DEBUG_MSG( 4, ( "obfuscated_ticket_age: %u",
