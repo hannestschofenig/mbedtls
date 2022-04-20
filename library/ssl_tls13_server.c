@@ -101,46 +101,14 @@ static int ssl_tls13_parse_supported_versions_ext( mbedtls_ssl_context *ssl,
  *       NamedGroup named_group_list<2..2^16-1>;
  *   } NamedGroupList;
  */
-static int ssl_tls13_parse_supported_groups_ext(
-                mbedtls_ssl_context *ssl,
-                const unsigned char *buf, const unsigned char *end )
+static int ssl_tls13_parse_supported_groups_ext( mbedtls_ssl_context *ssl,
+                                                 const unsigned char *buf,
+                                                 const unsigned char *end )
 {
-    const unsigned char *p = buf;
-    size_t named_group_list_len;
-    const unsigned char *named_group_list_end;
-
-    MBEDTLS_SSL_DEBUG_BUF( 3, "supported_groups extension", p, end - buf );
-    MBEDTLS_SSL_CHK_BUF_READ_PTR( p, end, 2 );
-    named_group_list_len = MBEDTLS_GET_UINT16_BE( p, 0 );
-    p += 2;
-    MBEDTLS_SSL_CHK_BUF_READ_PTR( p, end, named_group_list_len );
-    named_group_list_end = p + named_group_list_len;
-    ssl->handshake->selected_group = 0;
-
-    while( p < named_group_list_end )
-    {
-        uint16_t named_group;
-        MBEDTLS_SSL_CHK_BUF_READ_PTR( p, named_group_list_end, 2 );
-        named_group = MBEDTLS_GET_UINT16_BE( p, 0 );
-        p += 2;
-
-        MBEDTLS_SSL_DEBUG_MSG( 2, ( "got named group: %d", named_group ) );
-
-        if( ! mbedtls_ssl_named_group_is_offered( ssl, named_group ) ||
-            ! mbedtls_ssl_named_group_is_supported( named_group ) ||
-            ssl->handshake->selected_group != 0 )
-        {
-            continue;
-        }
-
-        MBEDTLS_SSL_DEBUG_MSG(
-                2, ( "add named group (%04x) into received list.",
-                     named_group ) );
-        ssl->handshake->selected_group = named_group;
-    }
-
+    ((void) ssl);
+    ((void) buf);
+    ((void) end);
     return( 0 );
-
 }
 #endif /* MBEDTLS_ECDH_C */
 

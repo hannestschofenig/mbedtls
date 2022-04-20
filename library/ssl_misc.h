@@ -586,13 +586,6 @@ struct mbedtls_ssl_handshake_params
     int hello_retry_request_count;
 #endif /* MBEDTLS_SSL_CLI_C */
 
-#if defined(MBEDTLS_SSL_SRV_C)
-    /** selected_group of key_share extension in HelloRetryRequest message. */
-    uint16_t hrr_selected_group;
-    /** selected_group of key_share extension in ClientHello message. */
-    uint16_t selected_group;
-#endif /* MBEDTLS_SSL_SRV_C */
-
 #if defined(MBEDTLS_SSL_PROTO_TLS1_2) && \
     defined(MBEDTLS_KEY_EXCHANGE_WITH_CERT_ENABLED)
     mbedtls_ssl_sig_hash_set_t hash_algs;             /*!<  Set of suitable sig-hash pairs */
