@@ -4216,7 +4216,7 @@ int mbedtls_ssl_config_defaults( mbedtls_ssl_config *conf,
     conf->min_tls_version = MBEDTLS_SSL_VERSION_TLS1_3;
 #endif
 #if defined(MBEDTLS_SSL_PROTO_TLS1_2) && defined(MBEDTLS_SSL_PROTO_TLS1_3)
-        if( transport == MBEDTLS_SSL_TRANSPORT_DATAGRAM ||
+    if( transport == MBEDTLS_SSL_TRANSPORT_DATAGRAM ||
         endpoint == MBEDTLS_SSL_IS_SERVER )
     {
         /* DTLS 1.3 not supported yet
