@@ -51,7 +51,7 @@ static int ssl_tls13_parse_supported_versions_ext( mbedtls_ssl_context *ssl,
     const unsigned char *p = buf;
     size_t versions_len;
     const unsigned char *versions_end;
-    int tls_version;
+    uint16_t tls_version;
     int tls13_supported = 0;
 
     MBEDTLS_SSL_CHK_BUF_READ_PTR( p, end, 1 );
