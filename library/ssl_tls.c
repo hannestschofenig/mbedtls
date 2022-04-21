@@ -7794,7 +7794,7 @@ int mbedtls_ssl_validate_ciphersuite(
         return( -1 );
     }
 
-#if defined(MBEDTLS_SSL_PROTO_TLS1_2)
+#if defined(MBEDTLS_SSL_PROTO_TLS1_2) && defined(MBEDTLS_SSL_CLI_C)
 #if defined(MBEDTLS_KEY_EXCHANGE_ECJPAKE_ENABLED)
     if( suite_info->key_exchange == MBEDTLS_KEY_EXCHANGE_ECJPAKE &&
         mbedtls_ecjpake_check( &ssl->handshake->ecjpake_ctx ) != 0 )
@@ -7811,7 +7811,7 @@ int mbedtls_ssl_validate_ciphersuite(
         return( -1 );
     }
 #endif /* MBEDTLS_KEY_EXCHANGE_SOME_PSK_ENABLED */
-#endif /* MBEDTLS_SSL_PROTO_TLS1_2 */
+#endif /* MBEDTLS_SSL_PROTO_TLS1_2 && MBEDTLS_SSL_CLI_C */
 
     return( 0 );
 }
