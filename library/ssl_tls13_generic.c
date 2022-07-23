@@ -2130,6 +2130,7 @@ int mbedtls_ssl_tls13_write_early_data_ext( mbedtls_ssl_context *ssl,
         {
             MBEDTLS_SSL_DEBUG_MSG( 2, ( "<= skip write early_data extension" ) );
             ssl->handshake->early_data = MBEDTLS_SSL_EARLY_DATA_OFF;
+            ssl->handshake->skip_failed_decryption = 1;
             return( 0 );
         }
     }

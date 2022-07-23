@@ -2754,6 +2754,9 @@ static int ssl_tls13_client_hello_postprocess( mbedtls_ssl_context *ssl,
     int ret = 0;
 #if defined(MBEDTLS_ZERO_RTT)
     mbedtls_ssl_key_set traffic_keys;
+
+    if( ssl->handshake->hello_retry_requests_sent == 1 )
+        ssl->handshake->skip_failed_decryption = 0;
 #endif /* MBEDTLS_ZERO_RTT */
 
     if( ssl->handshake->hello_retry_requests_sent == 0 &&

@@ -4114,10 +4114,21 @@ int mbedtls_ssl_read_record( mbedtls_ssl_context *ssl,
             return( ret );
         }
 
-        if( ssl->in_msgtype == MBEDTLS_SSL_MSG_HANDSHAKE &&
-            update_hs_digest == 1 )
+        if( ssl->in_msgtype == MBEDTLS_SSL_MSG_HANDSHAKE )
         {
-            mbedtls_ssl_update_handshake_status( ssl );
+            if( update_hs_digest == 1)
+                mbedtls_ssl_update_handshake_status( ssl );
+
+#if defined(MBEDTLS_SSL_SRV_C) && defined(MBEDTLS_ZERO_RTT)
+            if( ssl->handshake != NULL &&
+                ssl->handshake->skip_failed_decryption != 0 &&
+                ssl->transform_in != NULL )
+            {
+                /* Record deprotected successfully */
+                ssl->handshake->skip_failed_decryption = 0;
+                MBEDTLS_SSL_DEBUG_MSG( 4, ( "disabling skip_failed_decryption" ) );
+            }
+#endif /* MBEDTLS_SSL_SRV_C && MBEDTLS_ZERO_RTT */
         }
     }
     else
@@ -4711,6 +4722,41 @@ static int ssl_buffer_future_record( mbedtls_ssl_context *ssl,
 
 #endif /* MBEDTLS_SSL_PROTO_DTLS */
 
+/*
+ * RFC 8446:
+ * "If the client attempts a 0-RTT handshake but the server
+ *  rejects it, the server will generally not have the 0-RTT record
+ *  protection keys and must instead use trial decryption (either with
+ *  the 1-RTT handshake keys or by looking for a cleartext ClientHello in
+ *  the case of a HelloRetryRequest) to find the first non-0-RTT message."
+ */
+#if defined(MBEDTLS_SSL_SRV_C)
+static int ssl_should_drop_record( mbedtls_ssl_context *ssl )
+{
+#if defined(MBEDTLS_ZERO_RTT) && !defined(MBEDTLS_SSL_USE_MPS)
+    if( ssl->conf->endpoint != MBEDTLS_SSL_IS_SERVER || ssl->handshake == NULL )
+        return( 0 );
+
+    /*
+     * Drop record iff:
+     *  1. Client indicated early data use (skip_failed_decryption).
+     *  2. Server does not have early data enabled (skip_failed_decryption).
+     *  3. First non-0-RTT record has not yet been found (skip_failed_decryption).
+     *  4. 1-RTT handshake keys are in use.
+     */
+    if( ssl->handshake->skip_failed_decryption == 1 &&
+        ssl->transform_in == ssl->handshake->transform_handshake )
+    {
+        return( 1 );
+    }
+
+#endif /* MBEDTLS_ZERO_RTT && !MBEDTLS_SSL_USE_MPS */
+    ((void) ssl);
+
+    return( 0 );
+}
+#endif /* MBEDTLS_SSL_SRV_C */
+
 static int ssl_get_next_record( mbedtls_ssl_context *ssl )
 {
     int ret = MBEDTLS_ERR_ERROR_CORRUPTION_DETECTED;
@@ -4879,15 +4925,25 @@ static int ssl_get_next_record( mbedtls_ssl_context *ssl )
         else
 #endif
         {
-            /* Error out (and send alert) on invalid records */
-#if defined(MBEDTLS_SSL_ALL_ALERT_MESSAGES)
             if( ret == MBEDTLS_ERR_SSL_INVALID_MAC )
             {
+#if defined(MBEDTLS_SSL_SRV_C)
+                if( ssl->handshake != NULL &&
+                    ssl_should_drop_record( ssl ) != 0 )
+                {
+                    MBEDTLS_SSL_DEBUG_MSG( 1, ( "invalid record (mac), dropping 0-RTT message" ) );
+                    return( MBEDTLS_ERR_SSL_CONTINUE_PROCESSING );
+                }
+#endif /* MBEDTLS_SSL_SRV_C */
+
+                /* Error out (and send alert) on invalid records */
+#if defined(MBEDTLS_SSL_ALL_ALERT_MESSAGES)
                 mbedtls_ssl_send_alert_message( ssl,
                         MBEDTLS_SSL_ALERT_LEVEL_FATAL,
                         MBEDTLS_SSL_ALERT_MSG_BAD_RECORD_MAC );
+#endif /* MBEDTLS_SSL_ALL_ALERT_MESSAGES */
             }
-#endif
+
             return( ret );
         }
     }
