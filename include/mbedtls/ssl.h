@@ -337,6 +337,14 @@
 #define MBEDTLS_SSL_EARLY_DATA_OFF        0
 #define MBEDTLS_SSL_EARLY_DATA_ON         1
 
+#define MBEDTLS_SSL_EARLY_DATA_OLD_API 0
+#define MBEDTLS_SSL_EARLY_DATA_NEW_API 1
+
+#define MBEDTLS_SSL_EARLY_DATA_STATE_DISABLED        0
+#define MBEDTLS_SSL_EARLY_DATA_STATE_ENABLED         1
+#define MBEDTLS_SSL_EARLY_DATA_STATE_OFF             2   /* early_data extension sent, cannot send early_data */
+#define MBEDTLS_SSL_EARLY_DATA_STATE_ON              3   /* early_data extension sent, can send early_data */
+
 #define MBEDTLS_SSL_FORCE_RR_CHECK_OFF      0
 #define MBEDTLS_SSL_FORCE_RR_CHECK_ON       1
 
@@ -862,6 +870,42 @@ typedef struct mbedtls_ssl_flight_item mbedtls_ssl_flight_item;
  *                 of 0-RTT and the server has accepted it.
  */
 int mbedtls_ssl_get_early_data_status( mbedtls_ssl_context *ssl );
+
+/**
+ * \brief          Get information about the eligibility of sending early data
+ *                 in a 0-RTT handshake
+ *
+ * \param ssl      The SSL context to query.
+ *
+ * \returns        #MBEDTLS_SSL_EARLY_DATA_STATE_DISABLED if early data is
+ *                 disabled for the session.
+ * \returns        #MBEDTLS_SSL_EARLY_DATA_STATE_ENABLED if early data is
+ *                 enabled for the session.
+ * \returns        #MBEDTLS_SSL_EARLY_DATA_STATE_ON if the client has provided
+ *                 early data indication.
+ * \returns        #MBEDTLS_SSL_EARLY_DATA_STATE_OFF if early data indication
+ *                 was provided but the session can no longer send early data,
+ *                 (e.g. EndOfEarlyData message has been sent).
+ *
+ * \note           This function may only be used if the new 0-RTT API is
+ *                 enabled by passing #MBEDTLS_SSL_EARLY_DATA_NEW_API to
+ *                 \c mbedtls_ssl_conf_early_data().
+ */
+int mbedtls_ssl_get_early_data_state( mbedtls_ssl_context *ssl );
+
+/**
+ * \brief          Get current status of the handshake.
+ *
+ * \param ssl      The SSL context to query.
+ *
+ * \returns        \c 1 if the handshake is over.
+ * \returns        \c 0 if the handshake is still in progress.
+ *
+ * \note           If you need to determine whether to defer sending data until
+ *                 the connection is replay-safe, this function can be used to
+ *                 check if the handshake is complete.
+ */
+int mbedtls_ssl_is_init_finished( mbedtls_ssl_context *ssl );
 #endif /* MBEDTLS_SSL_PROTO_TLS1_3 && MBEDTLS_ZERO_RTT && MBEDTLS_SSL_CLI_C */
 
 typedef enum
@@ -1592,7 +1636,12 @@ struct mbedtls_ssl_config
       *   - MBEDTLS_SSL_EARLY_DATA_DISABLED,
       *   - MBEDTLS_SSL_EARLY_DATA_ENABLED
       */
-    int early_data_enabled;
+    int MBEDTLS_PRIVATE(early_data_enabled);
+    /*!< Early data api:
+      *   - MBEDTLS_SSL_EARLY_DATA_OLD_API,
+      *   - MBEDTLS_SSL_EARLY_DATA_NEW_API
+      */
+    int MBEDTLS_PRIVATE(early_data_api);
 #if defined(MBEDTLS_SSL_SRV_C)
     /* Max number of bytes of early data acceptable by the server. */
     size_t max_early_data;
@@ -2084,6 +2133,7 @@ void mbedtls_ssl_conf_authmode( mbedtls_ssl_config *conf, int authmode );
 #if defined(MBEDTLS_SSL_PROTO_TLS1_3) && defined(MBEDTLS_ZERO_RTT)
 void mbedtls_ssl_conf_early_data( mbedtls_ssl_config* conf, int early_data,
                                   size_t max_early_data,
+                                  int early_data_api,
                                   int(*early_data_callback)( mbedtls_ssl_context*,
                                                              const unsigned char*,
                                                              size_t ) );
@@ -5057,6 +5107,74 @@ int mbedtls_ssl_read( mbedtls_ssl_context *ssl, unsigned char *buf, size_t len )
  *                 application record being sent.
  */
 int mbedtls_ssl_write( mbedtls_ssl_context *ssl, const unsigned char *buf, size_t len );
+
+#if defined(MBEDTLS_ZERO_RTT)
+/** TODO: Add complete documentation. */
+/**
+ * \brief          Try to write exactly 'len' early data bytes
+ *
+ * \warning        This function will do partial writes in some cases. If the
+ *                 return value is non-negative but less than length, the
+ *                 function must be called again with updated arguments:
+ *                 buf + ret, len - ret (if ret is the return value) until
+ *                 it returns a value equal to the last 'len' argument.
+ *
+ * \param ssl      SSL context
+ * \param buf      buffer holding the data
+ * \param len      how many bytes must be written
+ *
+ * \return         The (non-negative) number of bytes actually written if
+ *                 successful (may be less than \p len).
+ * \return         #MBEDTLS_ERR_SSL_WANT_READ or #MBEDTLS_ERR_SSL_WANT_WRITE
+ *                 if the handshake is incomplete and waiting for data to
+ *                 be available for reading from or writing to the underlying
+ *                 transport - in this case you may call this function again
+ *                 when the underlying transport is ready for the operation to
+ *                 send additional early data.
+ *
+ * \return         Another SSL error code - in this case you must stop using
+ *                 the context (see below).
+ *
+ * \warning        If this function returns something other than
+ *                 a non-negative value,
+ *                 #MBEDTLS_ERR_SSL_WANT_READ,
+ *                 #MBEDTLS_ERR_SSL_WANT_WRITE,
+ *                 #MBEDTLS_ERR_SSL_ASYNC_IN_PROGRESS or
+ *                 #MBEDTLS_ERR_SSL_CRYPTO_IN_PROGRESS,
+ *                 you must stop using the SSL context for reading or writing,
+ *                 and either free it or call \c mbedtls_ssl_session_reset()
+ *                 on it before re-using it for a new connection; the current
+ *                 connection must be closed.
+ *
+ * \warning        0-RTT can be subject to replay attacks and should only be
+ *                 used for data that is replay-safe.
+ *                 \c mbedtls_ssl_is_init_finished() can be used if you need to
+ *                 ensure a request is sent only when the connection is
+ *                 replay-safe.
+ *
+ * \note           This function will implicitly begin the handshake until it
+ *                 reaches the early data stage, at which point it will send
+ *                 the early data.
+ *
+ * \note           This function can be called multiple times throughout the
+ *                 duration of the handshake, but it must be the first IO
+ *                 function called on a new connection to guarantee the
+ *                 handshake does not complete atomically before the initial
+ *                 early data is sent. After a successful return, you should
+ *                 call \c mbedtls_ssl_handshake() to try and complete the
+ *                 handshake.
+ *
+ * \note           This function may not be called if
+ *                 \c mbedtls_ssl_get_early_data_state() returns
+ *                 #MBEDTLS_SSL_EARLY_DATA_STATE_DISABLED or
+ *                 #MBEDTLS_SSL_EARLY_DATA_STATE_OFF.
+ *
+ * \note           This function may only be used if the new 0-RTT API is
+ *                 enabled by passing #MBEDTLS_SSL_EARLY_DATA_NEW_API to
+ *                 \c mbedtls_ssl_conf_early_data().
+ */
+int mbedtls_ssl_write_early_data( mbedtls_ssl_context *ssl, const unsigned char *buf, size_t len );
+#endif /* MBEDTLS_ZERO_RTT*/
 
 /**
  * \brief           Send an alert message

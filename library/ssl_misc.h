@@ -934,11 +934,12 @@ struct mbedtls_ssl_handshake_params
 #if defined(MBEDTLS_ZERO_RTT)
     mbedtls_ssl_tls13_early_secrets early_secrets;
 
-    /*!< Early data indication:
-    0  -- MBEDTLS_SSL_EARLY_DATA_DISABLED (for no early data), and
-    1  -- MBEDTLS_SSL_EARLY_DATA_ENABLED (for use early data)
-    */
     int early_data;
+    int early_data_write;
+    int early_data_ready;
+#if defined(MBEDTLS_SSL_SRV_C)
+    int skip_failed_decryption;
+#endif /* MBEDTLS_SSL_SRV_C */
 #endif /* MBEDTLS_ZERO_RTT */
 
 #endif /* MBEDTLS_SSL_PROTO_TLS1_3 */

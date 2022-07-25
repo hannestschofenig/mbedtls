@@ -2052,6 +2052,7 @@ cleanup:
 void mbedtls_ssl_conf_early_data(
     mbedtls_ssl_config *conf,
     int early_data, size_t max_early_data,
+    int early_data_api,
     int(*early_data_callback)( mbedtls_ssl_context*,
                                const unsigned char*,
                                size_t ) )
@@ -2061,6 +2062,7 @@ void mbedtls_ssl_conf_early_data(
     ( ( void ) early_data_callback );
 #endif /* !MBEDTLS_SSL_SRV_C */
     conf->early_data_enabled = early_data;
+    conf->early_data_api = early_data_api;
 
 #if defined(MBEDTLS_SSL_SRV_C)
 
@@ -2112,7 +2114,9 @@ int mbedtls_ssl_tls13_write_early_data_ext( mbedtls_ssl_context *ssl,
             ssl->conf->early_data_enabled == MBEDTLS_SSL_EARLY_DATA_DISABLED )
         {
             MBEDTLS_SSL_DEBUG_MSG( 2, ( "<= skip write early_data extension" ) );
-            ssl->handshake->early_data = MBEDTLS_SSL_EARLY_DATA_OFF;
+            ssl->handshake->early_data = ( ssl->conf->early_data_api == MBEDTLS_SSL_EARLY_DATA_NEW_API )
+                                         ? MBEDTLS_SSL_EARLY_DATA_STATE_DISABLED
+                                         : MBEDTLS_SSL_EARLY_DATA_OFF;
             return( 0 );
         }
     }
@@ -2124,12 +2128,14 @@ int mbedtls_ssl_tls13_write_early_data_ext( mbedtls_ssl_context *ssl,
         if( ( ssl->handshake->extensions_present & MBEDTLS_SSL_EXT_EARLY_DATA ) == 0 )
             return( 0 );
 
-        if( ssl->conf->tls13_kex_modes !=
-                   MBEDTLS_SSL_TLS1_3_KEY_EXCHANGE_MODE_PSK ||
+        if( !mbedtls_ssl_conf_tls13_some_psk_enabled( ssl ) ||
             ssl->conf->early_data_enabled == MBEDTLS_SSL_EARLY_DATA_DISABLED )
         {
             MBEDTLS_SSL_DEBUG_MSG( 2, ( "<= skip write early_data extension" ) );
-            ssl->handshake->early_data = MBEDTLS_SSL_EARLY_DATA_OFF;
+            ssl->handshake->early_data = ( ssl->conf->early_data_api == MBEDTLS_SSL_EARLY_DATA_NEW_API )
+                                         ? MBEDTLS_SSL_EARLY_DATA_STATE_DISABLED
+                                         : MBEDTLS_SSL_EARLY_DATA_OFF;
+            ssl->handshake->skip_failed_decryption = 1;
             return( 0 );
         }
     }
@@ -2158,7 +2164,9 @@ int mbedtls_ssl_tls13_write_early_data_ext( mbedtls_ssl_context *ssl,
     }
 #endif /* MBEDTLS_SSL_SRV_C */
 
-    ssl->handshake->early_data = MBEDTLS_SSL_EARLY_DATA_ON;
+    ssl->handshake->early_data = ( ssl->conf->early_data_api == MBEDTLS_SSL_EARLY_DATA_NEW_API )
+                                 ? MBEDTLS_SSL_EARLY_DATA_STATE_ON
+                                 : MBEDTLS_SSL_EARLY_DATA_ON;
 
     /* Write extension header */
     MBEDTLS_PUT_UINT16_BE( MBEDTLS_TLS_EXT_EARLY_DATA, p, 0 );

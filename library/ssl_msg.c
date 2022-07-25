@@ -4114,10 +4114,21 @@ int mbedtls_ssl_read_record( mbedtls_ssl_context *ssl,
             return( ret );
         }
 
-        if( ssl->in_msgtype == MBEDTLS_SSL_MSG_HANDSHAKE &&
-            update_hs_digest == 1 )
+        if( ssl->in_msgtype == MBEDTLS_SSL_MSG_HANDSHAKE )
         {
-            mbedtls_ssl_update_handshake_status( ssl );
+            if( update_hs_digest == 1)
+                mbedtls_ssl_update_handshake_status( ssl );
+
+#if defined(MBEDTLS_SSL_SRV_C) && defined(MBEDTLS_ZERO_RTT)
+            if( ssl->handshake != NULL &&
+                ssl->handshake->skip_failed_decryption != 0 &&
+                ssl->transform_in != NULL )
+            {
+                /* Record deprotected successfully */
+                ssl->handshake->skip_failed_decryption = 0;
+                MBEDTLS_SSL_DEBUG_MSG( 4, ( "disabling skip_failed_decryption" ) );
+            }
+#endif /* MBEDTLS_SSL_SRV_C && MBEDTLS_ZERO_RTT */
         }
     }
     else
@@ -4711,6 +4722,41 @@ static int ssl_buffer_future_record( mbedtls_ssl_context *ssl,
 
 #endif /* MBEDTLS_SSL_PROTO_DTLS */
 
+/*
+ * RFC 8446:
+ * "If the client attempts a 0-RTT handshake but the server
+ *  rejects it, the server will generally not have the 0-RTT record
+ *  protection keys and must instead use trial decryption (either with
+ *  the 1-RTT handshake keys or by looking for a cleartext ClientHello in
+ *  the case of a HelloRetryRequest) to find the first non-0-RTT message."
+ */
+#if defined(MBEDTLS_SSL_SRV_C)
+static int ssl_should_drop_record( mbedtls_ssl_context *ssl )
+{
+#if defined(MBEDTLS_ZERO_RTT) && !defined(MBEDTLS_SSL_USE_MPS)
+    if( ssl->conf->endpoint != MBEDTLS_SSL_IS_SERVER || ssl->handshake == NULL )
+        return( 0 );
+
+    /*
+     * Drop record iff:
+     *  1. Client indicated early data use (skip_failed_decryption).
+     *  2. Server does not have early data enabled (skip_failed_decryption).
+     *  3. First non-0-RTT record has not yet been found (skip_failed_decryption).
+     *  4. 1-RTT handshake keys are in use.
+     */
+    if( ssl->handshake->skip_failed_decryption == 1 &&
+        ssl->transform_in == ssl->handshake->transform_handshake )
+    {
+        return( 1 );
+    }
+
+#endif /* MBEDTLS_ZERO_RTT && !MBEDTLS_SSL_USE_MPS */
+    ((void) ssl);
+
+    return( 0 );
+}
+#endif /* MBEDTLS_SSL_SRV_C */
+
 static int ssl_get_next_record( mbedtls_ssl_context *ssl )
 {
     int ret = MBEDTLS_ERR_ERROR_CORRUPTION_DETECTED;
@@ -4879,15 +4925,25 @@ static int ssl_get_next_record( mbedtls_ssl_context *ssl )
         else
 #endif
         {
-            /* Error out (and send alert) on invalid records */
-#if defined(MBEDTLS_SSL_ALL_ALERT_MESSAGES)
             if( ret == MBEDTLS_ERR_SSL_INVALID_MAC )
             {
+#if defined(MBEDTLS_SSL_SRV_C)
+                if( ssl->handshake != NULL &&
+                    ssl_should_drop_record( ssl ) != 0 )
+                {
+                    MBEDTLS_SSL_DEBUG_MSG( 1, ( "invalid record (mac), dropping 0-RTT message" ) );
+                    return( MBEDTLS_ERR_SSL_CONTINUE_PROCESSING );
+                }
+#endif /* MBEDTLS_SSL_SRV_C */
+
+                /* Error out (and send alert) on invalid records */
+#if defined(MBEDTLS_SSL_ALL_ALERT_MESSAGES)
                 mbedtls_ssl_send_alert_message( ssl,
                         MBEDTLS_SSL_ALERT_LEVEL_FATAL,
                         MBEDTLS_SSL_ALERT_MSG_BAD_RECORD_MAC );
+#endif /* MBEDTLS_SSL_ALL_ALERT_MESSAGES */
             }
-#endif
+
             return( ret );
         }
     }
@@ -5886,6 +5942,15 @@ cleanup:
     return( ret );
 }
 
+int mbedtls_ssl_write_early_data( mbedtls_ssl_context *ssl, const unsigned char *buf, size_t len )
+{
+    ( ( void ) buf );
+    ( ( void ) len );
+
+    MBEDTLS_SSL_DEBUG_MSG( 1, ( "new 0-RTT api is not compatible with MPS" ) );
+    return( MBEDTLS_ERR_SSL_FEATURE_UNAVAILABLE );
+}
+
 /*
  * Notify the peer that the connection is being closed
  */
@@ -6217,8 +6282,9 @@ int mbedtls_ssl_write( mbedtls_ssl_context *ssl, const unsigned char *buf, size_
 
 #if defined(MBEDTLS_ZERO_RTT)
     /* TODO: What's the purpose of this check? */
-    if( ( ssl->handshake != NULL ) &&
-        ( ssl->handshake->early_data == MBEDTLS_SSL_EARLY_DATA_OFF ) )
+    if( ( ssl->conf->early_data_api == MBEDTLS_SSL_EARLY_DATA_NEW_API ) ||
+        ( ( ssl->handshake != NULL ) &&
+        ( ssl->handshake->early_data == MBEDTLS_SSL_EARLY_DATA_OFF ) ) )
 #endif /* MBEDTLS_ZERO_RTT */
     {
         if( mbedtls_ssl_is_handshake_over( ssl ) == 0 )
@@ -6237,6 +6303,63 @@ int mbedtls_ssl_write( mbedtls_ssl_context *ssl, const unsigned char *buf, size_
 
     return( ret );
 }
+
+#if defined(MBEDTLS_ZERO_RTT)
+/*
+ * Write application data as early data (public-facing wrapper)
+ */
+int mbedtls_ssl_write_early_data( mbedtls_ssl_context *ssl, const unsigned char *buf, size_t len )
+{
+    if( ssl->conf->early_data_api == MBEDTLS_SSL_EARLY_DATA_OLD_API )
+    {
+        MBEDTLS_SSL_DEBUG_MSG( 1, ( "new api must be enabled for mbedtls_ssl_write_early_data" ) );
+        return( MBEDTLS_ERR_SSL_FEATURE_UNAVAILABLE );
+    }
+
+    int ret = MBEDTLS_ERR_ERROR_CORRUPTION_DETECTED;
+
+    MBEDTLS_SSL_DEBUG_MSG( 2, ( "=> write early_data" ) );
+
+    if( ssl == NULL || ssl->conf == NULL )
+        return( MBEDTLS_ERR_SSL_BAD_INPUT_DATA );
+
+    /* Advance handshake if necessary */
+    if( ssl->handshake->early_data_ready == 0 )
+    {
+        /* Indicate handshake initiated from an early data write */
+        ssl->handshake->early_data_write = 1;
+        ret = mbedtls_ssl_handshake( ssl );
+
+        if( ( ssl->handshake->early_data_ready == 0 ) ||
+            ( ret != 0 && ret != MBEDTLS_ERR_SSL_WANT_WRITE ) )
+        {
+            MBEDTLS_SSL_DEBUG_RET( 1, "mbedtls_ssl_handshake", ret );
+            return( ret );
+        }
+    }
+
+    if( ( mbedtls_ssl_is_init_finished( ssl ) ) ||
+        ( ssl->handshake->early_data != MBEDTLS_SSL_EARLY_DATA_STATE_ON ) )
+    {
+        MBEDTLS_SSL_DEBUG_MSG( 2, ( "cannot send early_data" ) );
+        return( MBEDTLS_ERR_SSL_INTERNAL_ERROR );
+    }
+
+#if defined(MBEDTLS_SSL_RENEGOTIATION)
+    if( ( ret = ssl_check_ctr_renegotiate( ssl ) ) != 0 )
+    {
+        MBEDTLS_SSL_DEBUG_RET( 1, "ssl_check_ctr_renegotiate", ret );
+        return( ret );
+    }
+#endif
+
+    ret = ssl_write_real( ssl, buf, len );
+
+    MBEDTLS_SSL_DEBUG_MSG( 2, ( "<= write early_data" ) );
+
+    return( ret );
+}
+#endif /* MBEDTLS_ZERO_RTT*/
 
 /*
  * Notify the peer that the connection is being closed

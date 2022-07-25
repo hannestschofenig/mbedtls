@@ -775,6 +775,14 @@ static int ssl_handshake_init( mbedtls_ssl_context *ssl )
     }
 #endif
 
+#if defined(MBEDTLS_ZERO_RTT)
+    if( ( ssl->conf->early_data_api == MBEDTLS_SSL_EARLY_DATA_NEW_API ) &&
+        ( ssl->conf->early_data_enabled == MBEDTLS_SSL_EARLY_DATA_ENABLED ) )
+    {
+        ssl->handshake->early_data = MBEDTLS_SSL_EARLY_DATA_STATE_ENABLED;
+    }
+#endif
+
 /*
  * curve_list is translated to IANA TLS group identifiers here because
  * mbedtls_ssl_conf_curves returns void and so can't return

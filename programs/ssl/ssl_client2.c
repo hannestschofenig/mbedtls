@@ -65,6 +65,7 @@ int main( void )
 #define DFL_KEY_PWD             ""
 #define DFL_PSK                 ""
 #define DFL_EARLY_DATA          MBEDTLS_SSL_EARLY_DATA_DISABLED
+#define DFL_EARLY_DATA_API      MBEDTLS_SSL_EARLY_DATA_OLD_API
 #define DFL_PSK_OPAQUE          0
 #define DFL_PSK_IDENTITY        "Client_identity"
 #define DFL_ECJPAKE_PW          NULL
@@ -349,8 +350,12 @@ int main( void )
 #define USAGE_EARLY_DATA \
     "    early_data=%%d        default: 0 (disabled)\n"      \
     "                        options: 0 (disabled), 1 (enabled)\n"
+#define USAGE_EARLY_DATA_API \
+    "    early_data_api=%%d    default: 0 (old api)\n"       \
+    "                          options: 0 (old api), 1 (new api)\n"
 #else
 #define USAGE_EARLY_DATA ""
+#define USAGE_EARLY_DATA_API ""
 #endif /* MBEDTLS_ZERO_RTT && MBEDTLS_SSL_PROTO_TLS1_3 */
 
 #if defined(MBEDTLS_ECP_C) && defined(MBEDTLS_SSL_PROTO_TLS1_3)
@@ -429,6 +434,7 @@ int main( void )
     USAGE_CURVES                                            \
     USAGE_SIG_ALGS                                          \
     USAGE_EARLY_DATA                                        \
+    USAGE_EARLY_DATA_API                                    \
     USAGE_NAMED_GROUP                                       \
     USAGE_DHMLEN                                            \
     "\n"
@@ -543,6 +549,7 @@ struct options
     const char *named_groups_string;           /* list of named groups      */
     const char *key_share_named_groups_string; /* list of named groups      */
     int early_data;             /* support for early data                   */
+    int early_data_api;         /* old or new 0-RTT API                     */
     int query_config_mode;      /* whether to read config                   */
     int use_srtp;               /* Support SRTP                             */
     int force_srtp_profile;     /* SRTP protection profile to use or all    */
@@ -882,6 +889,7 @@ int main( int argc, char *argv[] )
     opt.psk                 = DFL_PSK;
     opt.sig_algs            = DFL_SIG_ALGS;
     opt.early_data          = DFL_EARLY_DATA;
+    opt.early_data_api      = DFL_EARLY_DATA_API;
 #if defined(MBEDTLS_USE_PSA_CRYPTO)
     opt.psk_opaque          = DFL_PSK_OPAQUE;
 #endif
@@ -1169,6 +1177,19 @@ int main( int argc, char *argv[] )
                     break;
                 case 1:
                     opt.early_data = MBEDTLS_SSL_EARLY_DATA_ENABLED;
+                    break;
+                default: goto usage;
+            }
+        }
+        else if( strcmp( p, "early_data_api" ) == 0 )
+        {
+            switch( atoi( q ) )
+            {
+                case 0:
+                    opt.early_data_api = MBEDTLS_SSL_EARLY_DATA_OLD_API;
+                    break;
+                case 1:
+                    opt.early_data_api = MBEDTLS_SSL_EARLY_DATA_NEW_API;
                     break;
                 default: goto usage;
             }
@@ -2099,8 +2120,9 @@ int main( int argc, char *argv[] )
         mbedtls_ssl_conf_max_tls_version( &conf, opt.max_version );
 
 #if defined(MBEDTLS_SSL_PROTO_TLS1_3) && defined(MBEDTLS_ZERO_RTT)
-    mbedtls_ssl_conf_early_data( &conf, opt.early_data, 0, NULL );
-    mbedtls_ssl_set_early_data( &ssl, (const unsigned char*) early_data,
+    mbedtls_ssl_conf_early_data( &conf, opt.early_data, 0, opt.early_data_api, NULL );
+    if( opt.early_data_api == MBEDTLS_SSL_EARLY_DATA_OLD_API )
+        mbedtls_ssl_set_early_data( &ssl, (const unsigned char*) early_data,
                                 strlen( early_data ) );
 #endif /* MBEDTLS_SSL_PROTO_TLS1_3 && MBEDTLS_ZERO_RTT */
 
@@ -3183,7 +3205,8 @@ reconnect:
 #endif /* MBEDTLS_SSL_PROTO_TLS1_3 */
 
 #if defined(MBEDTLS_SSL_PROTO_TLS1_3) && defined(MBEDTLS_ZERO_RTT)
-        mbedtls_ssl_set_early_data( &ssl, (const unsigned char*) early_data,
+        if( opt.early_data_api == MBEDTLS_SSL_EARLY_DATA_OLD_API )
+            mbedtls_ssl_set_early_data( &ssl, (const unsigned char*) early_data,
                                     strlen( early_data ) );
 #endif /* MBEDTLS_SSL_PROTO_TLS1_3 && MBEDTLS_ZERO_RTT */
 
@@ -3209,9 +3232,44 @@ reconnect:
             goto exit;
         }
 
-        while( ( ret = mbedtls_ssl_handshake( &ssl ) ) != 0 )
-        {
-            if( ret != MBEDTLS_ERR_SSL_WANT_READ &&
+#if defined(MBEDTLS_ZERO_RTT)
+        char early_buf[256];
+        int early_count = 0;
+#endif
+        do {
+#if defined(MBEDTLS_ZERO_RTT)
+            if( ( opt.early_data_api == MBEDTLS_SSL_EARLY_DATA_NEW_API ) &&
+                ( mbedtls_ssl_get_early_data_state( &ssl ) == MBEDTLS_SSL_EARLY_DATA_STATE_ENABLED ||
+                  mbedtls_ssl_get_early_data_state( &ssl ) == MBEDTLS_SSL_EARLY_DATA_STATE_ON ) )
+            {
+                int early_written = 0;
+                int early_len = mbedtls_snprintf( early_buf, sizeof( early_buf ), "early data test %d", early_count );
+                do {
+                    ret = mbedtls_ssl_write_early_data( &ssl, (const unsigned char*) early_buf + early_written, early_len - early_written );
+                    if( ret < 0 &&
+                        ret != MBEDTLS_ERR_SSL_WANT_READ &&
+                        ret != MBEDTLS_ERR_SSL_WANT_WRITE &&
+                        ret != MBEDTLS_ERR_SSL_CRYPTO_IN_PROGRESS )
+                    {
+                        mbedtls_printf( " failed\n  ! mbedtls_ssl_write_early_data returned -0x%x\n\n",
+                                        (unsigned int) -ret );
+                        goto exit;
+                    }
+
+                    if( ret < 0 )
+                        continue;
+
+                    early_written += ret;
+                } while ( early_written < early_len );
+
+                early_buf[ret] = '\0';
+                mbedtls_printf( " %zu bytes early data sent: %s\n", ret, early_buf );
+                early_count++;
+            }
+#endif
+            ret = mbedtls_ssl_handshake( &ssl );
+            if( ret < 0 &&
+                ret != MBEDTLS_ERR_SSL_WANT_READ &&
                 ret != MBEDTLS_ERR_SSL_WANT_WRITE &&
                 ret != MBEDTLS_ERR_SSL_CRYPTO_IN_PROGRESS )
             {
@@ -3219,7 +3277,7 @@ reconnect:
                                 (unsigned int) -ret );
                 goto exit;
             }
-        }
+        } while ( ret != 0 );
 
         mbedtls_printf( " ok\n" );
 

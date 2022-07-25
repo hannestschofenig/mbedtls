@@ -1770,7 +1770,10 @@ static int ssl_tls13_read_end_of_early_data_coordinate( mbedtls_ssl_context *ssl
 #else /* MBEDTLS_ZERO_RTT */
 static int ssl_tls13_read_end_of_early_data_coordinate( mbedtls_ssl_context *ssl )
 {
-    if( ssl->handshake->early_data != MBEDTLS_SSL_EARLY_DATA_ON )
+    int early_data_state = ( ssl->conf->early_data_api == MBEDTLS_SSL_EARLY_DATA_NEW_API )
+                           ? MBEDTLS_SSL_EARLY_DATA_STATE_ON
+                           : MBEDTLS_SSL_EARLY_DATA_ON;
+    if( ssl->handshake->early_data != early_data_state )
         return( SSL_END_OF_EARLY_DATA_SKIP );
 
     return( SSL_END_OF_EARLY_DATA_EXPECT );
@@ -1919,7 +1922,7 @@ static int ssl_tls13_early_data_fetch( mbedtls_ssl_context *ssl,
     }
 
     *buf    = ssl->in_msg;
-    *buflen = ssl->in_hslen;
+    *buflen = ssl->in_msglen;
 
 cleanup:
 
@@ -1939,7 +1942,10 @@ static int ssl_tls13_read_early_data_coordinate( mbedtls_ssl_context *ssl )
 {
     int ret;
 
-    if( ssl->handshake->early_data != MBEDTLS_SSL_EARLY_DATA_ON )
+    int early_data_state = ( ssl->conf->early_data_api == MBEDTLS_SSL_EARLY_DATA_NEW_API )
+                           ? MBEDTLS_SSL_EARLY_DATA_STATE_ON
+                           : MBEDTLS_SSL_EARLY_DATA_ON;
+    if( ssl->handshake->early_data != early_data_state )
         return( SSL_EARLY_DATA_SKIP );
 
     /* Activate early data transform */
@@ -2232,7 +2238,9 @@ static int ssl_tls13_check_use_0rtt_handshake( mbedtls_ssl_context *ssl )
     }
 
     /* Accept 0-RTT */
-    ssl->handshake->early_data = MBEDTLS_SSL_EARLY_DATA_ON;
+    ssl->handshake->early_data = ( ssl->conf->early_data_api == MBEDTLS_SSL_EARLY_DATA_NEW_API )
+                                 ? MBEDTLS_SSL_EARLY_DATA_STATE_ON
+                                 : MBEDTLS_SSL_EARLY_DATA_ON;
     return( 0 );
 }
 #endif /* MBEDTLS_ZERO_RTT*/
@@ -2754,6 +2762,9 @@ static int ssl_tls13_client_hello_postprocess( mbedtls_ssl_context *ssl,
     int ret = 0;
 #if defined(MBEDTLS_ZERO_RTT)
     mbedtls_ssl_key_set traffic_keys;
+
+    if( ssl->handshake->hello_retry_requests_sent == 1 )
+        ssl->handshake->skip_failed_decryption = 0;
 #endif /* MBEDTLS_ZERO_RTT */
 
     if( ssl->handshake->hello_retry_requests_sent == 0 &&
@@ -2790,7 +2801,10 @@ static int ssl_tls13_client_hello_postprocess( mbedtls_ssl_context *ssl,
     }
 
 #if defined(MBEDTLS_ZERO_RTT)
-    if( ssl->handshake->early_data == MBEDTLS_SSL_EARLY_DATA_ON )
+    int early_data_state = ( ssl->conf->early_data_api == MBEDTLS_SSL_EARLY_DATA_NEW_API )
+                           ? MBEDTLS_SSL_EARLY_DATA_STATE_ON
+                           : MBEDTLS_SSL_EARLY_DATA_ON;
+    if( ssl->handshake->early_data == early_data_state )
     {
         mbedtls_ssl_transform *transform_earlydata;
 

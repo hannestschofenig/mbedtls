@@ -833,6 +833,17 @@ find_in_both() {
         fi
 }
 
+find_in_both_same_count() {
+        srv_count=$(sed -n -e "$1" "$2" | sort | uniq -c);
+        cli_count=$(sed -n -e "$1" "$3" | sort | uniq -c);
+
+        if [ "$srv_count" = "$cli_count" ]; then
+                return 0;
+        else
+                return 1;
+        fi
+}
+
 SKIP_HANDSHAKE_CHECK="NO"
 skip_handshake_stage_check() {
     SKIP_HANDSHAKE_CHECK="YES"
@@ -2103,6 +2114,104 @@ run_test    "TLS 1.3, TLS1-3-AES-256-GCM-SHA384, ECDHE-ECDSA, client tries early
       -c "Ciphersuite is TLS1-3-AES-256-GCM-SHA384"                   \
       -c "early data status = 0"
 
+# early data new api
+requires_config_enabled MBEDTLS_SSL_PROTO_TLS1_3
+requires_config_enabled MBEDTLS_DEBUG_C
+requires_config_enabled MBEDTLS_SSL_SRV_C
+requires_config_enabled MBEDTLS_SSL_CLI_C
+requires_config_enabled MBEDTLS_ZERO_RTT
+requires_config_disabled MBEDTLS_SSL_USE_MPS
+run_test    "TLS 1.3, TLS1-3-AES-256-GCM-SHA384, ext PSK, early data new api" \
+            "$P_SRV nbio=2 debug_level=5 force_version=tls13 early_data=-1 tls13_kex_modes=psk psk=010203 psk_identity=0a0b0c" \
+            "$P_CLI nbio=2 debug_level=5 force_version=tls13 force_ciphersuite=TLS1-3-AES-256-GCM-SHA384 tls13_kex_modes=psk early_data=1 early_data_api=1 psk=010203 psk_identity=0a0b0c" \
+            0 \
+            -s "found early_data extension"                 \
+            -s "Derive Early Secret with 'ext binder'"      \
+            -c "client hello, adding early_data extension"  \
+            -c "Protocol is TLSv1.3"                        \
+            -c "Ciphersuite is TLS1-3-AES-256-GCM-SHA384"   \
+            -c "Derive Early Secret with 'ext binder'"      \
+            -c "<= write EndOfEarlyData"                    \
+            -s "<= parse early data"                        \
+            -s "<= parse end_of_early_data"
+
+requires_config_enabled MBEDTLS_SSL_PROTO_TLS1_3
+requires_config_enabled MBEDTLS_DEBUG_C
+requires_config_enabled MBEDTLS_SSL_SRV_C
+requires_config_enabled MBEDTLS_SSL_CLI_C
+requires_config_enabled MBEDTLS_ZERO_RTT
+requires_config_disabled MBEDTLS_SSL_USE_MPS
+run_test    "TLS 1.3, TLS1-3-AES-128-CCM-SHA256, ext PSK, early data new api" \
+            "$P_SRV nbio=2 debug_level=5 force_version=tls13 early_data=-1 tls13_kex_modes=psk psk=010203 psk_identity=0a0b0c" \
+            "$P_CLI nbio=2 debug_level=5 force_version=tls13 force_ciphersuite=TLS1-3-AES-128-CCM-SHA256 tls13_kex_modes=psk early_data=1 early_data_api=1 psk=010203 psk_identity=0a0b0c" \
+            0 \
+            -s "found early_data extension"                 \
+            -s "Derive Early Secret with 'ext binder'"      \
+            -c "client hello, adding early_data extension"  \
+            -c "Protocol is TLSv1.3"                        \
+            -c "Ciphersuite is TLS1-3-AES-128-CCM-SHA256"   \
+            -c "Derive Early Secret with 'ext binder'"      \
+            -c "<= write EndOfEarlyData"                    \
+            -s "<= parse early data"                        \
+            -s "<= parse end_of_early_data"
+
+requires_config_enabled MBEDTLS_SSL_PROTO_TLS1_3
+requires_config_enabled MBEDTLS_DEBUG_C
+requires_config_enabled MBEDTLS_SSL_SRV_C
+requires_config_enabled MBEDTLS_SSL_CLI_C
+requires_config_enabled MBEDTLS_ZERO_RTT
+requires_config_disabled MBEDTLS_SSL_USE_MPS
+run_test    "TLS 1.3, TLS1-3-AES-128-GCM-SHA256, ext PSK, early data new api" \
+            "$P_SRV nbio=2 debug_level=5 force_version=tls13 early_data=-1 tls13_kex_modes=psk psk=010203 psk_identity=0a0b0c" \
+            "$P_CLI nbio=2 debug_level=5 force_version=tls13 force_ciphersuite=TLS1-3-AES-128-GCM-SHA256 tls13_kex_modes=psk early_data=1 early_data_api=1 psk=010203 psk_identity=0a0b0c" \
+            0 \
+            -s "found early_data extension"                 \
+            -s "Derive Early Secret with 'ext binder'"      \
+            -c "client hello, adding early_data extension"  \
+            -c "Protocol is TLSv1.3"                        \
+            -c "Ciphersuite is TLS1-3-AES-128-GCM-SHA256"   \
+            -c "Derive Early Secret with 'ext binder'"      \
+            -c "<= write EndOfEarlyData"                    \
+            -s "<= parse early data"                        \
+            -s "<= parse end_of_early_data"
+
+requires_config_enabled MBEDTLS_SSL_PROTO_TLS1_3
+requires_config_enabled MBEDTLS_DEBUG_C
+requires_config_enabled MBEDTLS_SSL_SRV_C
+requires_config_enabled MBEDTLS_SSL_CLI_C
+requires_config_enabled MBEDTLS_ZERO_RTT
+requires_config_disabled MBEDTLS_SSL_USE_MPS
+run_test    "TLS 1.3, TLS1-3-AES-128-CCM-8-SHA256, ext PSK, early data new api" \
+            "$P_SRV nbio=2 debug_level=5 force_version=tls13 early_data=-1 tls13_kex_modes=psk psk=010203 psk_identity=0a0b0c" \
+            "$P_CLI nbio=2 debug_level=5 force_version=tls13 force_ciphersuite=TLS1-3-AES-128-CCM-8-SHA256 tls13_kex_modes=psk early_data=1 early_data_api=1 psk=010203 psk_identity=0a0b0c" \
+            0 \
+            -s "found early_data extension"                 \
+            -s "Derive Early Secret with 'ext binder'"      \
+            -c "client hello, adding early_data extension"  \
+            -c "Protocol is TLSv1.3"                        \
+            -c "Ciphersuite is TLS1-3-AES-128-CCM-8-SHA256" \
+            -c "Derive Early Secret with 'ext binder'"      \
+            -c "<= write EndOfEarlyData"                    \
+            -s "<= parse early data"                        \
+            -s "<= parse end_of_early_data"
+
+requires_config_enabled MBEDTLS_SSL_PROTO_TLS1_3
+requires_config_enabled MBEDTLS_DEBUG_C
+requires_config_enabled MBEDTLS_SSL_SRV_C
+requires_config_enabled MBEDTLS_SSL_CLI_C
+requires_config_enabled MBEDTLS_ZERO_RTT
+requires_config_disabled MBEDTLS_SSL_USE_MPS
+run_test    "TLS 1.3, TLS1-3-AES-256-GCM-SHA384, ECDHE-ECDSA, client tries early data new api without PSK, and falls back to 1-RTT" \
+            "$P_SRV crt_file=data_files/server5.crt key_file=data_files/server5.key \
+                    nbio=2 debug_level=4 force_version=tls13" \
+            "$P_CLI nbio=2 debug_level=4 force_version=tls13 force_ciphersuite=TLS1-3-AES-256-GCM-SHA384 early_data=1 early_data_api=1" \
+            0 \
+            -s "Protocol is TLSv1.3"                                        \
+            -c "<= skip write early_data extension"                         \
+            -c "Protocol is TLSv1.3"                                        \
+            -c "Ciphersuite is TLS1-3-AES-256-GCM-SHA384"                   \
+            -c "early data status = 0"
+
 requires_config_enabled MBEDTLS_SSL_PROTO_TLS1_3
 requires_config_enabled MBEDTLS_DEBUG_C
 requires_config_enabled MBEDTLS_SSL_SRV_C
@@ -2186,7 +2295,20 @@ run_test    "TLS 1.3, TLS1-3-AES-256-GCM-SHA384, ext PSK, early data status - no
             "$P_SRV nbio=2 debug_level=5 force_version=tls13 psk=010203 psk_identity=0a0b0c" \
             "$P_CLI_ nbio=2 debug_level=5 force_version=tls13 force_ciphersuite=TLS1-3-AES-256-GCM-SHA384 psk=010203 psk_identity=0a0b0c" \
             0 \
-	    -c "early data status = 0"  \
+            -c "early data status = 0"  \
+
+# test early data status - rejected
+requires_config_enabled MBEDTLS_SSL_PROTO_TLS1_3
+requires_config_enabled MBEDTLS_DEBUG_C
+requires_config_enabled MBEDTLS_SSL_SRV_C
+requires_config_enabled MBEDTLS_SSL_CLI_C
+requires_config_enabled MBEDTLS_ZERO_RTT
+requires_config_disabled MBEDTLS_SSL_USE_MPS
+run_test    "TLS 1.3, TLS1-3-AES-256-GCM-SHA384, ext PSK, early data status - rejected" \
+            "$P_SRV nbio=2 debug_level=5 force_version=tls13 early_data=0 tls13_kex_modes=psk psk=010203 psk_identity=0a0b0c" \
+            "$P_CLI nbio=2 debug_level=5 force_version=tls13 force_ciphersuite=TLS1-3-AES-256-GCM-SHA384 tls13_kex_modes=psk early_data=1 psk=010203 psk_identity=0a0b0c" \
+            0 \
+            -c "early data status = 1"  \
 
 # test early data status - accepted
 requires_config_enabled MBEDTLS_SSL_PROTO_TLS1_3
@@ -2198,7 +2320,81 @@ run_test    "TLS 1.3, TLS1-3-AES-256-GCM-SHA384, ext PSK, early data status - ac
             "$P_SRV_ nbio=2 debug_level=5 force_version=tls13 early_data=-1 tls13_kex_modes=psk psk=010203 psk_identity=0a0b0c" \
             "$P_CLI_ nbio=2 debug_level=5 force_version=tls13 force_ciphersuite=TLS1-3-AES-256-GCM-SHA384 tls13_kex_modes=psk early_data=1 psk=010203 psk_identity=0a0b0c" \
             0 \
-	    -c "early data status = 2"  \
+            -c "early data status = 2"  \
+
+# test new early data status - not sent
+requires_config_enabled MBEDTLS_SSL_PROTO_TLS1_3
+requires_config_enabled MBEDTLS_DEBUG_C
+requires_config_enabled MBEDTLS_SSL_SRV_C
+requires_config_enabled MBEDTLS_SSL_CLI_C
+requires_config_enabled MBEDTLS_ZERO_RTT
+requires_config_disabled MBEDTLS_SSL_USE_MPS
+run_test    "TLS 1.3, TLS1-3-AES-256-GCM-SHA384, ext PSK, early data new api status - not sent" \
+            "$P_SRV nbio=2 debug_level=5 force_version=tls13 psk=010203 psk_identity=0a0b0c" \
+            "$P_CLI nbio=2 debug_level=5 force_version=tls13 force_ciphersuite=TLS1-3-AES-256-GCM-SHA384 psk=010203 psk_identity=0a0b0c early_data_api=1" \
+            0 \
+            -c "early data status = 0"  \
+
+# test new early data status - accepted
+requires_config_enabled MBEDTLS_SSL_PROTO_TLS1_3
+requires_config_enabled MBEDTLS_DEBUG_C
+requires_config_enabled MBEDTLS_SSL_SRV_C
+requires_config_enabled MBEDTLS_SSL_CLI_C
+requires_config_enabled MBEDTLS_ZERO_RTT
+requires_config_disabled MBEDTLS_SSL_USE_MPS
+run_test    "TLS 1.3, TLS1-3-AES-256-GCM-SHA384, ext PSK, early data new api status - accepted" \
+            "$P_SRV nbio=2 debug_level=5 force_version=tls13 tls13_kex_modes=psk psk=010203 psk_identity=0a0b0c early_data=-1" \
+            "$P_CLI nbio=2 debug_level=5 force_version=tls13 force_ciphersuite=TLS1-3-AES-256-GCM-SHA384 tls13_kex_modes=psk psk=010203 psk_identity=0a0b0c early_data=1 early_data_api=1" \
+            0 \
+            -c "early data status = 2"  \
+
+# test new early data status with resumption - rejected
+requires_config_enabled MBEDTLS_SSL_PROTO_TLS1_3
+requires_config_enabled MBEDTLS_DEBUG_C
+requires_config_enabled MBEDTLS_SSL_SRV_C
+requires_config_enabled MBEDTLS_SSL_CLI_C
+requires_config_enabled MBEDTLS_ZERO_RTT
+requires_config_disabled MBEDTLS_SSL_USE_MPS
+run_test    "TLS 1.3, TLS1-3-AES-256-GCM-SHA384, ext PSK, early data new api status with resumption - rejected" \
+            "$P_SRV crt_file=data_files/server5.crt key_file=data_files/server5.key nbio=2 debug_level=5 force_version=tls13 early_data=0 tickets=1" \
+            "$P_CLI crt_file=data_files/cli2.crt key_file=data_files/cli2.key server_name=localhost nbio=2 debug_level=5 force_version=tls13 force_ciphersuite=TLS1-3-AES-256-GCM-SHA384 reconnect=1 tickets=1 early_data=1 early_data_api=1 auth_mode=required" \
+            0 \
+            -c "early data status, reconnect = 1"     \
+            -s "<= parse new session ticket"          \
+            -s "<= skip write early_data extension"   \
+            -c "early data rejected by server"        \
+            -c "skip EndOfEarlyData, server rejected"
+
+# test new early data status with resumption - not sent
+requires_config_enabled MBEDTLS_SSL_PROTO_TLS1_3
+requires_config_enabled MBEDTLS_DEBUG_C
+requires_config_enabled MBEDTLS_SSL_SRV_C
+requires_config_enabled MBEDTLS_SSL_CLI_C
+requires_config_enabled MBEDTLS_ZERO_RTT
+requires_config_disabled MBEDTLS_SSL_USE_MPS
+run_test    "TLS 1.3, TLS1-3-AES-256-GCM-SHA384, ext PSK, early data new api status with resumption - not sent" \
+            "$P_SRV crt_file=data_files/server5.crt key_file=data_files/server5.key nbio=2 debug_level=5 force_version=tls13 early_data=-1 tickets=1" \
+            "$P_CLI crt_file=data_files/cli2.crt key_file=data_files/cli2.key server_name=localhost nbio=2 debug_level=5 force_version=tls13 force_ciphersuite=TLS1-3-AES-256-GCM-SHA384 reconnect=1 tickets=1 early_data=0 early_data_api=1 auth_mode=required" \
+            0 \
+            -c "early data status, reconnect = 0"  \
+            -s "<= parse new session ticket"
+
+# test new early data with resumption and multiple sends:
+# find_in_both_same_count will verify the count, size, and content
+# matches for all early data sent and received
+requires_config_enabled MBEDTLS_SSL_PROTO_TLS1_3
+requires_config_enabled MBEDTLS_DEBUG_C
+requires_config_enabled MBEDTLS_SSL_SRV_C
+requires_config_enabled MBEDTLS_SSL_CLI_C
+requires_config_enabled MBEDTLS_ZERO_RTT
+requires_config_disabled MBEDTLS_SSL_USE_MPS
+run_test    "TLS 1.3, TLS1-3-AES-256-GCM-SHA384, ext PSK, early data new api multiple sends" \
+            "$P_SRV crt_file=data_files/server5.crt key_file=data_files/server5.key nbio=2 debug_level=5 force_version=tls13 early_data=-1 tickets=1" \
+            "$P_CLI crt_file=data_files/cli2.crt key_file=data_files/cli2.key server_name=localhost nbio=2 debug_level=5 force_version=tls13 force_ciphersuite=TLS1-3-AES-256-GCM-SHA384 reconnect=1 tickets=1 early_data=1 early_data_api=1 auth_mode=required" \
+            0 \
+            -c "early data status, reconnect = 2"  \
+            -s "<= parse new session ticket"       \
+            -g "find_in_both_same_count 's/^\(.*bytes early data\).*\(:.*\)$/\1\2/p'"
 
 requires_config_enabled MBEDTLS_SSL_PROTO_TLS1_3
 requires_config_enabled MBEDTLS_DEBUG_C
@@ -2257,6 +2453,24 @@ run_test    "TLS 1.3, TLS1-3-AES-128-GCM-SHA256, reject early data, OpenSSL serv
             -c "=> write early data" \
             -c "=> mbedtls_ssl_tls13_generate_early_data_keys" \
             -c "skip EndOfEarlyData, server rejected" \
+            -c "early data status, reconnect = 1"
+
+# Test OpenSSL server with resumption and reject early data new api
+requires_config_enabled MBEDTLS_SSL_PROTO_TLS1_3
+requires_config_enabled MBEDTLS_DEBUG_C
+requires_config_enabled MBEDTLS_SSL_CLI_C
+requires_config_disabled MBEDTLS_SSL_USE_MPS
+requires_openssl_with_tls1_3
+run_test    "TLS 1.3, TLS1-3-AES-128-GCM-SHA256, reject early data new api, OpenSSL server" \
+            "$O_SRV"                                                                        \
+            "$P_CLI  debug_level=5 force_version=tls13 server_name=localhost               \
+                     force_ciphersuite=TLS1-3-AES-128-GCM-SHA256 reconnect=1 tickets=1      \
+                     early_data=1 early_data_api=1"                                         \
+            0                                                                               \
+            -c "=> prepare early data"                                                      \
+            -c "=> mbedtls_ssl_tls1_3_generate_early_data_keys"                             \
+            -c "=> write early_data"                                                        \
+            -c "skip EndOfEarlyData, server rejected"                                       \
             -c "early data status, reconnect = 1"
 
 requires_config_enabled MBEDTLS_SSL_PROTO_TLS1_3

@@ -2842,6 +2842,7 @@ int main( int argc, char *argv[] )
 #if defined(MBEDTLS_ZERO_RTT)
     mbedtls_ssl_conf_early_data( &conf, opt.early_data,
                                  opt.early_data_max,
+                                 MBEDTLS_SSL_EARLY_DATA_OLD_API,
                                  early_data_callback );
 #endif /* MBEDTLS_ZERO_RTT */
 
