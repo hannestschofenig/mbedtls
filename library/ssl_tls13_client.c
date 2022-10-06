@@ -45,6 +45,8 @@
 #define mbedtls_free       free
 #endif
 
+#include "ecp_internal.h"
+
 /* Write extensions */
 
 /*
@@ -203,6 +205,7 @@ static int ssl_tls13_reset_key_share( mbedtls_ssl_context *ssl )
 #if defined(MBEDTLS_ECDH_C)
     if( mbedtls_ssl_tls13_named_group_is_ecdhe( group_id ) )
     {
+#if defined(MBEDTLS_USE_PSA_CRYPTO)
         int ret = MBEDTLS_ERR_ERROR_CORRUPTION_DETECTED;
         psa_status_t status = PSA_ERROR_CORRUPTION_DETECTED;
 
@@ -216,6 +219,7 @@ static int ssl_tls13_reset_key_share( mbedtls_ssl_context *ssl )
         }
 
         ssl->handshake->ecdh_psa_privkey = MBEDTLS_SVC_KEY_ID_INIT;
+#endif /* MBEDTLS_USE_PSA_CRYPTO */
         return( 0 );
     }
     else
@@ -337,8 +341,34 @@ static int ssl_tls13_write_key_share_ext( mbedtls_ssl_context *ssl,
          */
         MBEDTLS_SSL_CHK_BUF_PTR( p, end, 4 );
         p += 4;
+#if defined(MBEDTLS_USE_PSA_CRYPTO)
         ret = mbedtls_ssl_tls13_generate_and_write_ecdh_key_exchange(
                                     ssl, group_id, p, end, &key_exchange_len );
+#else
+        mbedtls_ecp_group_id ecp_group_id = mbedtls_ecp_named_group_to_id( group_id );
+        if( ecp_group_id == MBEDTLS_ECP_DP_NONE )
+        {
+            MBEDTLS_SSL_DEBUG_MSG( 4, ( "Unrecognized NamedGroup %u",
+                                        (unsigned) group_id ) );
+            return( MBEDTLS_ERR_SSL_INTERNAL_ERROR );
+        }
+
+        ret = mbedtls_ecdh_setup( &ssl->handshake->ecdh_ctx, ecp_group_id);
+        if( ret != 0 )
+        {
+            MBEDTLS_SSL_DEBUG_RET( 1, "mbedtls_ecdh_setup", ret );
+            return( ret );
+        }
+
+        ret = mbedtls_ecdh_make_tls13_params( &ssl->handshake->ecdh_ctx, &key_exchange_len,
+                                               p, end - p,
+                                               ssl->conf->f_rng, ssl->conf->p_rng );
+        if( ret != 0 )
+        {
+            MBEDTLS_SSL_DEBUG_RET( 1, "mbedtls_ecdh_make_tls_13_params", ret );
+            return( ret );
+        }
+#endif /* MBEDTLS_USE_PSA_CRYPTO */
         p += key_exchange_len;
         if( ret != 0 )
             return( ret );
@@ -385,6 +415,33 @@ cleanup:
 
     return( ret );
 }
+
+#if defined(MBEDTLS_ECDH_C)
+
+#if defined(MBEDTLS_USE_PSA_CRYPTO)
+static int ssl_tls13_read_public_ecdhe_share( mbedtls_ssl_context *ssl,
+                                              const unsigned char *buf,
+                                              size_t buf_len )
+{
+    uint8_t *p = (uint8_t*)buf;
+    mbedtls_ssl_handshake_params *handshake = ssl->handshake;
+
+    /* Get size of the TLS opaque key_exchange field of the KeyShareEntry struct. */
+    uint16_t peerkey_len = MBEDTLS_GET_UINT16_BE( p, 0 );
+    p += 2;
+
+    /* Check if key size is consistent with given buffer length. */
+    if ( peerkey_len > ( buf_len - 2 ) )
+        return( MBEDTLS_ERR_SSL_DECODE_ERROR );
+
+    /* Store peer's ECDH public key. */
+    memcpy( handshake->ecdh_psa_peerkey, p, peerkey_len );
+    handshake->ecdh_psa_peerkey_len = peerkey_len;
+
+    return( 0 );
+}
+#endif /* MBEDTLS_USE_PSA_CRYPTO */
+#endif /* MBEDTLS_ECDH_C */
 
 /*
  * ssl_tls13_parse_hrr_key_share_ext()
@@ -511,9 +568,18 @@ static int ssl_tls13_parse_key_share_ext( mbedtls_ssl_context *ssl,
 
         MBEDTLS_SSL_DEBUG_MSG( 2, ( "ECDH curve: %s", curve_info->name ) );
 
+#if defined(MBEDTLS_USE_PSA_CRYPTO)
         ret = mbedtls_ssl_tls13_read_public_ecdhe_share( ssl, p, end - p );
         if( ret != 0 )
             return( ret );
+#else
+        if( ( ret = mbedtls_ecdh_import_public_raw( &ssl->handshake->ecdh_ctx, p,
+                end ) ) != 0 )
+        {
+            MBEDTLS_SSL_DEBUG_RET( 1, ( "mbedtls_ecdh_import_public_raw" ), ret );
+            return( ret );
+        }
+#endif /* MBEDTLS_USE_PSA_CRYPTO */
     }
     else
 #endif /* MBEDTLS_ECDH_C */
@@ -926,7 +992,10 @@ int mbedtls_ssl_tls13_write_pre_shared_key_ext_binders(
         return( ret );
 
     ret = mbedtls_ssl_tls13_create_psk_binder( ssl,
-              mbedtls_psa_translate_md( suite_info->mac ),
+#if defined(MBEDTLS_USE_PSA_CRYPTO)
+        mbedtls_psa_translate_md
+#endif /* MBEDTLS_USE_PSA_CRYPTO */
+        ( suite_info->mac ),
               psk, psk_len, psk_type,
               transcript, p );
     if( ret != 0 )
@@ -3244,7 +3313,10 @@ static int ssl_tls13_new_session_ticket_parse( mbedtls_ssl_context *ssl,
      *                    "resumption", ticket_nonce, Hash.length )
      */
     ret = mbedtls_ssl_tls13_hkdf_expand_label(
-                    mbedtls_psa_translate_md( suite_info->mac ),
+#if defined(MBEDTLS_USE_PSA_CRYPTO)
+        mbedtls_psa_translate_md
+#endif /* MBEDTLS_USE_PSA_CRYPTO */
+        ( suite_info->mac ),
                     ssl->session->app_secrets.resumption_master_secret,
                     hash_length,
                     MBEDTLS_SSL_TLS1_3_LBL_WITH_LEN( resumption ),

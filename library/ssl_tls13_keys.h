@@ -161,7 +161,11 @@ extern const struct mbedtls_ssl_tls13_labels_struct mbedtls_ssl_tls13_labels;
 
 MBEDTLS_CHECK_RETURN_CRITICAL
 int mbedtls_ssl_tls13_hkdf_expand_label(
+#if defined(MBEDTLS_USE_PSA_CRYPTO)
                      psa_algorithm_t hash_alg,
+#else
+                     mbedtls_md_type_t hash_alg,
+#endif /* MBEDTLS_USE_PSA_CRYPTO */
                      const unsigned char *secret, size_t secret_len,
                      const unsigned char *label, size_t label_len,
                      const unsigned char *ctx, size_t ctx_len,
@@ -200,7 +204,11 @@ int mbedtls_ssl_tls13_hkdf_expand_label(
 
 MBEDTLS_CHECK_RETURN_CRITICAL
 int mbedtls_ssl_tls13_make_traffic_keys(
+#if defined(MBEDTLS_USE_PSA_CRYPTO)
                      psa_algorithm_t hash_alg,
+#else
+                     mbedtls_md_type_t hash_alg,
+#endif /* MBEDTLS_USE_PSA_CRYPTO */
                      const unsigned char *client_secret,
                      const unsigned char *server_secret, size_t secret_len,
                      size_t key_len, size_t iv_len,
@@ -247,7 +255,11 @@ int mbedtls_ssl_tls13_make_traffic_keys(
  */
 MBEDTLS_CHECK_RETURN_CRITICAL
 int mbedtls_ssl_tls13_derive_secret(
+#if defined(MBEDTLS_USE_PSA_CRYPTO)
                    psa_algorithm_t hash_alg,
+#else
+                   mbedtls_md_type_t hash_alg,
+#endif /* MBEDTLS_USE_PSA_CRYPTO */
                    const unsigned char *secret, size_t secret_len,
                    const unsigned char *label, size_t label_len,
                    const unsigned char *ctx, size_t ctx_len,
@@ -298,7 +310,11 @@ int mbedtls_ssl_tls13_derive_secret(
  */
 MBEDTLS_CHECK_RETURN_CRITICAL
 int mbedtls_ssl_tls13_derive_early_secrets(
+#if defined(MBEDTLS_USE_PSA_CRYPTO)
           psa_algorithm_t hash_alg,
+#else
+          mbedtls_md_type_t hash_alg,
+#endif /* MBEDTLS_USE_PSA_CRYPTO */
           unsigned char const *early_secret,
           unsigned char const *transcript, size_t transcript_len,
           mbedtls_ssl_tls13_early_secrets *derived );
@@ -344,7 +360,11 @@ int mbedtls_ssl_tls13_derive_early_secrets(
  */
 MBEDTLS_CHECK_RETURN_CRITICAL
 int mbedtls_ssl_tls13_derive_handshake_secrets(
+#if defined(MBEDTLS_USE_PSA_CRYPTO)
           psa_algorithm_t hash_alg,
+#else
+          mbedtls_md_type_t hash_alg,
+#endif /* MBEDTLS_USE_PSA_CRYPTO */
           unsigned char const *handshake_secret,
           unsigned char const *transcript, size_t transcript_len,
           mbedtls_ssl_tls13_handshake_secrets *derived );
@@ -395,7 +415,11 @@ int mbedtls_ssl_tls13_derive_handshake_secrets(
  */
 MBEDTLS_CHECK_RETURN_CRITICAL
 int mbedtls_ssl_tls13_derive_application_secrets(
+#if defined(MBEDTLS_USE_PSA_CRYPTO)
           psa_algorithm_t hash_alg,
+#else
+          mbedtls_md_type_t hash_alg,
+#endif /* MBEDTLS_USE_PSA_CRYPTO */
           unsigned char const *master_secret,
           unsigned char const *transcript, size_t transcript_len,
           mbedtls_ssl_tls13_application_secrets *derived );
@@ -426,7 +450,11 @@ int mbedtls_ssl_tls13_derive_application_secrets(
  */
 MBEDTLS_CHECK_RETURN_CRITICAL
 int mbedtls_ssl_tls13_derive_resumption_master_secret(
+#if defined(MBEDTLS_USE_PSA_CRYPTO)
           psa_algorithm_t hash_alg,
+#else
+          mbedtls_md_type_t hash_alg,
+#endif /* MBEDTLS_USE_PSA_CRYPTO */
           unsigned char const *application_secret,
           unsigned char const *transcript, size_t transcript_len,
           mbedtls_ssl_tls13_application_secrets *derived );
@@ -501,7 +529,11 @@ int mbedtls_ssl_tls13_derive_resumption_master_secret(
 
 MBEDTLS_CHECK_RETURN_CRITICAL
 int mbedtls_ssl_tls13_evolve_secret(
+#if defined(MBEDTLS_USE_PSA_CRYPTO)
                    psa_algorithm_t hash_alg,
+#else
+                   mbedtls_md_type_t hash_alg,
+#endif /* MBEDTLS_USE_PSA_CRYPTO */
                    const unsigned char *secret_old,
                    const unsigned char *input, size_t input_len,
                    unsigned char *secret_new );
@@ -531,7 +563,11 @@ int mbedtls_ssl_tls13_evolve_secret(
  */
 MBEDTLS_CHECK_RETURN_CRITICAL
 int mbedtls_ssl_tls13_create_psk_binder( mbedtls_ssl_context *ssl,
+#if defined(MBEDTLS_USE_PSA_CRYPTO)
                                const psa_algorithm_t hash_alg,
+#else
+                               const mbedtls_md_type_t hash_alg,
+#endif /* MBEDTLS_USE_PSA_CRYPTO */
                                unsigned char const *psk, size_t psk_len,
                                int psk_type,
                                unsigned char const *transcript,

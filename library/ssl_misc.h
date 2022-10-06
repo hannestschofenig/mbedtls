@@ -679,14 +679,14 @@ struct mbedtls_ssl_handshake_params
     mbedtls_ecdh_context ecdh_ctx;              /*!<  ECDH key exchange       */
 #endif /* !MBEDTLS_USE_PSA_CRYPTO */
 
-#if defined(MBEDTLS_USE_PSA_CRYPTO) || defined(MBEDTLS_SSL_PROTO_TLS1_3)
+#if defined(MBEDTLS_USE_PSA_CRYPTO) || (defined(MBEDTLS_SSL_SRV_C) && defined(MBEDTLS_SSL_PROTO_TLS1_3))
     psa_key_type_t ecdh_psa_type;
     size_t ecdh_bits;
     mbedtls_svc_key_id_t ecdh_psa_privkey;
     uint8_t ecdh_psa_privkey_is_external;
     unsigned char ecdh_psa_peerkey[MBEDTLS_PSA_MAX_EC_PUBKEY_LENGTH];
     size_t ecdh_psa_peerkey_len;
-#endif /* MBEDTLS_USE_PSA_CRYPTO || MBEDTLS_SSL_PROTO_TLS1_3 */
+#endif /* MBEDTLS_USE_PSA_CRYPTO || (defined(MBEDTLS_SSL_SRV_C) && defined(MBEDTLS_SSL_PROTO_TLS1_3)) */
 #endif /* MBEDTLS_ECDH_C || MBEDTLS_ECDSA_C */
 
 #if defined(MBEDTLS_KEY_EXCHANGE_ECJPAKE_ENABLED)
@@ -2014,6 +2014,34 @@ static inline int mbedtls_ssl_conf_is_hybrid_tls12_tls13( const mbedtls_ssl_conf
 #endif /* MBEDTLS_SSL_PROTO_TLS1_2 && MBEDTLS_SSL_PROTO_TLS1_3 */
 
 #if defined(MBEDTLS_SSL_PROTO_TLS1_3)
+#if defined(MBEDTLS_ECDH_C)
+/**
+ * \brief           This function generates an EC key pair and exports its
+ *                  in the format used in a TLS 1.3 KeyShare extension.
+ *
+ * \see             ecp.h
+ *
+ * \param ctx       The ECDH context to use. This must be initialized
+ *                  and bound to a group, for example via mbedtls_ecdh_setup().
+ * \param olen      The address at which to store the number of Bytes written.
+ * \param buf       The destination buffer. This must be a writable buffer of
+ *                  length \p blen Bytes.
+ * \param blen      The length of the destination buffer \p buf in Bytes.
+ * \param f_rng     The RNG function to use. This must not be \c NULL.
+ * \param p_rng     The RNG context to be passed to \p f_rng. This may be
+ *                  \c NULL in case \p f_rng doesn't need a context argument.
+ *
+ * \return          \c 0 on success.
+ * \return          #MBEDTLS_ERR_ECP_IN_PROGRESS if maximum number of
+ *                  operations was reached: see \c mbedtls_ecp_set_max_ops().
+ * \return          Another \c MBEDTLS_ERR_ECP_XXX error code on failure.
+ */
+int mbedtls_ecdh_make_tls13_params( mbedtls_ecdh_context *ctx, size_t *olen,
+                      unsigned char *buf, size_t blen,
+                      int (*f_rng)(void *, unsigned char *, size_t),
+                      void *p_rng );
+
+#endif /* MBEDTLS_ECDH_C */
 extern const uint8_t mbedtls_ssl_tls13_hello_retry_request_magic[
                         MBEDTLS_SERVER_HELLO_RANDOM_LEN ];
 MBEDTLS_CHECK_RETURN_CRITICAL
@@ -2637,7 +2665,7 @@ int mbedtls_ssl_tls13_check_sig_alg_cert_key_match( uint16_t sig_alg,
 
 #endif /* MBEDTLS_KEY_EXCHANGE_WITH_CERT_ENABLED */
 
-#if defined(MBEDTLS_USE_PSA_CRYPTO) || defined(MBEDTLS_SSL_PROTO_TLS1_3)
+#if defined(MBEDTLS_USE_PSA_CRYPTO) || (defined(MBEDTLS_SSL_SRV_C) && defined(MBEDTLS_SSL_PROTO_TLS1_3))
 /* Corresponding PSA algorithm for MBEDTLS_CIPHER_NULL.
  * Same value is used for PSA_ALG_CATEGORY_CIPHER, hence it is
  * guaranteed to not be a valid PSA algorithm identifier.
@@ -2697,7 +2725,7 @@ static inline int psa_ssl_status_to_mbedtls( psa_status_t status )
             return( MBEDTLS_ERR_PLATFORM_HW_ACCEL_FAILED );
     }
 }
-#endif /* MBEDTLS_USE_PSA_CRYPTO || MBEDTLS_SSL_PROTO_TLS1_3 */
+#endif /* MBEDTLS_USE_PSA_CRYPTO || (defined(MBEDTLS_SSL_SRV_C) && defined(MBEDTLS_SSL_PROTO_TLS1_3))*/
 
 /**
  * \brief       TLS record protection modes
