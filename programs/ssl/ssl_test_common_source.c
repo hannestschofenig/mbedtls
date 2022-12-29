@@ -67,7 +67,7 @@ void nss_keylog_export( void *p_expkey,
     switch( secret_type )
     {
         case MBEDTLS_SSL_KEY_EXPORT_TLS12_MASTER_SECRET:
-            strcpy(label, "CLIENT RANDOM ");
+            strcpy(label, "CLIENT_RANDOM ");
             break;
 #if defined(MBEDTLS_SSL_PROTO_TLS1_3)
         case MBEDTLS_SSL_KEY_EXPORT_TLS1_3_CLIENT_EARLY_SECRET:
