@@ -42,7 +42,23 @@
 
 
 /* Function signatures */
+
+#if !defined(MBEDTLS_PARSEC_ATTESTATION)
 int32_t create_eat( uint8_t *ptr, size_t *len, const uint8_t *nonce, size_t nonce_len, struct t_cose_key *key_pair );
+
+int32_t
+ctoken_encode_claim(struct ctoken_encode_ctx *me,
+                    int label,
+                    uint8_t type,
+                    struct q_useful_buf_c    content); 
+
+int32_t kat_encode(struct t_cose_key signing_key,
+                   struct q_useful_buf_c nonce,
+                   struct q_useful_buf_c ik_pub,
+                   struct q_useful_buf_c kak_pub,
+                   struct q_useful_buf output_buffer,
+                   struct q_useful_buf_c *completed_token);
+#endif
 
 int32_t verify_eat( uint8_t *ptr, size_t len, const uint8_t *nonce, size_t nonce_len, struct t_cose_key *key_pair );
 
@@ -51,13 +67,6 @@ int32_t kat_verify(struct t_cose_key     kak,
                    struct q_useful_buf_c *nonce,
                    struct q_useful_buf_c *ik_pub,
                    struct q_useful_buf_c *kak_pub);
-
-int32_t kat_encode(struct t_cose_key signing_key,
-                   struct q_useful_buf_c nonce,
-                   struct q_useful_buf_c ik_pub,
-                   struct q_useful_buf_c kak_pub,
-                   struct q_useful_buf output_buffer,
-                   struct q_useful_buf_c *completed_token);
 
 
 enum t_cose_err_t fetch_key(uint8_t            key_type,
@@ -70,14 +79,9 @@ ctoken_decode_claim(struct ctoken_decode_ctx *me,
                     uint8_t type,
                     struct q_useful_buf_c    *content);
 
-int32_t
-ctoken_encode_claim(struct ctoken_encode_ctx *me,
-                    int label,
-                    uint8_t type,
-                    struct q_useful_buf_c    content); 
-
 void free_psa_ecdsa_key_pair(struct t_cose_key key_pair);
 
+#if !defined(MBEDTLS_PARSEC_ATTESTATION)
 /**
  * \brief  Print a q_useful_buf_c on stdout in hex ASCII text.
  *
@@ -310,6 +314,225 @@ psa_status_t parsec_attest_key( psa_key_id_t ik,                // public key of
     return( PSA_SUCCESS );
 }
 
+
+/**
+ \brief Example to encode an EAT token
+
+ @param[in] signing_key    The private key to sign with. This must be in the
+                           format of the crypto library that is integrated.
+                           See definition in t_cose interface.
+ @param[in] nonce          Pointer and length of nonce claim.
+ @param[in] output_buffer  Pointer and length of the buffer to output to. Must
+                           be big enough to hold the EAT, or an error occurs.
+ @param[out] completed_token  Pointer and length of the completed token.
+ @return                      0 on success.
+
+ output_buffer is the pointer and length of a buffer to write
+ into. The pointer is not const indicating it is for writing.
+
+ completed_token is the const pointer and length of the completed
+ token. The storage pointed to by completed_token is inside
+ output_buffer, usually the first part, so the pointers point
+ to the same place.
+
+ No storage allocation is done and malloc is not used.
+ */
+int32_t eat_encode(struct t_cose_key signing_key,
+                   struct q_useful_buf_c nonce,
+                   struct q_useful_buf output_buffer,
+                   struct q_useful_buf_c *completed_token)
+{
+    struct ctoken_encode_ctx encode_ctx;
+    int                      return_value;
+
+    /* UEID is hard-coded. A real implementation would fetch it from
+     * storage or read it from a register or compute it or such.
+     */
+    const struct q_useful_buf_c ueid = Q_USEFUL_BUF_FROM_SZ_LITERAL("ueid_ueid");
+
+    /* Initialize, telling is the option (there are none) and
+     * the signing algorithm to use.
+     */
+    ctoken_encode_init(&encode_ctx,
+                       0, /* No t_cose options */
+                       0, /* No ctoken options */
+                       CTOKEN_PROTECTION_COSE_SIGN1,
+                       T_COSE_ALGORITHM_ES256);
+
+    /* Next give it the signing key. No kid (key id) is given so
+     * NULL_Q_USEFUL_BUF_C is passed.
+     */
+    ctoken_encode_set_key(&encode_ctx, signing_key, NULL_Q_USEFUL_BUF_C);
+
+    /* Pass in the output buffer and get the encoding started.
+     * The output buffer must be big enough for EAT payload, COSE
+     * formatting and signature. (There is a way to call
+     * ctoken_encode_start() to have this computed which is th
+     * same as that used by t_cose and QCBOR, but that is not
+     * done in this simple example. */
+    ctoken_encode_start(&encode_ctx, output_buffer);
+
+    /* Now start adding the claims into the token. Eat claims
+     * can be mixed with PSA IA claims and with CWT claims.
+     * You can even make up your own claims.
+     */
+
+    return_value = ctoken_encode_claim(&encode_ctx,CTOKEN_EAT_LABEL_NONCE, CLAIM_TYPE_BSTR, nonce);
+    if( return_value != 0 ) return( return_value );
+
+    ctoken_encode_ueid(&encode_ctx, ueid);
+
+    /* Finally completed it. This invokes the signing and
+     * ties everything off and outputs the completed token.
+     * The variable completed_token has the pointer and length
+     * of the result that are in output_buffer.
+     */
+    return_value = ctoken_encode_finish(&encode_ctx, completed_token);
+
+    return return_value;
+}
+
+
+int32_t kat_encode(struct t_cose_key signing_key,
+                   struct q_useful_buf_c nonce,
+                   struct q_useful_buf_c ik_pub,
+                   struct q_useful_buf_c kak_pub,
+                   struct q_useful_buf output_buffer,
+                   struct q_useful_buf_c *completed_token)
+{
+    struct ctoken_encode_ctx encode_ctx;
+    int                      return_value;
+
+    /* Initialize, telling is the option (there are none) and
+     * the signing algorithm to use.
+     */
+    ctoken_encode_init(&encode_ctx,
+                       0, /* No t_cose options */
+                       0, /* No ctoken options */
+                       CTOKEN_PROTECTION_COSE_SIGN1,
+                       T_COSE_ALGORITHM_ES256);
+
+    /* Next give it the signing key. No kid (key id) is given so
+     * NULL_Q_USEFUL_BUF_C is passed.
+     */
+    ctoken_encode_set_key(&encode_ctx, signing_key, NULL_Q_USEFUL_BUF_C);
+
+    /* Pass in the output buffer and get the encoding started.
+     * The output buffer must be big enough for EAT payload, COSE
+     * formatting and signature. (There is a way to call
+     * ctoken_encode_start() to have this computed which is th
+     * same as that used by t_cose and QCBOR, but that is not
+     * done in this simple example. */
+    ctoken_encode_start(&encode_ctx, output_buffer);
+
+    /* Add nonce claim */
+    return_value = ctoken_encode_claim(&encode_ctx, CTOKEN_EAT_LABEL_NONCE, CLAIM_TYPE_BSTR, nonce);
+    if( return_value != 0 ) return( return_value );
+
+    /* Add IK public key claim */
+    return_value = ctoken_encode_claim(&encode_ctx, CTOKEN_LABEL_CNF, CLAIM_TYPE_BSTR, ik_pub);
+    if( return_value != 0 ) return( return_value );
+
+    /* Add KAK public key claim */
+    return_value = ctoken_encode_claim(&encode_ctx, CTOKEN_TEMP_LABEL_KAK_PUB, CLAIM_TYPE_BSTR, kak_pub);
+    if( return_value != 0 ) return( return_value );
+
+    /* Finally completed it. This invokes the signing and
+     * ties everything off and outputs the completed token.
+     * The variable completed_token has the pointer and length
+     * of the result that are in output_buffer.
+     */
+    return_value = ctoken_encode_finish(&encode_ctx, completed_token);
+
+    return return_value;
+}
+
+
+int32_t
+ctoken_encode_claim(struct ctoken_encode_ctx *me,
+                    int label,
+                    uint8_t type,
+                    struct q_useful_buf_c    content)
+{
+    switch(type)
+    {
+        case CLAIM_TYPE_INT:
+           ctoken_encode_int(me, label, (int64_t) content.ptr);
+           break;
+        case CLAIM_TYPE_BSTR:
+           ctoken_encode_bstr(me, label, content);
+           break;
+        case CLAIM_TYPE_TSTR:
+           ctoken_encode_tstr(me, label, content);
+           break;
+        case CLAIM_TYPE_UINT:
+           ctoken_encode_unsigned(me, label,  (int64_t) content.ptr);
+           break;
+        default:
+            /* Unknown claim */
+            return( -1 );
+    }
+
+    return 0;
+}
+
+
+int32_t create_eat( uint8_t *ptr, size_t *len, const uint8_t *nonce, size_t nonce_len, struct t_cose_key *key_pair)
+{
+    /* Call to macro to make a 500 byte struct useful_buf on the stack
+     * named token_buffer. The expected token is less than 200 bytes.
+     */
+    MakeUsefulBufOnStack( token_buffer, 500 );
+    struct q_useful_buf_c completed_token;
+    int return_value;
+
+    /* Make the token */
+    return_value = eat_encode( *key_pair,
+                               ( struct q_useful_buf_c )
+                               {
+                                 .len = nonce_len,
+                                 .ptr = nonce
+                               },
+                               token_buffer,
+                               &completed_token);
+
+    if( return_value ) {
+        return (return_value);
+    }
+
+    *len = completed_token.len;
+
+    memcpy(ptr, (uint8_t *) completed_token.ptr, *len);
+
+    return(return_value);
+}
+#endif /* MBEDTLS_PARSEC_ATTESTATION */
+
+int32_t verify_eat( uint8_t *ptr, size_t len, const uint8_t *nonce, size_t nonce_len, struct t_cose_key *key_pair)
+{
+    struct q_useful_buf_c completed_token;
+    struct q_useful_buf_c decoded_nonce;
+    int return_value;
+
+    completed_token.len = len;
+    completed_token.ptr = ptr;
+
+    return_value = eat_decode( *key_pair,
+                              completed_token,
+                               &decoded_nonce);
+
+    if( return_value != 0 ) {
+        return( return_value );
+    }
+
+    if( memcmp( decoded_nonce.ptr, nonce, nonce_len ) != 0 )
+    {
+        return( CTOKEN_ERR_TAMPERING_DETECTED );
+    }
+
+    return( return_value );
+}
+
 /**
  * \brief Fetch key
  *
@@ -483,141 +706,6 @@ void free_psa_ecdsa_key_pair(struct t_cose_key key_pair)
     psa_close_key((psa_key_handle_t) key_pair.k.key_handle);
 }
 
-
-/**
- \brief Example to encode an EAT token
-
- @param[in] signing_key    The private key to sign with. This must be in the
-                           format of the crypto library that is integrated.
-                           See definition in t_cose interface.
- @param[in] nonce          Pointer and length of nonce claim.
- @param[in] output_buffer  Pointer and length of the buffer to output to. Must
-                           be big enough to hold the EAT, or an error occurs.
- @param[out] completed_token  Pointer and length of the completed token.
- @return                      0 on success.
-
- output_buffer is the pointer and length of a buffer to write
- into. The pointer is not const indicating it is for writing.
-
- completed_token is the const pointer and length of the completed
- token. The storage pointed to by completed_token is inside
- output_buffer, usually the first part, so the pointers point
- to the same place.
-
- No storage allocation is done and malloc is not used.
- */
-int32_t eat_encode(struct t_cose_key signing_key,
-                   struct q_useful_buf_c nonce,
-                   struct q_useful_buf output_buffer,
-                   struct q_useful_buf_c *completed_token)
-{
-    struct ctoken_encode_ctx encode_ctx;
-    int                      return_value;
-
-    /* UEID is hard-coded. A real implementation would fetch it from
-     * storage or read it from a register or compute it or such.
-     */
-    const struct q_useful_buf_c ueid = Q_USEFUL_BUF_FROM_SZ_LITERAL("ueid_ueid");
-
-    /* Initialize, telling is the option (there are none) and
-     * the signing algorithm to use.
-     */
-    ctoken_encode_init(&encode_ctx,
-                       0, /* No t_cose options */
-                       0, /* No ctoken options */
-                       CTOKEN_PROTECTION_COSE_SIGN1,
-                       T_COSE_ALGORITHM_ES256);
-
-    /* Next give it the signing key. No kid (key id) is given so
-     * NULL_Q_USEFUL_BUF_C is passed.
-     */
-    ctoken_encode_set_key(&encode_ctx, signing_key, NULL_Q_USEFUL_BUF_C);
-
-    /* Pass in the output buffer and get the encoding started.
-     * The output buffer must be big enough for EAT payload, COSE
-     * formatting and signature. (There is a way to call
-     * ctoken_encode_start() to have this computed which is th
-     * same as that used by t_cose and QCBOR, but that is not
-     * done in this simple example. */
-    ctoken_encode_start(&encode_ctx, output_buffer);
-
-    /* Now start adding the claims into the token. Eat claims
-     * can be mixed with PSA IA claims and with CWT claims.
-     * You can even make up your own claims.
-     */
-
-    return_value = ctoken_encode_claim(&encode_ctx,CTOKEN_EAT_LABEL_NONCE, CLAIM_TYPE_BSTR, nonce);
-    if( return_value != 0 ) return( return_value );
-
-    ctoken_encode_ueid(&encode_ctx, ueid);
-
-    /* Finally completed it. This invokes the signing and
-     * ties everything off and outputs the completed token.
-     * The variable completed_token has the pointer and length
-     * of the result that are in output_buffer.
-     */
-    return_value = ctoken_encode_finish(&encode_ctx, completed_token);
-
-    return return_value;
-}
-
-
-int32_t kat_encode(struct t_cose_key signing_key,
-                   struct q_useful_buf_c nonce,
-                   struct q_useful_buf_c ik_pub,
-                   struct q_useful_buf_c kak_pub,
-                   struct q_useful_buf output_buffer,
-                   struct q_useful_buf_c *completed_token)
-{
-    struct ctoken_encode_ctx encode_ctx;
-    int                      return_value;
-
-    /* Initialize, telling is the option (there are none) and
-     * the signing algorithm to use.
-     */
-    ctoken_encode_init(&encode_ctx,
-                       0, /* No t_cose options */
-                       0, /* No ctoken options */
-                       CTOKEN_PROTECTION_COSE_SIGN1,
-                       T_COSE_ALGORITHM_ES256);
-
-    /* Next give it the signing key. No kid (key id) is given so
-     * NULL_Q_USEFUL_BUF_C is passed.
-     */
-    ctoken_encode_set_key(&encode_ctx, signing_key, NULL_Q_USEFUL_BUF_C);
-
-    /* Pass in the output buffer and get the encoding started.
-     * The output buffer must be big enough for EAT payload, COSE
-     * formatting and signature. (There is a way to call
-     * ctoken_encode_start() to have this computed which is th
-     * same as that used by t_cose and QCBOR, but that is not
-     * done in this simple example. */
-    ctoken_encode_start(&encode_ctx, output_buffer);
-
-    /* Add nonce claim */
-    return_value = ctoken_encode_claim(&encode_ctx, CTOKEN_EAT_LABEL_NONCE, CLAIM_TYPE_BSTR, nonce);
-    if( return_value != 0 ) return( return_value );
-
-    /* Add IK public key claim */
-    return_value = ctoken_encode_claim(&encode_ctx, CTOKEN_LABEL_CNF, CLAIM_TYPE_BSTR, ik_pub);
-    if( return_value != 0 ) return( return_value );
-
-    /* Add KAK public key claim */
-    return_value = ctoken_encode_claim(&encode_ctx, CTOKEN_TEMP_LABEL_KAK_PUB, CLAIM_TYPE_BSTR, kak_pub);
-    if( return_value != 0 ) return( return_value );
-
-    /* Finally completed it. This invokes the signing and
-     * ties everything off and outputs the completed token.
-     * The variable completed_token has the pointer and length
-     * of the result that are in output_buffer.
-     */
-    return_value = ctoken_encode_finish(&encode_ctx, completed_token);
-
-    return return_value;
-}
-
-
-
 /**
  Simple EAT decode and verify example.
 
@@ -768,91 +856,6 @@ ctoken_decode_claim(struct ctoken_decode_ctx *me,
 
     return 0;
 }
-
-int32_t
-ctoken_encode_claim(struct ctoken_encode_ctx *me,
-                    int label,
-                    uint8_t type,
-                    struct q_useful_buf_c    content)
-{
-    switch(type)
-    {
-        case CLAIM_TYPE_INT:
-           ctoken_encode_int(me, label, (int64_t) content.ptr);
-           break;
-        case CLAIM_TYPE_BSTR:
-           ctoken_encode_bstr(me, label, content);
-           break;
-        case CLAIM_TYPE_TSTR:
-           ctoken_encode_tstr(me, label, content);
-           break;
-        case CLAIM_TYPE_UINT:
-           ctoken_encode_unsigned(me, label,  (int64_t) content.ptr);
-           break;
-        default:
-            /* Unknown claim */
-            return( -1 );
-    }
-
-    return 0;
-}
-
-
-int32_t create_eat( uint8_t *ptr, size_t *len, const uint8_t *nonce, size_t nonce_len, struct t_cose_key *key_pair)
-{
-    /* Call to macro to make a 500 byte struct useful_buf on the stack
-     * named token_buffer. The expected token is less than 200 bytes.
-     */
-    MakeUsefulBufOnStack( token_buffer, 500 );
-    struct q_useful_buf_c completed_token;
-    int return_value;
-
-    /* Make the token */
-    return_value = eat_encode( *key_pair,
-                               ( struct q_useful_buf_c )
-                               {
-                                 .len = nonce_len,
-                                 .ptr = nonce
-                               },
-                               token_buffer,
-                               &completed_token);
-
-    if( return_value ) {
-        return (return_value);
-    }
-
-    *len = completed_token.len;
-
-    memcpy(ptr, (uint8_t *) completed_token.ptr, *len);
-
-    return(return_value);
-}
-
-int32_t verify_eat( uint8_t *ptr, size_t len, const uint8_t *nonce, size_t nonce_len, struct t_cose_key *key_pair)
-{
-    struct q_useful_buf_c completed_token;
-    struct q_useful_buf_c decoded_nonce;
-    int return_value;
-
-    completed_token.len = len;
-    completed_token.ptr = ptr;
-
-    return_value = eat_decode( *key_pair,
-                              completed_token,
-                               &decoded_nonce);
-
-    if( return_value != 0 ) {
-        return( return_value );
-    }
-
-    if( memcmp( decoded_nonce.ptr, nonce, nonce_len ) != 0 )
-    {
-        return( CTOKEN_ERR_TAMPERING_DETECTED );
-    }
-
-    return( return_value );
-}
-
 
 int32_t verify_kat_bundle( uint8_t *kat_bundle, size_t kat_bundle_len,
                     const uint8_t *nonce, size_t nonce_len,

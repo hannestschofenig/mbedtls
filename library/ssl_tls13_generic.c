@@ -434,8 +434,10 @@ static int ssl_tls13_write_eat_write( mbedtls_ssl_context *ssl,
                                 sizeof(cab_scratch),
                                 &n2);
 
-    if( status != PSA_SUCCESS )
+    if( status != PSA_SUCCESS ) {
+        MBEDTLS_SSL_DEBUG_MSG( 1, ( "Failed attesting key, %d", status) );
         return( psa_ssl_status_to_mbedtls( status ) );
+    }
 
     if( n2 > buf_len - 3 - i )
     {

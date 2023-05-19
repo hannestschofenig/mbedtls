@@ -25,6 +25,11 @@
 #include "test/psa_crypto_helpers.h"
 #endif /* MBEDTLS_USE_PSA_CRYPTO || MBEDTLS_SSL_PROTO_TLS1_3 */
 
+#if defined(MBEDTLS_PARSEC_ATTESTATION)
+#include "parsec/parsec_se_driver.h"
+#include "parsec/parsec_client.h"
+#endif /* MBEDTLS_PARSEC_ATTESTATION */
+
 #if defined(MBEDTLS_SSL_TEST_IMPOSSIBLE)
 int main( void )
 {
@@ -675,16 +680,16 @@ int main( int argc, char *argv[] )
     io_ctx_t io_ctx;
 
 #if defined(MBEDTLS_SSL_TLS_ATTESTATION) && defined(MBEDTLS_PSA_CRYPTO_C)
-    psa_key_attributes_t attributes = PSA_KEY_ATTRIBUTES_INIT;
 
-//    psa_status_t status;
-    psa_key_handle_t key_handle = 0;
-
-    const uint8_t key_bytes[] = {
-         0x49, 0xc9, 0xa8, 0xc1, 0x8c, 0x4b, 0x88, 0x56, 0x38, 0xc4, 0x31, 0xcf,
-         0x1d, 0xf1, 0xc9, 0x94, 0x13, 0x16, 0x09, 0xb5, 0x80, 0xd4, 0xfd, 0x43,
-         0xa0, 0xca, 0xb1, 0x7d, 0xb2, 0xf1, 0x3e, 0xee
-    };
+#if defined(MBEDTLS_PARSEC_ATTESTATION)
+    psa_status_t reg_status = psa_register_se_driver((psa_key_location_t)0x000001,
+			&PARSEC_SE_DRIVER);
+	if (reg_status != PSA_SUCCESS) {
+		printf("Register failed (status = %d)\n", reg_status);
+		return 1;
+	}
+#endif /* MBEDTLS_PARSEC_ATTESTATION */
+    psa_key_handle_t key_handle;
 #endif /* MBEDTLS_SSL_TLS_ATTESTATION && MBEDTLS_PSA_CRYPTO_C */
 
 #if defined(MBEDTLS_SSL_PROTO_TLS1_3) && \
@@ -2003,34 +2008,33 @@ int main( int argc, char *argv[] )
     }
 #endif  /* MBEDTLS_X509_CRT_PARSE_C */
 
-#if defined(MBEDTLS_SSL_TLS_ATTESTATION)
+#if defined(MBEDTLS_SSL_TLS_ATTESTATION) && defined(MBEDTLS_PSA_CRYPTO_C)
     if( client_attestation_type_list[0] != MBEDTLS_TLS_ATTESTATION_TYPE_NONE ) {
         mbedtls_ssl_conf_client_attestation_type(&conf, client_attestation_type_list);
 
-#if defined(MBEDTLS_PSA_CRYPTO_C)
-/*        status = psa_crypto_init( );
-        if( status != PSA_SUCCESS )
-        {
-            printf( "psa_crypto_init failed\n" );
-            return( EXIT_FAILURE );
-        }
-*/
-        psa_set_key_usage_flags( &attributes,
-                                 PSA_KEY_USAGE_SIGN_HASH | PSA_KEY_USAGE_VERIFY_HASH );
-        psa_set_key_algorithm( &attributes, PSA_ALG_ECDSA(PSA_ALG_SHA_256) );
-        psa_set_key_type( &attributes, PSA_KEY_TYPE_ECC_KEY_PAIR(PSA_ECC_FAMILY_SECP_R1) );
+        psa_key_id_t key_pair_id = 0xBEEF;
 
-        status = psa_import_key( &attributes, key_bytes, sizeof( key_bytes ), &key_handle );
-        if( status != PSA_SUCCESS )
+        psa_key_attributes_t key_pair_attributes = PSA_KEY_ATTRIBUTES_INIT;
+        psa_set_key_id(&key_pair_attributes, key_pair_id);
+        psa_set_key_lifetime(&key_pair_attributes,
+                            PSA_KEY_LIFETIME_FROM_PERSISTENCE_AND_LOCATION(PSA_KEY_PERSISTENCE_DEFAULT, (psa_key_location_t)0x000001));
+        psa_set_key_usage_flags(&key_pair_attributes, PSA_KEY_USAGE_SIGN_HASH | PSA_KEY_USAGE_VERIFY_HASH);
+        psa_set_key_algorithm(&key_pair_attributes, PSA_ALG_ECDSA(PSA_ALG_SHA_256));
+        psa_set_key_type(&key_pair_attributes, PSA_KEY_TYPE_ECC_KEY_PAIR(PSA_ECC_FAMILY_SECP_R1));
+        psa_set_key_bits(&key_pair_attributes, 256U);
+
+        status = psa_generate_key(&key_pair_attributes, &key_handle);
+        if( status != PSA_SUCCESS  && status != PSA_ERROR_ALREADY_EXISTS)
         {
+            mbedtls_printf( " failed\n  ! psa_generate_key returned %d\n\n",
+                            status );
             ret = MBEDTLS_ERR_SSL_PRIVATE_KEY_REQUIRED;
             goto exit;
         }
 
         mbedtls_ssl_conf_client_rpk(&conf, &key_handle);
-#endif /* MBEDTLS_PSA_CRYPTO_C */
     }
-#endif /* MBEDTLS_SSL_TLS_ATTESTATION */
+#endif /* MBEDTLS_SSL_TLS_ATTESTATION && MBEDTLS_PSA_CRYPTO_C */
 
 #if defined(MBEDTLS_ECP_C)
     if( opt.curves != NULL &&

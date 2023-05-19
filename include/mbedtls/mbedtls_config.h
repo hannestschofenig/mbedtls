@@ -1673,6 +1673,17 @@
 #define MBEDTLS_SSL_ATTESTATION_NONCE_LEN_MAX   32
 
 /**
+ * \def MBEDTLS_PARSEC_ATTESTATION
+ *
+ * Enable support for attestation using the PARSEC service
+ *
+ * Requires: MBEDTLS_SSL_TLS_ATTESTATION
+ *
+ * Comment this macro to disable support for PARSEC attestation
+ */
+#define MBEDTLS_PARSEC_ATTESTATION
+
+/**
  * \def MBEDTLS_SSL_VARIABLE_BUFFER_LENGTH
  *
  * When this option is enabled, the SSL buffer will be resized automatically
@@ -2713,7 +2724,7 @@
  * Requires: MBEDTLS_PSA_CRYPTO_C, MBEDTLS_PSA_CRYPTO_STORAGE_C
  *
  */
-//#define MBEDTLS_PSA_CRYPTO_SE_C
+#define MBEDTLS_PSA_CRYPTO_SE_C
 
 /**
  * \def MBEDTLS_PSA_CRYPTO_STORAGE_C
