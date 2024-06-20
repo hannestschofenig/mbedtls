@@ -2368,7 +2368,10 @@ int main( int argc, char *argv[] )
         mbedtls_printf( "Warning: event-driven IO mandates nbio=1 - overwrite\n" );
         opt.nbio = 1;
     }
-
+#if defined(MBEDTLS_DISABLE_NONBLOCK_IO)
+    // TODO: if #238 is fixed , This should be removed
+    opt.nbio = 0;
+#endif
 #if defined(MBEDTLS_DEBUG_C)
     mbedtls_debug_set_threshold( opt.debug_level );
 #endif
