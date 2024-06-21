@@ -2619,7 +2619,7 @@ int ssl_tls13_write_end_of_early_data_process( mbedtls_ssl_context *ssl )
         size_t buf_len;
 
         MBEDTLS_SSL_PROC_CHK( mbedtls_ssl_start_handshake_msg( ssl,
-                          MBEDTLS_SSL_HS_END_OF_EARLY_DATA, &buf, &buf_len ) );
+            MBEDTLS_SSL_HS_END_OF_EARLY_DATA, &buf, &buf_len ) );
 
         mbedtls_ssl_add_hs_hdr_to_checksum(
             ssl, MBEDTLS_SSL_HS_END_OF_EARLY_DATA, 0 );
@@ -2677,6 +2677,87 @@ static int ssl_tls13_write_end_of_early_data_postprocess( mbedtls_ssl_context *s
 
     return( 0 );
 }
+
+#if defined(MBEDTLS_SSL_KEYUPDATE_ENABLE)
+
+MBEDTLS_CHECK_RETURN_CRITICAL
+static int ssl_tls13_prepare_key_update( mbedtls_ssl_context *ssl )
+{
+/*    int ret = MBEDTLS_ERR_ERROR_CORRUPTION_DETECTED;
+    mbedtls_ssl_session *session = ssl->session;
+    mbedtls_ssl_ciphersuite_t *ciphersuite_info;
+    psa_algorithm_t psa_hash_alg;
+    int hash_length;
+*/
+    MBEDTLS_SSL_DEBUG_MSG( 2, ( "=> prepare key update msg" ) );
+
+    return( 0 );
+}
+
+
+
+MBEDTLS_CHECK_RETURN_CRITICAL
+static int ssl_tls13_write_key_update_body( mbedtls_ssl_context *ssl,
+                                                    unsigned char *buf,
+                                                    unsigned char *end,
+                                                    size_t *out_len )
+{
+    int ret = MBEDTLS_ERR_ERROR_CORRUPTION_DETECTED;
+    unsigned char *p = buf;
+    // mbedtls_ssl_session *session = ssl->session;
+
+    *out_len = 0;
+
+    MBEDTLS_SSL_CHK_BUF_PTR( p, end, 1 );
+
+	p[0]=0;
+	p++;
+
+    *out_len = p - buf;
+    MBEDTLS_SSL_DEBUG_BUF( 4, "key update message", buf, *out_len );
+
+    return( 0 );
+}
+
+/*
+ * Handler for MBEDTLS_SSL_KEY_UPDATE
+ */
+MBEDTLS_CHECK_RETURN_CRITICAL
+static int ssl_tls13_write_key_update( mbedtls_ssl_context *ssl )
+{
+	unsigned char *buf;
+    int ret = MBEDTLS_ERR_ERROR_CORRUPTION_DETECTED;
+	unsigned char *end;
+    size_t buf_len, msg_len;
+
+    MBEDTLS_SSL_DEBUG_MSG( 1,
+                  ( "Updating sending keys" ) );
+
+    MBEDTLS_SSL_DEBUG_MSG( 2, ( "=> write key update message" ) );
+
+    MBEDTLS_SSL_PROC_CHK( ssl_tls13_prepare_key_update( ssl ) );
+
+    MBEDTLS_SSL_PROC_CHK( mbedtls_ssl_start_handshake_msg( ssl,
+                            MBEDTLS_SSL_HS_KEY_UPDATE, &buf, &buf_len ) );
+
+    MBEDTLS_SSL_PROC_CHK( ssl_tls13_write_key_update_body(
+                              ssl, buf, buf + buf_len, &msg_len ) );
+
+    MBEDTLS_SSL_PROC_CHK( mbedtls_ssl_finish_handshake_msg(
+                              ssl, buf_len, msg_len ) );
+
+    ret = mbedtls_ssl_flush_output( ssl );
+    if( ret != 0 )
+        return( ret );
+
+    mbedtls_ssl_handshake_set_state( ssl, MBEDTLS_SSL_HANDSHAKE_OVER );
+
+    cleanup:
+
+        MBEDTLS_SSL_DEBUG_MSG( 2, ( "<= write key update message" ) );
+        return( ret );
+}
+#endif /* MBEDTLS_SSL_KEYUPDATE_ENABLE */
 
 #if defined(MBEDTLS_SSL_TLS1_3_KEY_EXCHANGE_MODE_EPHEMERAL_ENABLED)
 /*
@@ -3099,7 +3180,13 @@ static int ssl_tls13_handshake_wrapup( mbedtls_ssl_context *ssl )
     if( ret != 0 )
         return( ret );
 
+
+#if defined(MBEDTLS_SSL_KEYUPDATE_ENABLE)
+    mbedtls_ssl_handshake_set_state( ssl, MBEDTLS_SSL_KEY_UPDATE );
+#else
     mbedtls_ssl_handshake_set_state( ssl, MBEDTLS_SSL_HANDSHAKE_OVER );
+#endif
+
     return( 0 );
 }
 
@@ -3470,6 +3557,14 @@ int mbedtls_ssl_tls13_handshake_client_step( mbedtls_ssl_context *ssl )
             ret = MBEDTLS_ERR_SSL_RECEIVED_NEW_SESSION_TICKET;
             break;
 #endif /* MBEDTLS_SSL_SESSION_TICKETS */
+
+#if defined(MBEDTLS_SSL_KEYUPDATE_ENABLE)
+        case MBEDTLS_SSL_KEY_UPDATE:
+            ret = ssl_tls13_write_key_update( ssl );
+            if( ret != 0 )
+                break;
+            break;
+#endif /* MBEDTLS_SSL_KEYUPDATE_ENABLE */
 
         default:
             MBEDTLS_SSL_DEBUG_MSG( 1, ( "invalid state %d", ssl->state ) );

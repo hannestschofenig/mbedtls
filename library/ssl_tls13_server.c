@@ -3544,6 +3544,7 @@ static int ssl_tls13_handshake_wrapup( mbedtls_ssl_context *ssl )
 
 #if defined(MBEDTLS_SSL_SESSION_TICKETS)
     mbedtls_ssl_handshake_set_state( ssl, MBEDTLS_SSL_NEW_SESSION_TICKET );
+//    mbedtls_ssl_handshake_set_state( ssl, MBEDTLS_SSL_KEY_UPDATE );
 #else
     mbedtls_ssl_handshake_set_state( ssl, MBEDTLS_SSL_HANDSHAKE_OVER );
 #endif
@@ -3581,6 +3582,131 @@ static int ssl_tls13_write_new_session_ticket_coordinate( mbedtls_ssl_context *s
 
     return( SSL_NEW_SESSION_TICKET_WRITE );
 }
+
+#if defined(MBEDTLS_SSL_KEYUPDATE_ENABLE)
+
+/*
+ * From RFC8446, Section 4.6.3
+ *
+ *      enum {
+ *          update_not_requested(0), update_requested(1), (255)
+ *      } KeyUpdateRequest;
+ *
+ *      struct {
+ *          KeyUpdateRequest request_update;
+ *      } KeyUpdate;
+ *
+ *
+ */
+MBEDTLS_CHECK_RETURN_CRITICAL
+static int ssl_tls13_parse_key_update( mbedtls_ssl_context *ssl,
+                                               unsigned char *buf,
+                                               unsigned char *end,
+                                               size_t *request )
+{
+    int ret = MBEDTLS_ERR_ERROR_CORRUPTION_DETECTED;
+    unsigned char *p = buf;
+    mbedtls_ssl_session *session = ssl->session;
+
+    MBEDTLS_SSL_CHK_BUF_READ_PTR( p, end, 1 );
+
+    *request = buf[0];
+
+    return( 0 );
+}
+
+MBEDTLS_CHECK_RETURN_CRITICAL
+static int ssl_tls13_postprocess_key_update( mbedtls_ssl_context *ssl, size_t request)
+{
+    int ret = MBEDTLS_ERR_ERROR_CORRUPTION_DETECTED;
+    mbedtls_ssl_session *session = ssl->session;
+    const mbedtls_ssl_ciphersuite_t *ciphersuite_info;
+    psa_algorithm_t psa_hash_alg;
+    int hash_length;
+    unsigned char application_traffic_secret[ MBEDTLS_TLS1_3_MD_MAX_SIZE ];
+    (void) request;
+
+    ciphersuite_info = mbedtls_ssl_ciphersuite_from_id( session->ciphersuite );
+    if( ciphersuite_info == NULL )
+    {
+        MBEDTLS_SSL_DEBUG_MSG( 1, ( "should never happen" ) );
+        return( MBEDTLS_ERR_SSL_INTERNAL_ERROR );
+    }
+
+    psa_hash_alg = mbedtls_psa_translate_md( ciphersuite_info->mac );
+    hash_length = PSA_HASH_LENGTH( psa_hash_alg );
+    if( hash_length == -1 )
+    {
+        return( MBEDTLS_ERR_SSL_INTERNAL_ERROR );
+    }
+
+
+    MBEDTLS_SSL_DEBUG_BUF( 3, "Old Application Traffic Secret: ",
+                           session->app_secrets.client_application_traffic_secret_N,
+                           hash_length );
+
+    /* Compute new application traffic secret
+     *
+     *  application_traffic_secret_N+1 =
+     *      HKDF-Expand-Label(application_traffic_secret_N,
+     *                        "traffic upd", "", Hash.length)
+     */
+    ret = mbedtls_ssl_tls13_hkdf_expand_label(
+                    psa_hash_alg,
+                    session->app_secrets.client_application_traffic_secret_N,
+                    hash_length,
+                    MBEDTLS_SSL_TLS1_3_LBL_WITH_LEN( traffic_upd ),
+                    "",
+                    0,
+                    application_traffic_secret,
+                    hash_length );
+
+    if( ret != 0 )
+    {
+        MBEDTLS_SSL_DEBUG_RET( 2,
+                               "Creating application traffic secret failed",
+                               ret );
+        return( ret );
+    }
+
+    MBEDTLS_SSL_DEBUG_BUF( 3, "New Application Traffic Secret: ",
+                           application_traffic_secret,
+                           hash_length );
+
+    return( 0 );
+}
+
+/*
+ * Handler for processing a KeyUpdate
+ */
+MBEDTLS_CHECK_RETURN_CRITICAL
+static int ssl_tls13_process_key_update( mbedtls_ssl_context *ssl )
+{
+    int ret = MBEDTLS_ERR_ERROR_CORRUPTION_DETECTED;
+    unsigned char *buf;
+    size_t buf_len;
+    size_t request;
+
+    MBEDTLS_SSL_DEBUG_MSG( 2, ( "=> parse key update message" ) );
+
+    MBEDTLS_SSL_PROC_CHK( mbedtls_ssl_tls13_fetch_handshake_msg(
+                              ssl, MBEDTLS_SSL_HS_KEY_UPDATE,
+                              &buf, &buf_len ) );
+
+    MBEDTLS_SSL_PROC_CHK( ssl_tls13_parse_key_update(
+                              ssl, buf, buf + buf_len,
+                              &request ) );
+
+    MBEDTLS_SSL_PROC_CHK( ssl_tls13_postprocess_key_update( ssl, request ) );
+
+    mbedtls_ssl_handshake_set_state( ssl, MBEDTLS_SSL_HANDSHAKE_OVER );
+
+cleanup:
+
+    MBEDTLS_SSL_DEBUG_MSG( 2, ( "<= parse key update message" ) );
+    return( ret );
+}
+#endif /* MBEDTLS_SSL_KEYUPDATE_ENABLE */
 
 #if defined(MBEDTLS_SSL_SESSION_TICKETS)
 MBEDTLS_CHECK_RETURN_CRITICAL
@@ -3823,7 +3949,8 @@ static int ssl_tls13_write_new_session_ticket( mbedtls_ssl_context *ssl )
     }
     else
     {
-        mbedtls_ssl_handshake_set_state( ssl, MBEDTLS_SSL_HANDSHAKE_OVER );
+        // mbedtls_ssl_handshake_set_state( ssl, MBEDTLS_SSL_HANDSHAKE_OVER );
+        mbedtls_ssl_handshake_set_state( ssl, MBEDTLS_SSL_KEY_UPDATE );
     }
 
 cleanup:
@@ -4023,6 +4150,8 @@ int mbedtls_ssl_tls13_handshake_server_step( mbedtls_ssl_context *ssl )
             ret = ssl_tls13_write_new_session_ticket( ssl );
             if( ret != 0 )
             {
+                mbedtls_ssl_handshake_set_state( ssl, MBEDTLS_SSL_KEY_UPDATE );
+
                 MBEDTLS_SSL_DEBUG_RET( 1,
                                        "ssl_tls13_write_new_session_ticket ",
                                        ret );
@@ -4044,6 +4173,15 @@ int mbedtls_ssl_tls13_handshake_server_step( mbedtls_ssl_context *ssl )
             break;
 
 #endif /* MBEDTLS_SSL_SESSION_TICKETS */
+
+#if defined(MBEDTLS_SSL_KEYUPDATE_ENABLE)
+        case MBEDTLS_SSL_KEY_UPDATE:
+            ret = ssl_tls13_process_key_update( ssl );
+            if( ret != 0 )
+                break;
+            mbedtls_ssl_handshake_set_state( ssl, MBEDTLS_SSL_HANDSHAKE_OVER );
+            break;
+#endif /* MBEDTLS_SSL_KEYUPDATE_ENABLE */
 
         default:
             MBEDTLS_SSL_DEBUG_MSG( 1, ( "invalid state %d", ssl->state ) );
