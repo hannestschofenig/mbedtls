@@ -639,7 +639,8 @@ static const char *extension_name_table[] = {
     [MBEDTLS_SSL_EXT_ID_ENCRYPT_THEN_MAC] = "encrypt_then_mac",
     [MBEDTLS_SSL_EXT_ID_EXTENDED_MASTER_SECRET] = "extended_master_secret",
     [MBEDTLS_SSL_EXT_ID_SESSION_TICKET] = "session_ticket",
-    [MBEDTLS_SSL_EXT_ID_RECORD_SIZE_LIMIT] = "record_size_limit"
+    [MBEDTLS_SSL_EXT_ID_RECORD_SIZE_LIMIT] = "record_size_limit",
+    [MBEDTLS_SSL_EXT_ID_JUMBO] = "jumbo"
 };
 
 static const unsigned int extension_type_table[] = {
@@ -671,7 +672,8 @@ static const unsigned int extension_type_table[] = {
     [MBEDTLS_SSL_EXT_ID_ENCRYPT_THEN_MAC] = MBEDTLS_TLS_EXT_ENCRYPT_THEN_MAC,
     [MBEDTLS_SSL_EXT_ID_EXTENDED_MASTER_SECRET] = MBEDTLS_TLS_EXT_EXTENDED_MASTER_SECRET,
     [MBEDTLS_SSL_EXT_ID_SESSION_TICKET] = MBEDTLS_TLS_EXT_SESSION_TICKET,
-    [MBEDTLS_SSL_EXT_ID_RECORD_SIZE_LIMIT] = MBEDTLS_TLS_EXT_RECORD_SIZE_LIMIT
+    [MBEDTLS_SSL_EXT_ID_RECORD_SIZE_LIMIT] = MBEDTLS_TLS_EXT_RECORD_SIZE_LIMIT,
+    [MBEDTLS_SSL_EXT_ID_JUMBO] = MBEDTLS_TLS_EXT_JUMBO
 };
 
 const char *mbedtls_ssl_get_extension_name(unsigned int extension_type)

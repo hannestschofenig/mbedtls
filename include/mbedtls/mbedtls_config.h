@@ -1008,6 +1008,19 @@
  */
 //#define MBEDTLS_SSL_IN_CONTENT_LEN              16384
 
+
+/**
+ * \def MBEDTLS_SUPER_JUMBO_EXTENSION
+ *
+ * Enable the super jumbo record limit extension defined in
+ * draft-ietf-tls-super-jumbo-record-limit-01
+ *
+ * This functionality allows endpoints to negotiate a larger
+ * maximum inner plaintext size, up to 2^32 - 256 bytes,
+ * while reducing overhead.
+ */
+#define MBEDTLS_SUPER_JUMBO_EXTENSION
+
 /**
  * \def MBEDTLS_SSL_MAX_EARLY_DATA_SIZE
  *

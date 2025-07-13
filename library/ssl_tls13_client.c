@@ -246,6 +246,50 @@ static int ssl_tls13_get_default_group_id(mbedtls_ssl_context *ssl,
     return ret;
 }
 
+#if defined(MBEDTLS_SUPER_JUMBO_EXTENSION)
+MBEDTLS_CHECK_RETURN_CRITICAL
+static int ssl_tls13_write_jumbo_ext(mbedtls_ssl_context *ssl,
+                                         unsigned char *buf,
+                                         unsigned char *end,
+                                         size_t *out_len)
+{
+    unsigned char *p = buf;
+    int ret = 0;
+    const uint32_t jumbo_len = 10000;
+
+    *out_len = 0;
+
+    /* Check if we have space for header and length fields:
+     * - extension_type         (2 bytes)
+     * - extension_data_length  (2 bytes)
+     * - uint32 LargeRecordSizeLimit; (4 bytes)
+     */
+    MBEDTLS_SSL_CHK_BUF_PTR(p, end, 8);
+
+    MBEDTLS_SSL_DEBUG_MSG(3, ("client hello: adding jumbo extension"));
+
+    /* Write extension_type */
+    MBEDTLS_PUT_UINT16_BE(MBEDTLS_TLS_EXT_JUMBO, p, 0);
+
+    /* Write extension_data_length */
+    MBEDTLS_PUT_UINT16_BE(4, p, 2);
+
+    /* Write jumbo_len (4 bytes) */
+    MBEDTLS_PUT_UINT32_BE(jumbo_len, p, 4);
+    p += 8;
+
+    /* Output the total length of jumbo extension. */
+    *out_len = p - buf;
+
+    MBEDTLS_SSL_DEBUG_BUF(
+        3, "client hello, jumbo extension", buf, *out_len);
+
+    mbedtls_ssl_tls13_set_hs_sent_ext_mask(ssl, MBEDTLS_TLS_EXT_JUMBO);
+
+    return ret;
+}
+#endif /* MBEDTLS_SUPER_JUMBO_EXTENSION */
+
 /*
  * ssl_tls13_write_key_share_ext
  *
@@ -1178,6 +1222,14 @@ int mbedtls_ssl_tls13_write_client_hello_exts(mbedtls_ssl_context *ssl,
         p += ext_len;
     }
 #endif
+
+#if defined(MBEDTLS_SUPER_JUMBO_EXTENSION)
+    ret = ssl_tls13_write_jumbo_ext(ssl, p, end, &ext_len);
+    if (ret != 0) {
+        return ret;
+    }
+    p += ext_len;
+#endif /* MBEDTLS_SUPER_JUMBO_EXTENSION */
 
 #if defined(MBEDTLS_SSL_EARLY_DATA)
     /* In the first ClientHello, write the early data indication extension if

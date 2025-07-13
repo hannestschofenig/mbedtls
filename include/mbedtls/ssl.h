@@ -655,6 +655,8 @@
 #define MBEDTLS_TLS_EXT_CID                        254 /* Pre-RFC 9146 DTLS 1.2 CID */
 #endif
 
+#define MBEDTLS_TLS_EXT_JUMBO                      100 /* jumbo extension */
+
 #define MBEDTLS_TLS_EXT_ECJPAKE_KKPP               256 /* experimental */
 
 #define MBEDTLS_TLS_EXT_RENEGOTIATION_INFO      0xFF01
@@ -1185,6 +1187,11 @@ struct mbedtls_ssl_session {
 #if defined(MBEDTLS_SSL_RECORD_SIZE_LIMIT)
     uint16_t MBEDTLS_PRIVATE(record_size_limit);
 #endif /* MBEDTLS_SSL_RECORD_SIZE_LIMIT */
+
+/*!<  Super Jumbo Record Limit */
+#if defined(MBEDTLS_SUPER_JUMBO_EXTENSION)
+    uint32_t jumbo_record_size;
+#endif /* MBEDTLS_SUPER_JUMBO_EXTENSION */
 
     unsigned char MBEDTLS_PRIVATE(exported);
     uint8_t MBEDTLS_PRIVATE(endpoint);          /*!< 0: client, 1: server */

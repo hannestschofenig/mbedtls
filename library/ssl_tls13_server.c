@@ -96,6 +96,42 @@ static void ssl_tls13_select_ciphersuite(
                               (unsigned long) psk_hash_alg));
 }
 
+#if defined(MBEDTLS_SUPER_JUMBO_EXTENSION)
+MBEDTLS_CHECK_RETURN_CRITICAL
+static int mbedtls_ssl_tls13_parse_jumbo_ext(mbedtls_ssl_context *ssl,
+                                     const unsigned char *buf,
+                                     const unsigned char *end)
+{
+    uint32_t jumbo_len;
+
+    /* Check that there are exactly 4 bytes for the jumbo record size */
+    if ((size_t)(end - buf) != 4) {
+        MBEDTLS_SSL_DEBUG_MSG(1, ("jumbo extension: invalid length"));
+        return MBEDTLS_ERR_SSL_DECODE_ERROR;
+    }
+
+    jumbo_len = MBEDTLS_GET_UINT32_BE(buf, 0);
+
+    MBEDTLS_SSL_DEBUG_MSG(3, ("jumbo extension: received value = %" PRIu32, jumbo_len));
+
+    /* Optional: Add sanity checks on acceptable jumbo_len values */
+    if (jumbo_len < 64 || jumbo_len > 16777216 ) {
+        MBEDTLS_SSL_DEBUG_MSG(1, ("jumbo extension: value out of range"));
+
+        MBEDTLS_SSL_PEND_FATAL_ALERT(
+            MBEDTLS_SSL_ALERT_MSG_ILLEGAL_PARAMETER,
+            MBEDTLS_ERR_SSL_ILLEGAL_PARAMETER);
+
+        return MBEDTLS_ERR_SSL_ILLEGAL_PARAMETER;
+    }
+
+    /* Store the value in the SSL context */
+    ssl->session_negotiate->jumbo_record_size = jumbo_len;
+
+    return 0;
+}
+#endif /* MBEDTLS_SUPER_JUMBO_EXTENSION */
+
 #if defined(MBEDTLS_SSL_TLS1_3_KEY_EXCHANGE_MODE_SOME_PSK_ENABLED)
 /* From RFC 8446:
  *
@@ -1650,6 +1686,20 @@ static int ssl_tls13_parse_client_hello(mbedtls_ssl_context *ssl,
                 }
                 break;
 #endif /* MBEDTLS_SSL_RECORD_SIZE_LIMIT */
+
+#if defined(MBEDTLS_SUPER_JUMBO_EXTENSION)
+            case MBEDTLS_TLS_EXT_JUMBO:
+                MBEDTLS_SSL_DEBUG_MSG(3, ("found super_jumbo_record_limit extension"));
+
+                ret = mbedtls_ssl_tls13_parse_jumbo_ext(
+                    ssl, p, extension_data_end);
+                if (ret != 0) {
+                    MBEDTLS_SSL_DEBUG_RET(
+                        1, ("mbedtls_ssl_tls13_parse_jumbo_ext"), ret);
+                    return ret;
+                }
+                break;
+#endif /* MBEDTLS_SUPER_JUMBO_EXTENSION */
 
             default:
                 MBEDTLS_SSL_PRINT_EXT(
