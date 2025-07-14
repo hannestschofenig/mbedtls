@@ -596,6 +596,9 @@ uint32_t mbedtls_ssl_get_extension_id(unsigned int extension_type)
         case MBEDTLS_TLS_EXT_RECORD_SIZE_LIMIT:
             return MBEDTLS_SSL_EXT_ID_RECORD_SIZE_LIMIT;
 
+        case MBEDTLS_TLS_EXT_JUMBO:
+            return MBEDTLS_SSL_EXT_ID_JUMBO;
+
         case MBEDTLS_TLS_EXT_SESSION_TICKET:
             return MBEDTLS_SSL_EXT_ID_SESSION_TICKET;
 

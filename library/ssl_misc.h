@@ -188,7 +188,8 @@ uint32_t mbedtls_ssl_get_extension_mask(unsigned int extension_type);
      MBEDTLS_SSL_EXT_MASK(CLI_CERT_TYPE)                          | \
      MBEDTLS_SSL_EXT_MASK(SERV_CERT_TYPE)                         | \
      MBEDTLS_SSL_EXT_MASK(EARLY_DATA)                             | \
-     MBEDTLS_SSL_EXT_MASK(RECORD_SIZE_LIMIT))
+     MBEDTLS_SSL_EXT_MASK(RECORD_SIZE_LIMIT)                      | \
+     MBEDTLS_SSL_EXT_MASK(JUMBO))
 
 /* RFC 8446 section 4.2. Allowed extensions for CertificateRequest */
 #define MBEDTLS_SSL_TLS1_3_ALLOWED_EXTS_OF_CR                                  \
