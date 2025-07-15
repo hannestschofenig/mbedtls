@@ -111,6 +111,7 @@ int main(void)
 #define DFL_CERT_REQ_CA_LIST    MBEDTLS_SSL_CERT_REQ_CA_LIST_ENABLED
 #define DFL_CERT_REQ_DN_HINT    0
 #define DFL_MFL_CODE            MBEDTLS_SSL_MAX_FRAG_LEN_NONE
+#define DFL_JUMBO_RECORD_SIZE_LIMIT   16384
 #define DFL_TRUNC_HMAC          -1
 #define DFL_TICKETS             MBEDTLS_SSL_SESSION_TICKETS_ENABLED
 #define DFL_DUMMY_TICKET        0
@@ -508,6 +509,12 @@ int main(void)
 #define USAGE_TLS1_3_KEY_EXCHANGE_MODES ""
 #endif /* MBEDTLS_SSL_PROTO_TLS1_3 */
 
+#if defined(MBEDTLS_SUPER_JUMBO_EXTENSION)
+#define USAGE_JUMBO_RECORD_SIZE_LIMIT \
+    "    jumbo_record_size_limit=%%d default: 16384\n"
+#else
+#define USAGE_JUMBO_RECORD_SIZE_LIMIT ""
+#endif
 
 /* USAGE is arbitrarily split to stay under the portable string literal
  * length limit: 4095 bytes in C99. */
@@ -562,6 +569,7 @@ int main(void)
     USAGE_CACHE                                             \
     USAGE_CACHE_TIME                                        \
     USAGE_MAX_FRAG_LEN                                      \
+    USAGE_JUMBO_RECORD_SIZE_LIMIT                           \
     USAGE_ALPN                                              \
     USAGE_EMS                                               \
     USAGE_ETM                                               \
@@ -722,6 +730,7 @@ struct options {
     const char *key1_opaque_alg2; /* Allowed opaque key 1 alg 2            */
     const char *key2_opaque_alg1; /* Allowed opaque key 2 alg 1            */
     const char *key2_opaque_alg2; /* Allowed opaque key 2 alg 2            */
+    uint32_t jumbo_record_size_limit; /* maximum size of a jumbo record */
 } opt;
 
 #include "ssl_test_common_source.c"
@@ -1462,7 +1471,7 @@ static int dummy_ticket_parse(void *p_ticket, mbedtls_ssl_session *session,
 
     return ret;
 }
-#endif /* MBEDTLS_SSL_SESSION_TICKETS && MBEDTLS_SSL_TICKET_C && MBEDTLS_HAVE_TIME */
+#endif /* MBEDTLS_SSL_SESSION_TICKETS && MBEDTLS_SSL_TICKET_C */
 
 static int parse_cipher(char *buf)
 {
@@ -1629,6 +1638,7 @@ int main(int argc, char *argv[])
     /*! master keys and master salt for SRTP generated during handshake */
     unsigned char dtls_srtp_key_material[MBEDTLS_TLS_SRTP_MAX_KEY_MATERIAL_LENGTH];
     const char *dtls_srtp_label = "EXTRACTOR-dtls_srtp";
+
     dtls_srtp_keys dtls_srtp_keying;
     const mbedtls_ssl_srtp_profile default_profiles[] = {
         MBEDTLS_TLS_SRTP_AES128_CM_HMAC_SHA1_80,
@@ -1758,6 +1768,7 @@ int main(int argc, char *argv[])
     opt.cert_req_ca_list    = DFL_CERT_REQ_CA_LIST;
     opt.cert_req_dn_hint    = DFL_CERT_REQ_DN_HINT;
     opt.mfl_code            = DFL_MFL_CODE;
+    opt.jumbo_record_size_limit = DFL_JUMBO_RECORD_SIZE_LIMIT;
     opt.trunc_hmac          = DFL_TRUNC_HMAC;
     opt.tickets             = DFL_TICKETS;
     opt.dummy_ticket        = DFL_DUMMY_TICKET;
@@ -2170,6 +2181,12 @@ usage:
             } else if (strcmp(q, "4096") == 0) {
                 opt.mfl_code = MBEDTLS_SSL_MAX_FRAG_LEN_4096;
             } else {
+                goto usage;
+            }
+        } else if (strcmp(p, "jumbo_record_size_limit") == 0) {
+            opt.jumbo_record_size_limit = atoi(q);
+            if (opt.jumbo_record_size_limit < 64 ||
+                opt.jumbo_record_size_limit > 4294967040u) {
                 goto usage;
             }
         } else if (strcmp(p, "alpn") == 0) {
@@ -2853,6 +2870,15 @@ usage:
     if ((ret = mbedtls_ssl_conf_max_frag_len(&conf, opt.mfl_code)) != 0) {
         mbedtls_printf(" failed\n  ! mbedtls_ssl_conf_max_frag_len returned %d\n\n", ret);
         goto exit;
+    }
+#endif
+
+#if defined(MBEDTLS_SUPER_JUMBO_EXTENSION)
+    if (opt.jumbo_record_size_limit != DFL_JUMBO_RECORD_SIZE_LIMIT) {
+        if ((ret = mbedtls_ssl_conf_jumbo_record_size_limit(&conf, opt.jumbo_record_size_limit)) != 0) {
+            mbedtls_printf(" failed\n  ! mbedtls_ssl_conf_jumbo_record_size_limit returned %d\n\n", ret);
+            goto exit;
+        }
     }
 #endif
 
@@ -4104,7 +4130,7 @@ data_exchange:
         /*
          * This simulates a workflow where you have one server instance per
          * connection, and want to release it entire when the connection is
-         * inactive, and spawn it again when needed again - this would happen
+         * inactive, and spawn it again when needed - this would happen
          * between ssl_free() and ssl_init() below, together with any other
          * teardown/startup code needed - for example, preparing the
          * ssl_config again (see section 3 "setup stuff" in this file).

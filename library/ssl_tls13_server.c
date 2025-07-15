@@ -96,45 +96,6 @@ static void ssl_tls13_select_ciphersuite(
                               (unsigned long) psk_hash_alg));
 }
 
-#if defined(MBEDTLS_SUPER_JUMBO_EXTENSION)
-MBEDTLS_CHECK_RETURN_CRITICAL
-static int mbedtls_ssl_tls13_parse_jumbo_ext(mbedtls_ssl_context *ssl,
-                                     const unsigned char *buf,
-                                     const unsigned char *end)
-{
-    uint32_t jumbo_len;
-
-    /* Check that there are exactly 4 bytes for the jumbo record size */
-    if ((size_t)(end - buf) != 4) {
-        MBEDTLS_SSL_DEBUG_MSG(1, ("jumbo extension: invalid length"));
-        return MBEDTLS_ERR_SSL_DECODE_ERROR;
-    }
-
-    jumbo_len = MBEDTLS_GET_UINT32_BE(buf, 0);
-
-    MBEDTLS_SSL_DEBUG_MSG(3, ("jumbo extension: received value = %" PRIu32, jumbo_len));
-
-    /* Optional: Add sanity checks on acceptable jumbo_len values */
-    if (jumbo_len < 64 || jumbo_len > 16777216 ) {
-        MBEDTLS_SSL_DEBUG_MSG(1, ("jumbo extension: value out of range"));
-
-        MBEDTLS_SSL_PEND_FATAL_ALERT(
-            MBEDTLS_SSL_ALERT_MSG_ILLEGAL_PARAMETER,
-            MBEDTLS_ERR_SSL_ILLEGAL_PARAMETER);
-
-        return MBEDTLS_ERR_SSL_ILLEGAL_PARAMETER;
-    }
-
-    /* Store the value in the SSL context */
-    ssl->session_negotiate->jumbo_record_size = jumbo_len;
-
-
-    /* Set the received flag for the jumbo extension */
-    ssl->handshake->received_extensions |= MBEDTLS_SSL_EXT_MASK(JUMBO);
-
-    return 0;
-}
-#endif /* MBEDTLS_SUPER_JUMBO_EXTENSION */
 
 #if defined(MBEDTLS_SSL_TLS1_3_KEY_EXCHANGE_MODE_SOME_PSK_ENABLED)
 /* From RFC 8446:
@@ -1692,14 +1653,14 @@ static int ssl_tls13_parse_client_hello(mbedtls_ssl_context *ssl,
 #endif /* MBEDTLS_SSL_RECORD_SIZE_LIMIT */
 
 #if defined(MBEDTLS_SUPER_JUMBO_EXTENSION)
-            case MBEDTLS_TLS_EXT_JUMBO:
+            case MBEDTLS_TLS_EXT_JUMBO_RECORD_SIZE_LIMIT:
                 MBEDTLS_SSL_DEBUG_MSG(3, ("found super_jumbo_record_limit extension"));
 
-                ret = mbedtls_ssl_tls13_parse_jumbo_ext(
+                ret = mbedtls_ssl_tls13_parse_jumbo_record_size_limit_ext(
                     ssl, p, extension_data_end);
                 if (ret != 0) {
                     MBEDTLS_SSL_DEBUG_RET(
-                        1, ("mbedtls_ssl_tls13_parse_jumbo_ext"), ret);
+                        1, ("mbedtls_ssl_tls13_parse_jumbo_record_size_limit_ext"), ret);
                     return ret;
                 }
                 break;
@@ -2149,49 +2110,6 @@ static int ssl_tls13_generate_and_write_key_share(mbedtls_ssl_context *ssl,
 
     return ret;
 }
-
-#if defined(MBEDTLS_SUPER_JUMBO_EXTENSION)
-MBEDTLS_CHECK_RETURN_CRITICAL
-static int ssl_tls13_write_jumbo_ext(mbedtls_ssl_context *ssl,
-                                     unsigned char *buf,
-                                     unsigned char *end,
-                                     size_t *out_len)
-{
-    unsigned char *p = buf;
-    const uint32_t jumbo_len = 10000; // Use same value as client
-
-    *out_len = 0;
-
-    /* Check if we have space for header and length fields:
-     * - extension_type         (2 bytes)
-     * - extension_data_length  (2 bytes)
-     * - uint32 LargeRecordSizeLimit; (4 bytes)
-     */
-    MBEDTLS_SSL_CHK_BUF_PTR(p, end, 8);
-
-    MBEDTLS_SSL_DEBUG_MSG(3, ("encrypted extensions: adding jumbo extension"));
-
-    /* Write extension_type */
-    MBEDTLS_PUT_UINT16_BE(MBEDTLS_TLS_EXT_JUMBO, p, 0);
-
-    /* Write extension_data_length */
-    MBEDTLS_PUT_UINT16_BE(4, p, 2);
-
-    /* Write jumbo_len (4 bytes) */
-    MBEDTLS_PUT_UINT32_BE(jumbo_len, p, 4);
-    p += 8;
-
-    /* Output the total length of jumbo extension. */
-    *out_len = p - buf;
-
-    MBEDTLS_SSL_DEBUG_BUF(
-        3, "encrypted extensions, jumbo extension", buf, *out_len);
-
-    mbedtls_ssl_tls13_set_hs_sent_ext_mask(ssl, MBEDTLS_TLS_EXT_JUMBO);
-
-    return 0;
-}
-#endif /* MBEDTLS_SUPER_JUMBO_EXTENSION */
 
 
 /*
@@ -2671,8 +2589,8 @@ static int ssl_tls13_write_encrypted_extensions_body(mbedtls_ssl_context *ssl,
 #endif
 
 #if defined(MBEDTLS_SUPER_JUMBO_EXTENSION)
-    if (ssl->handshake->received_extensions & MBEDTLS_SSL_EXT_MASK(JUMBO)) {
-        ret = ssl_tls13_write_jumbo_ext(ssl, p, end, &output_len);
+    if (ssl->handshake->received_extensions & MBEDTLS_SSL_EXT_MASK(JUMBO_RECORD_SIZE_LIMIT)) {
+        ret = mbedtls_ssl_tls13_write_jumbo_record_size_limit_ext(ssl, p, end, &output_len);
         if (ret != 0) {
             return ret;
         }

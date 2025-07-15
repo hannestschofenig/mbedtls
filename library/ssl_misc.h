@@ -112,7 +112,7 @@ typedef enum {
 #define MBEDTLS_SSL_EXT_ID_EXTENDED_MASTER_SECRET     26
 #define MBEDTLS_SSL_EXT_ID_SESSION_TICKET             27
 #define MBEDTLS_SSL_EXT_ID_RECORD_SIZE_LIMIT          28
-#define MBEDTLS_SSL_EXT_ID_JUMBO                      29
+#define MBEDTLS_SSL_EXT_ID_JUMBO_RECORD_SIZE_LIMIT    29
 
 /* Utility for translating IANA extension type. */
 uint32_t mbedtls_ssl_get_extension_id(unsigned int extension_type);
@@ -174,7 +174,7 @@ uint32_t mbedtls_ssl_get_extension_mask(unsigned int extension_type);
      MBEDTLS_SSL_EXT_MASK(POST_HANDSHAKE_AUTH)                    | \
      MBEDTLS_SSL_EXT_MASK(SIG_ALG_CERT)                           | \
      MBEDTLS_SSL_EXT_MASK(RECORD_SIZE_LIMIT)                      | \
-     MBEDTLS_SSL_EXT_MASK(JUMBO)                                  | \
+     MBEDTLS_SSL_EXT_MASK(JUMBO_RECORD_SIZE_LIMIT)                | \
      MBEDTLS_SSL_TLS1_3_EXT_MASK_UNRECOGNIZED)
 
 /* RFC 8446 section 4.2. Allowed extensions for EncryptedExtensions */
@@ -189,7 +189,7 @@ uint32_t mbedtls_ssl_get_extension_mask(unsigned int extension_type);
      MBEDTLS_SSL_EXT_MASK(SERV_CERT_TYPE)                         | \
      MBEDTLS_SSL_EXT_MASK(EARLY_DATA)                             | \
      MBEDTLS_SSL_EXT_MASK(RECORD_SIZE_LIMIT)                      | \
-     MBEDTLS_SSL_EXT_MASK(JUMBO))
+     MBEDTLS_SSL_EXT_MASK(JUMBO_RECORD_SIZE_LIMIT))
 
 /* RFC 8446 section 4.2. Allowed extensions for CertificateRequest */
 #define MBEDTLS_SSL_TLS1_3_ALLOWED_EXTS_OF_CR                                  \
@@ -469,6 +469,21 @@ size_t mbedtls_ssl_get_input_max_frag_len(const mbedtls_ssl_context *ssl);
  */
 size_t mbedtls_ssl_get_output_record_size_limit(const mbedtls_ssl_context *ssl);
 #endif /* MBEDTLS_SSL_RECORD_SIZE_LIMIT */
+
+#if defined(MBEDTLS_SUPER_JUMBO_EXTENSION)
+/**
+ * \brief    Get the size limit in bytes for the protected outgoing records
+ *           as negotiated by the JUMBO extension, as described in
+ *           draft-ietf-tls-super-jumbo-record-limit.
+ *
+ * \param ssl      SSL context
+ *
+ * \return         The size limit in bytes for the protected outgoing
+ *                 records as negotiated by the JUMBO extension.
+ *                 If not negotiated, returns the default maximum.
+ */
+size_t mbedtls_ssl_get_jumbo_record_size_limit(const mbedtls_ssl_context *ssl);
+#endif /* MBEDTLS_SUPER_JUMBO_EXTENSION */
 
 #if defined(MBEDTLS_SSL_VARIABLE_BUFFER_LENGTH)
 static inline size_t mbedtls_ssl_get_output_buflen(const mbedtls_ssl_context *ctx)
@@ -2739,6 +2754,24 @@ int mbedtls_ssl_parse_server_name_ext(mbedtls_ssl_context *ssl,
                                       const unsigned char *buf,
                                       const unsigned char *end);
 #endif /* MBEDTLS_SSL_SERVER_NAME_INDICATION */
+
+#if defined(MBEDTLS_SUPER_JUMBO_EXTENSION)
+#define MBEDTLS_SSL_JUMBO_RECORD_SIZE_LIMIT_MIN (64)      /* As defined in draft-ietf-tls-super-jumbo-record-limit */
+#define MBEDTLS_SSL_JUMBO_RECORD_SIZE_LIMIT_MAX (4294967040U) /* 2^32 - 256 */
+size_t mbedtls_ssl_get_jumbo_record_size_limit(const mbedtls_ssl_context *ssl);
+
+MBEDTLS_CHECK_RETURN_CRITICAL
+int mbedtls_ssl_tls13_parse_jumbo_record_size_limit_ext(mbedtls_ssl_context *ssl,
+                                                  const unsigned char *buf,
+                                                  const unsigned char *end);
+
+MBEDTLS_CHECK_RETURN_CRITICAL
+int mbedtls_ssl_tls13_write_jumbo_record_size_limit_ext(mbedtls_ssl_context *ssl,
+                                                  unsigned char *buf,
+                                                  const unsigned char *end,
+                                                  size_t *out_len);
+
+#endif /* MBEDTLS_SUPER_JUMBO_EXTENSION */
 
 #if defined(MBEDTLS_SSL_RECORD_SIZE_LIMIT)
 #define MBEDTLS_SSL_RECORD_SIZE_LIMIT_EXTENSION_DATA_LENGTH (2)

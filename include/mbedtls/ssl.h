@@ -429,6 +429,16 @@
 #define MBEDTLS_SSL_OUT_CONTENT_LEN 16384
 #endif
 
+#if defined(MBEDTLS_SUPER_JUMBO_EXTENSION) && !defined(MBEDTLS_SSL_IN_CONTENT_LEN)
+// Maximum plaintext size: 4294967040 (2^32 - 255)
+#define MBEDTLS_SSL_IN_CONTENT_LEN 4294967040u
+#endif
+
+#if defined(MBEDTLS_SUPER_JUMBO_EXTENSION) && !defined(MBEDTLS_SSL_OUT_CONTENT_LEN)
+// Maximum plaintext size: 4294967040 (2^32 - 255)
+#define MBEDTLS_SSL_OUT_CONTENT_LEN 4294967040u
+#endif
+
 /*
  * Maximum number of heap-allocated bytes for the purpose of
  * DTLS handshake message reassembly and future message buffering.
@@ -655,7 +665,7 @@
 #define MBEDTLS_TLS_EXT_CID                        254 /* Pre-RFC 9146 DTLS 1.2 CID */
 #endif
 
-#define MBEDTLS_TLS_EXT_JUMBO                      100 /* jumbo extension */
+#define MBEDTLS_TLS_EXT_JUMBO_RECORD_SIZE_LIMIT    100 /* jumbo extension */
 
 #define MBEDTLS_TLS_EXT_ECJPAKE_KKPP               256 /* experimental */
 
@@ -1190,7 +1200,7 @@ struct mbedtls_ssl_session {
 
 /*!<  Super Jumbo Record Limit */
 #if defined(MBEDTLS_SUPER_JUMBO_EXTENSION)
-    uint32_t jumbo_record_size;
+    uint32_t MBEDTLS_PRIVATE(jumbo_record_size_limit);
 #endif /* MBEDTLS_SUPER_JUMBO_EXTENSION */
 
     unsigned char MBEDTLS_PRIVATE(exported);
@@ -1387,6 +1397,9 @@ struct mbedtls_ssl_config {
     uint8_t MBEDTLS_PRIVATE(mfl_code);      /*!< desired fragment length indicator
                                                  (MBEDTLS_SSL_MAX_FRAG_LEN_XXX) */
 #endif
+#if defined(MBEDTLS_SUPER_JUMBO_EXTENSION)
+    uint32_t MBEDTLS_PRIVATE(jumbo_record_size_limit); /*!< desired jumbo record size limit */
+#endif /* MBEDTLS_SUPER_JUMBO_EXTENSION */
 #if defined(MBEDTLS_SSL_ENCRYPT_THEN_MAC)
     uint8_t MBEDTLS_PRIVATE(encrypt_then_mac); /*!< negotiate encrypt-then-mac?    */
 #endif
@@ -4303,6 +4316,18 @@ void mbedtls_ssl_conf_cert_req_ca_list(mbedtls_ssl_config *conf,
  */
 int mbedtls_ssl_conf_max_frag_len(mbedtls_ssl_config *conf, unsigned char mfl_code);
 #endif /* MBEDTLS_SSL_MAX_FRAGMENT_LENGTH */
+
+#if defined(MBEDTLS_SUPER_JUMBO_EXTENSION)
+/**
+ * \brief    Set the maximum jumbo record size limit for outgoing records.
+ *
+ * \param conf     SSL configuration context
+ * \param limit    The jumbo record size limit in bytes
+ *
+ * \return         0 on success, or a negative error code.
+ */
+int mbedtls_ssl_conf_jumbo_record_size_limit(mbedtls_ssl_config *conf, uint32_t limit);
+#endif /* MBEDTLS_SUPER_JUMBO_EXTENSION */
 
 #if defined(MBEDTLS_SSL_SRV_C)
 /**

@@ -110,6 +110,8 @@ int main(void)
 #define DFL_SRTP_FORCE_PROFILE  0
 #define DFL_SRTP_MKI            ""
 #define DFL_KEY_OPAQUE_ALG      "none"
+/* Jumbo record size limit is set to the default value of TLS. */
+#define DFL_JUMBO_RECORD_SIZE_LIMIT   16384
 
 #define GET_REQUEST "GET %s HTTP/1.0\r\nHost: %s\r\nExtra-header: "
 #define GET_REQUEST_END "\r\n\r\n"
@@ -236,6 +238,14 @@ int main(void)
 #else
 #define USAGE_MAX_FRAG_LEN ""
 #endif /* MBEDTLS_SSL_MAX_FRAGMENT_LENGTH */
+
+#if defined(MBEDTLS_SUPER_JUMBO_EXTENSION)
+#define USAGE_JUMBO_RECORD_SIZE_LIMIT \
+    "    jumbo_record_size_limit=%%d default: 16385\n"
+#else
+#define USAGE_JUMBO_RECORD_SIZE_LIMIT ""
+#endif /* MBEDTLS_SUPER_JUMBO_EXTENSION */
+
 
 #if defined(MBEDTLS_SSL_ALPN)
 #define USAGE_ALPN \
@@ -422,7 +432,7 @@ int main(void)
     USAGE_ECRESTART                                         \
     "\n"
 #define USAGE3 \
-    "    allow_legacy=%%d     default: (library default: no)\n"   \
+    "    allow_legacy=%%s     default: (library default: no)\n"   \
     USAGE_RENEGO                                            \
     "    exchanges=%%d        default: 1\n"                 \
     "    reconnect=%%d        number of reconnections using session resumption\n" \
@@ -435,6 +445,7 @@ int main(void)
     USAGE_TICKETS                                           \
     USAGE_EAP_TLS                                           \
     USAGE_MAX_FRAG_LEN                                      \
+    USAGE_JUMBO_RECORD_SIZE_LIMIT                           \
     USAGE_CONTEXT_CRT_CB                                    \
     USAGE_ALPN                                              \
     USAGE_EMS                                               \
@@ -518,6 +529,7 @@ struct options {
     int set_hostname;           /* call mbedtls_ssl_set_hostname()?         */
                                 /* 0=no, 1=yes, -1=NULL */
     unsigned char mfl_code;     /* code for maximum fragment length         */
+    uint32_t jumbo_record_size_limit; /* maximum size of a jumbo record     */
     int trunc_hmac;             /* negotiate truncated hmac or not          */
     int recsplit;               /* enable record splitting?                 */
     int reconnect;              /* attempt to resume session                */
@@ -969,6 +981,7 @@ int main(int argc, char *argv[])
     opt.auth_mode           = DFL_AUTH_MODE;
     opt.set_hostname        = DFL_SET_HOSTNAME;
     opt.mfl_code            = DFL_MFL_CODE;
+    opt.jumbo_record_size_limit = DFL_JUMBO_RECORD_SIZE_LIMIT;
     opt.trunc_hmac          = DFL_TRUNC_HMAC;
     opt.recsplit            = DFL_RECSPLIT;
     opt.reconnect           = DFL_RECONNECT;
@@ -1384,7 +1397,16 @@ usage:
             } else {
                 goto usage;
             }
-        } else if (strcmp(p, "trunc_hmac") == 0) {
+        } else if (strcmp(p, "jumbo_record_size_limit") == 0) {
+            opt.jumbo_record_size_limit = atoi(q);
+            // The limit is 64 bytes to 4294967040 bytes
+            // = (2^32 - 255) bytes (draft-ietf-tls-super-jumbo-record-limit)
+            if (opt.jumbo_record_size_limit < 64 ||
+                opt.jumbo_record_size_limit > 4294967040u) {
+                goto usage;
+            }
+        }
+        else if (strcmp(p, "trunc_hmac") == 0) {
             switch (atoi(q)) {
                 case 0: opt.trunc_hmac = MBEDTLS_SSL_TRUNC_HMAC_DISABLED; break;
                 case 1: opt.trunc_hmac = MBEDTLS_SSL_TRUNC_HMAC_ENABLED; break;
@@ -1887,6 +1909,16 @@ usage:
         mbedtls_printf(" failed\n  ! mbedtls_ssl_conf_max_frag_len returned %d\n\n",
                        ret);
         goto exit;
+    }
+#endif
+
+#if defined(MBEDTLS_SUPER_JUMBO_EXTENSION)
+    if (opt.jumbo_record_size_limit != DFL_JUMBO_RECORD_SIZE_LIMIT) {
+        if ((ret = mbedtls_ssl_conf_jumbo_record_size_limit(&conf, opt.jumbo_record_size_limit)) != 0) {
+            mbedtls_printf(" failed\n  ! mbedtls_ssl_conf_jumbo_record_size_limit returned -0x%x\n\n",
+                           (unsigned int) -ret);
+            goto exit;
+        }
     }
 #endif
 

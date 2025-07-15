@@ -1641,6 +1641,95 @@ int mbedtls_ssl_tls13_check_received_extension(
     return MBEDTLS_ERR_SSL_UNSUPPORTED_EXTENSION;
 }
 
+#if defined(MBEDTLS_SUPER_JUMBO_EXTENSION)
+
+/* * Super Jumbo Extension
+ *
+ * This extension is used to indicate that the peer supports super jumbo frames.
+ * uint32 LargeRecordSizeLimit;
+ */
+int mbedtls_ssl_tls13_write_jumbo_record_size_limit_ext(mbedtls_ssl_context *ssl,
+                                             unsigned char *buf,
+                                             const unsigned char *end,
+                                             size_t *out_len)
+{
+    unsigned char *p = buf;
+    *out_len = 0;
+
+    MBEDTLS_STATIC_ASSERT(MBEDTLS_SSL_IN_CONTENT_LEN >= MBEDTLS_SSL_JUMBO_RECORD_SIZE_LIMIT_MIN,
+                          "MBEDTLS_SSL_IN_CONTENT_LEN is less than the "
+                          "minimum jumbo record size limit");
+
+    MBEDTLS_SSL_CHK_BUF_PTR(p, end, 8);
+
+    /* Check if the jumbo record size limit is set and within the valid range */
+    if (ssl->conf->jumbo_record_size_limit >= MBEDTLS_SSL_JUMBO_RECORD_SIZE_LIMIT_MIN &&
+        ssl->conf->jumbo_record_size_limit <= MBEDTLS_SSL_JUMBO_RECORD_SIZE_LIMIT_MAX) {
+
+        MBEDTLS_SSL_DEBUG_MSG(3, ("encrypted extensions: adding jumbo extension"));
+
+        /* Write extension_type */
+        MBEDTLS_PUT_UINT16_BE(MBEDTLS_TLS_EXT_JUMBO_RECORD_SIZE_LIMIT, p, 0);
+
+        /* Write extension_data_length */
+        MBEDTLS_PUT_UINT16_BE(4, p, 2);
+
+        /* Write jumbo record length (4 bytes) */
+        MBEDTLS_PUT_UINT32_BE(ssl->conf->jumbo_record_size_limit, p, 4);
+    
+        *out_len = 8;
+
+        MBEDTLS_SSL_DEBUG_MSG(2, ("Sent Jumbo Record Size Limit: %d Bytes",
+                                MBEDTLS_SSL_IN_CONTENT_LEN));
+
+        mbedtls_ssl_tls13_set_hs_sent_ext_mask(ssl, MBEDTLS_TLS_EXT_JUMBO_RECORD_SIZE_LIMIT);
+    }
+
+    return 0;
+}
+
+MBEDTLS_CHECK_RETURN_CRITICAL
+int mbedtls_ssl_tls13_parse_jumbo_record_size_limit_ext(mbedtls_ssl_context *ssl,
+                                                        const unsigned char *buf,
+                                                        const unsigned char *end)
+{
+    const unsigned char *p = buf;
+    uint32_t jumbo_record_size_limit;
+    const size_t extension_data_len = end - buf;
+
+    // The extension data must be exactly 4 bytes (uint32)
+    if (extension_data_len != 4) {
+        MBEDTLS_SSL_DEBUG_MSG(2,
+            ("jumbo_record_size_limit extension has invalid length: %"
+             MBEDTLS_PRINTF_SIZET " Bytes", extension_data_len));
+        MBEDTLS_SSL_PEND_FATAL_ALERT(
+            MBEDTLS_SSL_ALERT_MSG_ILLEGAL_PARAMETER,
+            MBEDTLS_ERR_SSL_ILLEGAL_PARAMETER);
+        return MBEDTLS_ERR_SSL_ILLEGAL_PARAMETER;
+    }
+
+    MBEDTLS_SSL_CHK_BUF_READ_PTR(p, end, 4);
+    jumbo_record_size_limit = MBEDTLS_GET_UINT32_BE(p, 0);
+
+    MBEDTLS_SSL_DEBUG_MSG(2, ("JumboRecordSizeLimit: %" PRIu32 " Bytes", jumbo_record_size_limit));
+
+    // Check minimum and maximum allowed values (draft-ietf-tls-super-jumbo-record-limit)
+    if (jumbo_record_size_limit < MBEDTLS_SSL_JUMBO_RECORD_SIZE_LIMIT_MIN ||
+        jumbo_record_size_limit > MBEDTLS_SSL_JUMBO_RECORD_SIZE_LIMIT_MAX) {
+        MBEDTLS_SSL_DEBUG_MSG(1, ("Invalid jumbo record size limit : %" PRIu32 " Bytes",
+                                  jumbo_record_size_limit));
+        MBEDTLS_SSL_PEND_FATAL_ALERT(
+            MBEDTLS_SSL_ALERT_MSG_ILLEGAL_PARAMETER,
+            MBEDTLS_ERR_SSL_ILLEGAL_PARAMETER);
+        return MBEDTLS_ERR_SSL_ILLEGAL_PARAMETER;
+    }
+
+    ssl->session_negotiate->jumbo_record_size_limit = jumbo_record_size_limit;
+
+    return 0;
+}
+#endif /* MBEDTLS_SUPER_JUMBO_EXTENSION */
+
 #if defined(MBEDTLS_SSL_RECORD_SIZE_LIMIT)
 
 /* RFC 8449, section 4:

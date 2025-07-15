@@ -596,8 +596,8 @@ uint32_t mbedtls_ssl_get_extension_id(unsigned int extension_type)
         case MBEDTLS_TLS_EXT_RECORD_SIZE_LIMIT:
             return MBEDTLS_SSL_EXT_ID_RECORD_SIZE_LIMIT;
 
-        case MBEDTLS_TLS_EXT_JUMBO:
-            return MBEDTLS_SSL_EXT_ID_JUMBO;
+        case MBEDTLS_TLS_EXT_JUMBO_RECORD_SIZE_LIMIT:
+            return MBEDTLS_SSL_EXT_ID_JUMBO_RECORD_SIZE_LIMIT;
 
         case MBEDTLS_TLS_EXT_SESSION_TICKET:
             return MBEDTLS_SSL_EXT_ID_SESSION_TICKET;
@@ -643,7 +643,7 @@ static const char *extension_name_table[] = {
     [MBEDTLS_SSL_EXT_ID_EXTENDED_MASTER_SECRET] = "extended_master_secret",
     [MBEDTLS_SSL_EXT_ID_SESSION_TICKET] = "session_ticket",
     [MBEDTLS_SSL_EXT_ID_RECORD_SIZE_LIMIT] = "record_size_limit",
-    [MBEDTLS_SSL_EXT_ID_JUMBO] = "jumbo"
+    [MBEDTLS_SSL_EXT_ID_JUMBO_RECORD_SIZE_LIMIT] = "jumbo"
 };
 
 static const unsigned int extension_type_table[] = {
@@ -676,7 +676,7 @@ static const unsigned int extension_type_table[] = {
     [MBEDTLS_SSL_EXT_ID_EXTENDED_MASTER_SECRET] = MBEDTLS_TLS_EXT_EXTENDED_MASTER_SECRET,
     [MBEDTLS_SSL_EXT_ID_SESSION_TICKET] = MBEDTLS_TLS_EXT_SESSION_TICKET,
     [MBEDTLS_SSL_EXT_ID_RECORD_SIZE_LIMIT] = MBEDTLS_TLS_EXT_RECORD_SIZE_LIMIT,
-    [MBEDTLS_SSL_EXT_ID_JUMBO] = MBEDTLS_TLS_EXT_JUMBO
+    [MBEDTLS_SSL_EXT_ID_JUMBO_RECORD_SIZE_LIMIT] = MBEDTLS_TLS_EXT_JUMBO_RECORD_SIZE_LIMIT
 };
 
 const char *mbedtls_ssl_get_extension_name(unsigned int extension_type)
@@ -2691,6 +2691,20 @@ int mbedtls_ssl_conf_max_frag_len(mbedtls_ssl_config *conf, unsigned char mfl_co
 }
 #endif /* MBEDTLS_SSL_MAX_FRAGMENT_LENGTH */
 
+#if defined(MBEDTLS_SUPER_JUMBO_EXTENSION)
+int mbedtls_ssl_conf_jumbo_record_size_limit(mbedtls_ssl_config *conf, uint32_t limit)
+{
+    // Acceptable range: 64 .. 4294967040 (2^32 - 255)
+    if (limit < 64 || limit > MBEDTLS_SSL_JUMBO_RECORD_SIZE_LIMIT_MAX) {
+        return MBEDTLS_ERR_SSL_BAD_INPUT_DATA;
+    }
+
+    conf->jumbo_record_size_limit = limit;
+    return 0;
+}
+#endif /* MBEDTLS_SUPER_JUMBO_EXTENSION */
+
+
 void mbedtls_ssl_conf_legacy_renegotiation(mbedtls_ssl_config *conf, int allow_legacy)
 {
     conf->allow_legacy_renegotiation = allow_legacy;
@@ -2845,6 +2859,30 @@ const char *mbedtls_ssl_get_version(const mbedtls_ssl_context *ssl)
             return "unknown";
     }
 }
+
+#if defined(MBEDTLS_SUPER_JUMBO_EXTENSION)
+size_t mbedtls_ssl_get_jumbo_record_size_limit(const mbedtls_ssl_context *ssl)
+{
+    const size_t max_len = MBEDTLS_SSL_OUT_CONTENT_LEN;
+    size_t record_size_limit = max_len;
+
+    if (ssl->session != NULL &&
+        ssl->session->jumbo_record_size_limit >= MBEDTLS_SSL_JUMBO_RECORD_SIZE_LIMIT_MIN &&
+        ssl->session->jumbo_record_size_limit < max_len) {
+        record_size_limit = ssl->session->jumbo_record_size_limit;
+    }
+
+    // TODO: this is currently untested
+    /* During a handshake, use the value being negotiated */
+    if (ssl->session_negotiate != NULL &&
+        ssl->session_negotiate->jumbo_record_size_limit >= MBEDTLS_SSL_JUMBO_RECORD_SIZE_LIMIT_MIN &&
+        ssl->session_negotiate->jumbo_record_size_limit < max_len) {
+        record_size_limit = ssl->session_negotiate->jumbo_record_size_limit;
+    }
+
+    return record_size_limit;
+}
+#endif /* MBEDTLS_SUPER_JUMBO_EXTENSION */
 
 #if defined(MBEDTLS_SSL_RECORD_SIZE_LIMIT)
 
