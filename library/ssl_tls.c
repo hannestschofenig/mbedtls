@@ -2861,7 +2861,7 @@ const char *mbedtls_ssl_get_version(const mbedtls_ssl_context *ssl)
 }
 
 #if defined(MBEDTLS_SUPER_JUMBO_EXTENSION)
-size_t mbedtls_ssl_get_jumbo_record_size_limit(const mbedtls_ssl_context *ssl)
+size_t mbedtls_ssl_get_output_jumbo_record_size_limit(const mbedtls_ssl_context *ssl)
 {
     const size_t max_len = MBEDTLS_SSL_OUT_CONTENT_LEN;
     size_t record_size_limit = max_len;
@@ -2908,6 +2908,41 @@ size_t mbedtls_ssl_get_output_record_size_limit(const mbedtls_ssl_context *ssl)
     return record_size_limit;
 }
 #endif /* MBEDTLS_SSL_RECORD_SIZE_LIMIT */
+
+#if defined(MBEDTLS_SUPER_JUMBO_EXTENSION)
+size_t mbedtls_ssl_get_input_jumbo_record_size_limit(const mbedtls_ssl_context *ssl)
+{
+    size_t max_len = MBEDTLS_SSL_IN_CONTENT_LEN;
+    size_t read_jumbo;
+
+
+#if defined(MBEDTLS_SSL_PROTO_TLS1_2)
+    /* Use the configured jumbo record size for the client if we're past SERVER_HELLO_DONE */
+    if (ssl->conf->endpoint == MBEDTLS_SSL_IS_CLIENT &&
+        ssl->state >= MBEDTLS_SSL_SERVER_HELLO_DONE) {
+        return ssl->conf->jumbo_record_size_limit;
+    }
+#endif
+
+    /* Check if a smaller max length was negotiated */
+    if (ssl->session_out != NULL) {
+        read_jumbo = ssl->session_out->jumbo_record_size_limit;
+        if (read_jumbo < max_len) {
+            max_len = read_jumbo;
+        }
+    }
+
+    /* During a handshake, use the value being negotiated */
+    if (ssl->session_negotiate != NULL) {
+        read_jumbo = ssl->session_negotiate->jumbo_record_size_limit;
+        if (read_jumbo < max_len) {
+            max_len = read_jumbo;
+        }
+    }
+
+    return max_len;
+}
+#endif /* MBEDTLS_SUPER_JUMBO_EXTENSION */
 
 #if defined(MBEDTLS_SSL_MAX_FRAGMENT_LENGTH)
 size_t mbedtls_ssl_get_input_max_frag_len(const mbedtls_ssl_context *ssl)
@@ -3542,7 +3577,9 @@ static int ssl_tls13_session_save(const mbedtls_ssl_session *session,
 #if defined(MBEDTLS_SSL_RECORD_SIZE_LIMIT)
     needed += 2;                            /* record_size_limit */
 #endif /* MBEDTLS_SSL_RECORD_SIZE_LIMIT */
-
+#if defined(MBEDTLS_SUPER_JUMBO_EXTENSION)
+    needed += 4;                            /* jumbo_record_size_limit */
+#endif /* MBEDTLS_SUPER_JUMBO_EXTENSION */
 #if defined(MBEDTLS_HAVE_TIME)
     needed += 8; /* ticket_creation_time or ticket_reception_time */
 #endif
@@ -3597,7 +3634,10 @@ static int ssl_tls13_session_save(const mbedtls_ssl_session *session,
     MBEDTLS_PUT_UINT16_BE(session->record_size_limit, p, 0);
     p += 2;
 #endif /* MBEDTLS_SSL_RECORD_SIZE_LIMIT */
-
+#if defined(MBEDTLS_SUPER_JUMBO_EXTENSION)
+    MBEDTLS_PUT_UINT32_BE(session->jumbo_record_size_limit, p, 0);
+    p += 4;
+#endif /* MBEDTLS_SUPER_JUMBO_EXTENSION */
 #if defined(MBEDTLS_SSL_SRV_C)
     if (session->endpoint == MBEDTLS_SSL_IS_SERVER) {
 #if defined(MBEDTLS_HAVE_TIME)
@@ -3691,7 +3731,13 @@ static int ssl_tls13_session_load(mbedtls_ssl_session *session,
     session->record_size_limit = MBEDTLS_GET_UINT16_BE(p, 0);
     p += 2;
 #endif /* MBEDTLS_SSL_RECORD_SIZE_LIMIT */
-
+#if defined(JUMBO_RECORD_SIZE_LIMIT)
+    if (end - p < 4) {
+        return MBEDTLS_ERR_SSL_BAD_INPUT_DATA;
+    }
+    session->jumbo_record_size_limit = MBEDTLS_GET_UINT32_BE(p, 0);
+    p += 4;
+#endif /* JUMBO_RECORD_SIZE_LIMIT */
 #if  defined(MBEDTLS_SSL_SRV_C)
     if (session->endpoint == MBEDTLS_SSL_IS_SERVER) {
 #if defined(MBEDTLS_HAVE_TIME)
@@ -3882,6 +3928,12 @@ static int ssl_tls13_session_load(const mbedtls_ssl_session *session,
 #else
 #define SSL_SERIALIZED_SESSION_CONFIG_RECORD_SIZE 0
 #endif /* MBEDTLS_SSL_RECORD_SIZE_LIMIT */
+
+#if defined(MBEDTLS_JUMBO_RECORD_SIZE_LIMIT)
+#define SSL_SERIALIZED_SESSION_CONFIG_JUMBO_RECORD_SIZE 1
+#else
+#define SSL_SERIALIZED_SESSION_CONFIG_JUMBO_RECORD_SIZE 0
+#endif /* MBEDTLS_JUMBO_RECORD_SIZE_LIMIT */
 
 #if defined(MBEDTLS_SSL_ALPN) && defined(MBEDTLS_SSL_SRV_C) && \
     defined(MBEDTLS_SSL_EARLY_DATA)

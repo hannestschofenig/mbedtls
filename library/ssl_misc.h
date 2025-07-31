@@ -379,6 +379,7 @@ uint32_t mbedtls_ssl_get_extension_mask(unsigned int extension_type);
 /*
  * Check that we obey the standard's message size bounds
  */
+#if !defined(MBEDTLS_SUPER_JUMBO_EXTENSION)
 
 #if MBEDTLS_SSL_IN_CONTENT_LEN > 16384
 #error "Bad configuration - incoming record content too large."
@@ -395,6 +396,8 @@ uint32_t mbedtls_ssl_get_extension_mask(unsigned int extension_type);
 #if MBEDTLS_SSL_OUT_PAYLOAD_LEN > MBEDTLS_SSL_OUT_CONTENT_LEN + 2048
 #error "Bad configuration - outgoing protected record payload too large."
 #endif
+
+#endif /* MBEDTLS_SUPER_JUMBO_EXTENSION */
 
 /* Calculate buffer sizes */
 
@@ -457,6 +460,21 @@ size_t mbedtls_ssl_get_output_max_frag_len(const mbedtls_ssl_context *ssl);
 size_t mbedtls_ssl_get_input_max_frag_len(const mbedtls_ssl_context *ssl);
 #endif /* MBEDTLS_SSL_MAX_FRAGMENT_LENGTH */
 
+ #if defined(MBEDTLS_SUPER_JUMBO_EXTENSION)
+/**
+ * \brief          Return the jumbo record size (payload, in bytes) for
+ *                 the input buffer. If the super jumbo record limit extension
+ *                 is negotiated, this is the negotiated jumbo record size limit.
+ *                 Otherwise, if there is none, MBEDTLS_SSL_IN_CONTENT_LEN.
+ *                 If it is not defined either, the value is 2^14.
+ *
+ * \param ssl      SSL context
+ *
+ * \return         Current maximum jumbo record size length for the input buffer.
+ */
+size_t mbedtls_ssl_get_input_jumbo_record_size_limit(const mbedtls_ssl_context *ssl);
+#endif /* MBEDTLS_SUPER_JUMBO_EXTENSION */
+
 #if defined(MBEDTLS_SSL_RECORD_SIZE_LIMIT)
 /**
  * \brief    Get the size limit in bytes for the protected outgoing records
@@ -482,7 +500,7 @@ size_t mbedtls_ssl_get_output_record_size_limit(const mbedtls_ssl_context *ssl);
  *                 records as negotiated by the JUMBO extension.
  *                 If not negotiated, returns the default maximum.
  */
-size_t mbedtls_ssl_get_jumbo_record_size_limit(const mbedtls_ssl_context *ssl);
+size_t mbedtls_ssl_get_output_jumbo_record_size_limit(const mbedtls_ssl_context *ssl);
 #endif /* MBEDTLS_SUPER_JUMBO_EXTENSION */
 
 #if defined(MBEDTLS_SSL_VARIABLE_BUFFER_LENGTH)
@@ -1719,7 +1737,18 @@ static inline size_t mbedtls_ssl_in_hdr_len(const mbedtls_ssl_context *ssl)
     } else
 #endif /* MBEDTLS_SSL_PROTO_DTLS */
     {
-        return 5;
+ #if defined(MBEDTLS_SSL_PROTO_TLS1_3) && defined(MBEDTLS_SUPER_JUMBO_EXTENSION)
+        if (ssl->tls_version == MBEDTLS_SSL_VERSION_TLS1_3 &&
+            ( ssl->session != NULL &&
+              ssl->session->jumbo_record_size_limit > 16384
+            ))
+        {
+            return 3;
+        } else
+#endif // MBEDTLS_SSL_PROTO_TLS1_3 && MBEDTLS_SUPER_JUMBO_EXTENSION
+        {
+            return 5;
+        }
     }
 }
 

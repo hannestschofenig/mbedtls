@@ -2668,7 +2668,14 @@ int mbedtls_ssl_write_record(mbedtls_ssl_context *ssl, int force_flush)
     size_t len = ssl->out_msglen;
     int flush = force_flush;
 
+    uint32_t jumbo = 0;
+
     MBEDTLS_SSL_DEBUG_MSG(2, ("=> write record"));
+
+#if defined(MBEDTLS_SSL_PROTO_TLS1_3) && defined(MBEDTLS_SUPER_JUMBO_EXTENSION)
+    if (ssl->session != NULL)
+        jumbo = ssl->session->jumbo_record_size_limit;
+#endif /* MBEDTLS_SSL_PROTO_TLS1_3 && MBEDTLS_SUPER_JUMBO_EXTENSION */
 
     if (!done) {
         unsigned i;
@@ -2688,8 +2695,15 @@ int mbedtls_ssl_write_record(mbedtls_ssl_context *ssl, int force_flush)
             tls_ver = MBEDTLS_SSL_VERSION_TLS1_2;
         }
 #endif /* MBEDTLS_SSL_PROTO_TLS1_3 */
-        mbedtls_ssl_write_version(ssl->out_hdr + 1, ssl->conf->transport,
-                                  tls_ver);
+/* For the TLSLargeCiphertext structure we do not need a version field in the header. */
+#if defined(MBEDTLS_SSL_PROTO_TLS1_3) && defined(MBEDTLS_SUPER_JUMBO_EXTENSION)
+        if (!(ssl->tls_version == MBEDTLS_SSL_VERSION_TLS1_3 &&
+              jumbo > 16384))
+        {
+            mbedtls_ssl_write_version(ssl->out_hdr + 1, ssl->conf->transport,
+                                    tls_ver);
+        }
+#endif /* MBEDTLS_SSL_PROTO_TLS1_3 && MBEDTLS_SUPER_JUMBO_EXTENSION */
 
         memcpy(ssl->out_ctr, ssl->cur_out_ctr, MBEDTLS_SSL_SEQUENCE_NUMBER_LEN);
         MBEDTLS_PUT_UINT16_BE(len, ssl->out_len, 0);
@@ -2732,6 +2746,15 @@ int mbedtls_ssl_write_record(mbedtls_ssl_context *ssl, int force_flush)
 
         protected_record_size = len + mbedtls_ssl_out_hdr_len(ssl);
 
+#if defined(MBEDTLS_SSL_PROTO_TLS1_3) && defined(MBEDTLS_SUPER_JUMBO_EXTENSION)
+        if (ssl->tls_version == MBEDTLS_SSL_VERSION_TLS1_3 &&
+              jumbo > 16384)
+        {
+            /* We omitted the version field */
+            protected_record_size -= 2;
+        }
+#endif /* MBEDTLS_SSL_PROTO_TLS1_3 && MBEDTLS_SUPER_JUMBO_EXTENSION */
+
 #if defined(MBEDTLS_SSL_PROTO_DTLS)
         /* In case of DTLS, double-check that we don't exceed
          * the remaining space in the datagram. */
@@ -2751,11 +2774,27 @@ int mbedtls_ssl_write_record(mbedtls_ssl_context *ssl, int force_flush)
         /* Now write the potentially updated record content type. */
         ssl->out_hdr[0] = (unsigned char) ssl->out_msgtype;
 
-        MBEDTLS_SSL_DEBUG_MSG(3, ("output record: msgtype = %u, "
-                                  "version = [%u:%u], msglen = %" MBEDTLS_PRINTF_SIZET,
-                                  ssl->out_hdr[0], ssl->out_hdr[1],
-                                  ssl->out_hdr[2], len));
+#if defined(MBEDTLS_SSL_PROTO_TLS1_3) && defined(MBEDTLS_SUPER_JUMBO_EXTENSION)
+        /* Update the length information */
+        if (ssl->tls_version == MBEDTLS_SSL_VERSION_TLS1_3 &&
+            jumbo > 16384)
+        {
 
+            memmove(ssl->out_hdr + 1, ssl->out_hdr + 3, ssl->out_msglen + 2);
+//            MBEDTLS_PUT_UINT16_BE(ssl->out_msglen, ssl->out_hdr, 1);
+
+            MBEDTLS_SSL_DEBUG_MSG(3, ("output record: msgtype = %u, "
+                "version = TLS 1.3 with Jumbo Extension, msglen = %" MBEDTLS_PRINTF_SIZET,
+                ssl->out_hdr[0], len));
+
+        } else
+#endif /* MBEDTLS_SSL_PROTO_TLS1_3 && MBEDTLS_SUPER_JUMBO_EXTENSION */
+        {
+            MBEDTLS_SSL_DEBUG_MSG(3, ("output record: msgtype = %u, "
+                "version = [%u:%u], msglen = %" MBEDTLS_PRINTF_SIZET,
+                ssl->out_hdr[0], ssl->out_hdr[1],
+                ssl->out_hdr[2], len));
+        }
         MBEDTLS_SSL_DEBUG_BUF(4, "output record sent to network",
                               ssl->out_hdr, protected_record_size);
 
@@ -3557,7 +3596,7 @@ static int ssl_parse_record_header(mbedtls_ssl_context const *ssl,
 
     size_t const rec_hdr_version_offset = rec_hdr_type_offset +
                                           rec_hdr_type_len;
-    size_t const rec_hdr_version_len    = 2;
+    size_t rec_hdr_version_len          = 2;
 
     size_t const rec_hdr_ctr_len        = 8;
 #if defined(MBEDTLS_SSL_PROTO_DTLS)
@@ -3578,6 +3617,19 @@ static int ssl_parse_record_header(mbedtls_ssl_context const *ssl,
     /*
      * Check minimum lengths for record header.
      */
+
+#if defined(MBEDTLS_SSL_PROTO_TLS1_3) && defined(MBEDTLS_SUPER_JUMBO_EXTENSION)
+    /* For the Super Jumbo Record Limit the Version Field is set to zero length
+     * for application data payloads.
+     */
+    if (ssl->tls_version == MBEDTLS_SSL_VERSION_TLS1_3 &&
+        ( ssl->session != NULL &&
+            ssl->session->jumbo_record_size_limit > 16384
+        ))
+    {
+        rec_hdr_version_len = 0;
+    }
+#endif // MBEDTLS_SSL_PROTO_TLS1_3 && MBEDTLS_SUPER_JUMBO_EXTENSION
 
 #if defined(MBEDTLS_SSL_PROTO_DTLS)
     if (ssl->conf->transport == MBEDTLS_SSL_TRANSPORT_DATAGRAM) {
@@ -3654,19 +3706,38 @@ static int ssl_parse_record_header(mbedtls_ssl_context const *ssl,
     /*
      * Parse and validate record version
      */
-    rec->ver[0] = buf[rec_hdr_version_offset + 0];
-    rec->ver[1] = buf[rec_hdr_version_offset + 1];
-    tls_version = (mbedtls_ssl_protocol_version) mbedtls_ssl_read_version(
-        buf + rec_hdr_version_offset,
-        ssl->conf->transport);
 
-    if (tls_version > ssl->conf->max_tls_version) {
-        MBEDTLS_SSL_DEBUG_MSG(1, ("TLS version mismatch: got %u, expected max %u",
-                                  (unsigned) tls_version,
-                                  (unsigned) ssl->conf->max_tls_version));
+#if defined(MBEDTLS_SSL_PROTO_TLS1_3) && defined(MBEDTLS_SUPER_JUMBO_EXTENSION)
+    /* For the Super Jumbo Record Limit the Version Field is set to zero length
+     * for application data payloads.
+     */
+    if (ssl->tls_version == MBEDTLS_SSL_VERSION_TLS1_3 &&
+        ( ssl->session != NULL &&
+            ssl->session->jumbo_record_size_limit > 16384
+        ))
+    {
+        rec_hdr_version_len = 0;
+        rec->ver[0] = 3;
+        rec->ver[1] = 3;
+        tls_version = MBEDTLS_GET_UINT16_BE(rec->ver, 0);
+    } else
+#endif // MBEDTLS_SSL_PROTO_TLS1_3 && MBEDTLS_SUPER_JUMBO_EXTENSION
+    {
+        rec->ver[0] = buf[rec_hdr_version_offset + 0];
+        rec->ver[1] = buf[rec_hdr_version_offset + 1];
+        tls_version = (mbedtls_ssl_protocol_version) mbedtls_ssl_read_version(
+            buf + rec_hdr_version_offset,
+            ssl->conf->transport);
 
-        return MBEDTLS_ERR_SSL_INVALID_RECORD;
+        if (tls_version > ssl->conf->max_tls_version) {
+            MBEDTLS_SSL_DEBUG_MSG(1, ("TLS version mismatch: got %u, expected max %u",
+                                    (unsigned) tls_version,
+                                    (unsigned) ssl->conf->max_tls_version));
+
+            return MBEDTLS_ERR_SSL_INVALID_RECORD;
+        }
     }
+
     /*
      * Parse/Copy record sequence number.
      */
@@ -5154,6 +5225,17 @@ void mbedtls_ssl_update_out_pointers(mbedtls_ssl_context *ssl,
         ssl->out_iv  = ssl->out_hdr + 5;
     }
 
+#if defined(MBEDTLS_SSL_PROTO_TLS1_3) && defined(MBEDTLS_SUPER_JUMBO_EXTENSION)
+        if (ssl->tls_version == MBEDTLS_SSL_VERSION_TLS1_3 &&
+            ( ssl->session != NULL &&
+              ssl->session->jumbo_record_size_limit > 16384
+            ))
+        {
+            ssl->out_len = ssl->out_hdr + 1;
+            ssl->out_iv  = ssl->out_hdr + 3;
+        }
+#endif // MBEDTLS_SSL_PROTO_TLS1_3 && MBEDTLS_SUPER_JUMBO_EXTENSION
+
     ssl->out_msg = ssl->out_iv;
     /* Adjust out_msg to make space for explicit IV, if used. */
     if (transform != NULL) {
@@ -5205,6 +5287,17 @@ void mbedtls_ssl_update_in_pointers(mbedtls_ssl_context *ssl)
 #endif
         ssl->in_iv  = ssl->in_hdr + 5;
     }
+
+#if defined(MBEDTLS_SSL_PROTO_TLS1_3) && defined(MBEDTLS_SUPER_JUMBO_EXTENSION)
+        if (ssl->tls_version == MBEDTLS_SSL_VERSION_TLS1_3 &&
+            ( ssl->session != NULL &&
+              ssl->session->jumbo_record_size_limit > 16384
+            ))
+        {
+            ssl->in_len = ssl->in_hdr + 1;
+            ssl->in_iv  = ssl->in_hdr + 3;
+        }
+#endif // MBEDTLS_SSL_PROTO_TLS1_3 && MBEDTLS_SUPER_JUMBO_EXTENSION
 
     /* This will be adjusted at record decryption time. */
     ssl->in_msg = ssl->in_iv;

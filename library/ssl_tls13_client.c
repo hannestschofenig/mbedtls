@@ -2154,6 +2154,20 @@ static int ssl_tls13_parse_encrypted_extensions(mbedtls_ssl_context *ssl,
                 break;
 #endif /* MBEDTLS_SSL_RECORD_SIZE_LIMIT */
 
+#if defined(MBEDTLS_SUPER_JUMBO_EXTENSION)
+            case MBEDTLS_TLS_EXT_JUMBO_RECORD_SIZE_LIMIT:
+                MBEDTLS_SSL_DEBUG_MSG(3, ("found super_jumbo_record_limit extension"));
+
+                ret = mbedtls_ssl_tls13_parse_jumbo_record_size_limit_ext(
+                    ssl, p, p + extension_data_len);
+                if (ret != 0) {
+                    MBEDTLS_SSL_DEBUG_RET(
+                        1, ("mbedtls_ssl_tls13_parse_jumbo_record_size_limit_ext"), ret);
+                    return ret;
+                }
+                break;
+#endif /* MBEDTLS_SUPER_JUMBO_EXTENSION */
+
             default:
                 MBEDTLS_SSL_PRINT_EXT(
                     3, MBEDTLS_SSL_HS_ENCRYPTED_EXTENSIONS,
