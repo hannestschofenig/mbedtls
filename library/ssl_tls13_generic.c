@@ -18,6 +18,7 @@
 #include "mbedtls/constant_time.h"
 #include "psa/crypto.h"
 #include "mbedtls/psa_util.h"
+#include <inttypes.h>
 
 #include "ssl_tls13_invasive.h"
 #include "ssl_tls13_keys.h"
@@ -1679,8 +1680,8 @@ int mbedtls_ssl_tls13_write_jumbo_record_size_limit_ext(mbedtls_ssl_context *ssl
     
         *out_len = 8;
 
-        MBEDTLS_SSL_DEBUG_MSG(2, ("Sent Jumbo Record Size Limit: %d Bytes",
-                                MBEDTLS_SSL_IN_CONTENT_LEN));
+        MBEDTLS_SSL_DEBUG_MSG(2, ("Sent Jumbo Record Size Limit: %" PRIu32 " Bytes",
+            (uint32_t) MBEDTLS_SSL_IN_CONTENT_LEN));
 
         mbedtls_ssl_tls13_set_hs_sent_ext_mask(ssl, MBEDTLS_TLS_EXT_JUMBO_RECORD_SIZE_LIMIT);
     }

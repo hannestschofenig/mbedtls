@@ -421,13 +421,7 @@
  * if you're using the Max Fragment Length extension and you know all your
  * peers are using it too!
  */
-#if !defined(MBEDTLS_SSL_IN_CONTENT_LEN)
-#define MBEDTLS_SSL_IN_CONTENT_LEN 16384
-#endif
 
-#if !defined(MBEDTLS_SSL_OUT_CONTENT_LEN)
-#define MBEDTLS_SSL_OUT_CONTENT_LEN 16384
-#endif
 
 #if defined(MBEDTLS_SUPER_JUMBO_EXTENSION) && !defined(MBEDTLS_SSL_IN_CONTENT_LEN)
 // Maximum plaintext size: 4294967040 (2^32 - 255)
@@ -437,6 +431,14 @@
 #if defined(MBEDTLS_SUPER_JUMBO_EXTENSION) && !defined(MBEDTLS_SSL_OUT_CONTENT_LEN)
 // Maximum plaintext size: 4294967040 (2^32 - 255)
 #define MBEDTLS_SSL_OUT_CONTENT_LEN 4294967040u
+#endif
+
+#if !defined(MBEDTLS_SSL_IN_CONTENT_LEN)
+#define MBEDTLS_SSL_IN_CONTENT_LEN 16384
+#endif
+
+#if !defined(MBEDTLS_SSL_OUT_CONTENT_LEN)
+#define MBEDTLS_SSL_OUT_CONTENT_LEN 16384
 #endif
 
 /*
