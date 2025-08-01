@@ -14116,9 +14116,19 @@ run_test    "Handshake defragmentation on client: len=4, server-initiated renego
 # Test jumbo extension
 requires_config_enabled MBEDTLS_SSL_PROTO_TLS1_3
 requires_config_enabled MBEDTLS_SUPER_JUMBO_EXTENSION
+run_test    "JUMBO_RECORD_SIZE_LIMIT: extension exists" \
+            "$P_SRV debug_level=3 force_version=tls13 tickets=0" \
+            "$P_CLI debug_level=3 force_version=tls13 jumbo_record_size_limit=16385" \
+            0 \
+            -c "ClientHello: jumbo(100) extension exists." \
+            -s "ServerHello: jumbo(100) extension exists."
+#            -s "Maximum outgoing record payload length is 16384"
+
+requires_config_enabled MBEDTLS_SSL_PROTO_TLS1_3
+requires_config_enabled MBEDTLS_SUPER_JUMBO_EXTENSION
 requires_max_content_len 1073741568
 run_test    "JUMBO_RECORD_SIZE_LIMIT: client, server <- 2^30 - 256 Bytes" \
-            "$P_SRV debug_level=3 force_version=tls13 jumbo_record_size_limit=1073741568" \
+            "$P_SRV debug_level=3 force_version=tls13 tickets=0 jumbo_record_size_limit=1073741568" \
             "$P_CLI debug_level=3 force_version=tls13 jumbo_record_size_limit=1073741568" \
             0 \
             -c "ClientHello: jumbo(100) extension exists." \
@@ -14129,19 +14139,11 @@ requires_config_enabled MBEDTLS_SSL_PROTO_TLS1_3
 requires_config_enabled MBEDTLS_SUPER_JUMBO_EXTENSION
 requires_max_content_len 1073741568
 run_test    "JUMBO_RECORD_SIZE_LIMIT: client <- 16385, server <- 2^30 - 256 Bytes" \
-            "$P_SRV debug_level=3 force_version=tls13 jumbo_record_size_limit=1073741568" \
+            "$P_SRV debug_level=3 force_version=tls13 tickets=0 jumbo_record_size_limit=1073741568" \
             "$P_CLI debug_level=3 force_version=tls13 jumbo_record_size_limit=16385" \
             1 \
             -c "ClientHello: jumbo(100) extension exists." \
 
-requires_config_enabled MBEDTLS_SSL_PROTO_TLS1_3
-requires_config_enabled MBEDTLS_SUPER_JUMBO_EXTENSION
-run_test    "JUMBO_RECORD_SIZE_LIMIT: extension exists" \
-            "$P_SRV debug_level=3 force_version=tls13" \
-            "$P_CLI debug_level=3 force_version=tls13 jumbo_record_size_limit=16385" \
-            0 \
-            -c "ClientHello: jumbo(100) extension exists." \
-            -s "Maximum outgoing record payload length is 16384"
 
 # Test heap memory usage after handshake
 requires_config_enabled MBEDTLS_SSL_PROTO_TLS1_2
