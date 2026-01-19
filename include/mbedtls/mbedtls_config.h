@@ -742,10 +742,10 @@
  * \def MBEDTLS_SUPER_JUMBO_EXTENSION
  *
  * Enable the super jumbo record limit extension defined in
- * draft-ietf-tls-super-jumbo-record-limit-01
+ * draft-ietf-tls-super-jumbo-record-limit-02
  *
  * This functionality allows endpoints to negotiate a larger
- * maximum inner plaintext size, up to 2^32 - 256 bytes,
+ * maximum inner plaintext size, up to 2^30 - 256 bytes,
  * while reducing overhead.
  */
 #define MBEDTLS_SUPER_JUMBO_EXTENSION
@@ -1008,6 +1008,19 @@
  * that it is capable of holding the specified amount of plaintext data,
  * regardless of the protection mechanism used.
  *
+ * Notes for developers
+ * --------------------
+ * - This setting has a direct impact on RAM usage: each active TLS context
+ *   needs an input buffer sized to this value (plus overhead). Very large
+ *   values can easily exhaust memory or hit allocator/platform limits.
+ * - For most applications, keeping this at the TLS default (16384 bytes)
+ *   is the sensible choice. If you only need to reduce memory, consider
+ *   keeping the default input size and reducing the output size via
+ *   #MBEDTLS_SSL_OUT_CONTENT_LEN.
+ * - This branch may set this to a very large value for stress-testing the
+ *   super jumbo record limit extension. For production builds, reset it to
+ *   a value that your target can actually buffer (commonly 16384).
+ *
  * \note When using a value less than the default of 16KB on the client, it is
  *       recommended to use the Maximum Fragment Length (MFL) extension to
  *       inform the server about this limitation. On the server, there
@@ -1017,9 +1030,11 @@
  *       to only change the outgoing buffer size #MBEDTLS_SSL_OUT_CONTENT_LEN
  *       while keeping the default value of 16KB for the incoming buffer.
  *
+ * Set value to 1073741568 for 2^30 - 256
+ *
  * Uncomment to set the maximum plaintext size of the incoming I/O buffer.
  */
-//#define MBEDTLS_SSL_IN_CONTENT_LEN              1073741568 // 16384
+#define MBEDTLS_SSL_IN_CONTENT_LEN              65536
 
 
 /**
@@ -1043,6 +1058,12 @@
  * that it is capable of holding the specified amount of plaintext data,
  * regardless of the protection mechanism used.
  *
+ * Notes for developers
+ * --------------------
+ * - Like #MBEDTLS_SSL_IN_CONTENT_LEN, this directly affects RAM usage.
+ * - Most deployments should keep this at 16384 unless there is a clear
+ *   need to change it. Consider reducing it if you need to save memory.
+ *
  * It is possible to save RAM by setting a smaller outward buffer, while keeping
  * the default inward 16384 byte buffer to conform to the TLS specification.
  *
@@ -1053,7 +1074,7 @@
  *
  * Uncomment to set the maximum plaintext size of the outgoing I/O buffer.
  */
-#define MBEDTLS_SSL_OUT_CONTENT_LEN            1073741568 //16384
+#define MBEDTLS_SSL_OUT_CONTENT_LEN            65536
 
 /**
  * \def MBEDTLS_SSL_TLS1_3_DEFAULT_NEW_SESSION_TICKETS

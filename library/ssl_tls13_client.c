@@ -2178,16 +2178,34 @@ static int ssl_tls13_parse_encrypted_extensions(mbedtls_ssl_context *ssl,
         p += extension_data_len;
     }
 
+    /*
+     * draft-ietf-tls-super-jumbo-record-limit-02:
+     * A client MUST treat receipt of more than one of
+     * "large_record_size_limit", "record_size_limit", and "max_fragment_length"
+     * as a fatal error and it SHOULD generate an "illegal_parameter" alert.
+     */
     if ((handshake->received_extensions & MBEDTLS_SSL_EXT_MASK(RECORD_SIZE_LIMIT)) &&
         (handshake->received_extensions & MBEDTLS_SSL_EXT_MASK(MAX_FRAGMENT_LENGTH))) {
-        MBEDTLS_SSL_DEBUG_MSG(3,
-                              (
-                                  "Record size limit extension cannot be used with max fragment length extension"));
+        MBEDTLS_SSL_DEBUG_MSG(3, ("record_size_limit extension cannot be used with "
+                                  "max_fragment_length extension"));
         MBEDTLS_SSL_PEND_FATAL_ALERT(
             MBEDTLS_SSL_ALERT_MSG_ILLEGAL_PARAMETER,
             MBEDTLS_ERR_SSL_ILLEGAL_PARAMETER);
         return MBEDTLS_ERR_SSL_ILLEGAL_PARAMETER;
     }
+
+#if defined(MBEDTLS_SUPER_JUMBO_EXTENSION)
+    if ((handshake->received_extensions & MBEDTLS_SSL_EXT_MASK(JUMBO_RECORD_SIZE_LIMIT)) &&
+        ((handshake->received_extensions & MBEDTLS_SSL_EXT_MASK(RECORD_SIZE_LIMIT)) ||
+         (handshake->received_extensions & MBEDTLS_SSL_EXT_MASK(MAX_FRAGMENT_LENGTH)))) {
+        MBEDTLS_SSL_DEBUG_MSG(3, ("large_record_size_limit extension cannot be used with "
+                                  "record_size_limit or max_fragment_length extension"));
+        MBEDTLS_SSL_PEND_FATAL_ALERT(
+            MBEDTLS_SSL_ALERT_MSG_ILLEGAL_PARAMETER,
+            MBEDTLS_ERR_SSL_ILLEGAL_PARAMETER);
+        return MBEDTLS_ERR_SSL_ILLEGAL_PARAMETER;
+    }
+#endif /* MBEDTLS_SUPER_JUMBO_EXTENSION */
 
     MBEDTLS_SSL_PRINT_EXTS(3, MBEDTLS_SSL_HS_ENCRYPTED_EXTENSIONS,
                            handshake->received_extensions);

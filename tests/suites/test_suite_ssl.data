@@ -2952,6 +2952,22 @@ TLS 1.3: SRV: Session serialization, save-load: large ticket
 depends_on:MBEDTLS_SSL_SESSION_TICKETS:MBEDTLS_SSL_SRV_C:MBEDTLS_SSL_PROTO_TLS1_3
 ssl_serialize_session_save_load:1023:"":MBEDTLS_SSL_IS_SERVER:MBEDTLS_SSL_VERSION_TLS1_3
 
+TLS 1.3 Jumbo: varuint minimal encoding (64 in 2 bytes)
+depends_on:MBEDTLS_SSL_PROTO_TLS1_3:MBEDTLS_SUPER_JUMBO_EXTENSION
+ssl_tls13_jumbo_record_size_limit_ext_varuint:"4040":0:0:64
+
+TLS 1.3 Jumbo: varuint non-minimal encoding (63 in 2 bytes)
+depends_on:MBEDTLS_SSL_PROTO_TLS1_3:MBEDTLS_SUPER_JUMBO_EXTENSION
+ssl_tls13_jumbo_record_size_limit_ext_varuint:"403f":MBEDTLS_ERR_SSL_ILLEGAL_PARAMETER:MBEDTLS_SSL_ALERT_MSG_ILLEGAL_PARAMETER:0
+
+TLS 1.3 Jumbo: varuint invalid prefix 11 (1 byte)
+depends_on:MBEDTLS_SSL_PROTO_TLS1_3:MBEDTLS_SUPER_JUMBO_EXTENSION
+ssl_tls13_jumbo_record_size_limit_ext_varuint:"c0":MBEDTLS_ERR_SSL_ILLEGAL_PARAMETER:MBEDTLS_SSL_ALERT_MSG_ILLEGAL_PARAMETER:0
+
+TLS 1.3 Jumbo: varuint invalid length (8 bytes)
+depends_on:MBEDTLS_SSL_PROTO_TLS1_3:MBEDTLS_SUPER_JUMBO_EXTENSION
+ssl_tls13_jumbo_record_size_limit_ext_varuint:"0000000000000000":MBEDTLS_ERR_SSL_ILLEGAL_PARAMETER:MBEDTLS_SSL_ALERT_MSG_ILLEGAL_PARAMETER:0
+
 Session serialization, load-save: no ticket, no cert
 depends_on:MBEDTLS_SSL_PROTO_TLS1_2
 ssl_serialize_session_load_save:0:"":0:MBEDTLS_SSL_VERSION_TLS1_2

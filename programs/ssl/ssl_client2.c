@@ -31,14 +31,16 @@ int main(void)
  * management and MBEDTLS_MEMORY_BUFFER_ALLOC_C is enabled. */
 #define MEMORY_HEAP_SIZE      120000
 
-#define MAX_REQUEST_SIZE      20000
-#define MAX_REQUEST_SIZE_STR "20000"
+#define MAX_REQUEST_SIZE      100000
+#define MAX_REQUEST_SIZE_STR "100000"
 
 #define DFL_SERVER_NAME         "localhost"
 #define DFL_SERVER_ADDR         NULL
 #define DFL_SERVER_PORT         "4433"
 #define DFL_REQUEST_PAGE        "/"
 #define DFL_REQUEST_SIZE        -1
+#define DFL_REQUEST_PRINT       1
+#define DFL_RAW_PAYLOAD_SIZE    -1
 #define DFL_DEBUG_LEVEL         0
 #define DFL_CONTEXT_CRT_CB      0
 #define DFL_NBIO                0
@@ -115,6 +117,9 @@ int main(void)
 
 #define GET_REQUEST "GET %s HTTP/1.0\r\nHost: %s\r\nExtra-header: "
 #define GET_REQUEST_END "\r\n\r\n"
+
+#define PRINT_MAX_DATA        1024
+#define PRINT_PREVIEW_BYTES    200
 
 #if defined(MBEDTLS_SSL_HANDSHAKE_WITH_CERT_ENABLED)
 #define USAGE_CONTEXT_CRT_CB \
@@ -244,6 +249,15 @@ int main(void)
     "    jumbo_record_size_limit=%%d default: 16385\n"
 #else
 #define USAGE_JUMBO_RECORD_SIZE_LIMIT ""
+#endif /* MBEDTLS_SUPER_JUMBO_EXTENSION */
+
+#if defined(MBEDTLS_SUPER_JUMBO_EXTENSION)
+#define USAGE_RAW_PAYLOAD \
+    "    raw_payload_size=%%d default: -1 (disabled)\n" \
+    "                        Send exactly N bytes of application data (no HTTP strings).\n" \
+    "                        Requires explicitly setting jumbo_record_size_limit.\n"
+#else
+#define USAGE_RAW_PAYLOAD ""
 #endif /* MBEDTLS_SUPER_JUMBO_EXTENSION */
 
 
@@ -398,6 +412,8 @@ int main(void)
     "    request_page=%%s     default: \".\"\n"             \
     "    request_size=%%d     default: about 34 (basic request)\n"           \
     "                        (minimum: 0, max: " MAX_REQUEST_SIZE_STR ")\n"  \
+    "    request_print=%%d    default: 1 (print request)\n"                  \
+    USAGE_RAW_PAYLOAD                                                       \
                                                                       "                        If 0, in the first exchange only an empty\n"    \
                                                                       "                        application data message is sent followed by\n" \
                                                                       "                        a second non-empty message before attempting\n" \
@@ -494,6 +510,8 @@ struct options {
     int max_resend;             /* DTLS times to resend on read timeout     */
     const char *request_page;   /* page on server to request                */
     int request_size;           /* pad request with header to requested size */
+    int request_print;          /* print request to stdout                  */
+    int raw_payload_size;       /* send exactly N bytes to server           */
     const char *ca_file;        /* the file with the CA certificate(s)      */
     const char *ca_path;        /* the path with the CA certificate(s) reside */
     const char *crt_file;       /* the file with the client certificate     */
@@ -530,6 +548,7 @@ struct options {
                                 /* 0=no, 1=yes, -1=NULL */
     unsigned char mfl_code;     /* code for maximum fragment length         */
     uint32_t jumbo_record_size_limit; /* maximum size of a jumbo record     */
+    int jumbo_record_size_limit_used; /* whether user set jumbo option     */
     int trunc_hmac;             /* negotiate truncated hmac or not          */
     int recsplit;               /* enable record splitting?                 */
     int reconnect;              /* attempt to resume session                */
@@ -795,6 +814,17 @@ static int build_http_request(unsigned char *buf, size_t buf_size, size_t *reque
     return 0;
 }
 
+static void print_buffer_truncated(const unsigned char *buf, size_t len)
+{
+    if (len <= PRINT_MAX_DATA) {
+        mbedtls_printf("%s\n", (const char *) buf);
+        return;
+    }
+
+    mbedtls_printf("%.*s\n", (int) PRINT_PREVIEW_BYTES, (const char *) buf);
+    mbedtls_printf("[... truncated, total %" MBEDTLS_PRINTF_SIZET " bytes ...]\n", len);
+}
+
 int main(int argc, char *argv[])
 {
     int ret = 0, i;
@@ -947,6 +977,8 @@ int main(int argc, char *argv[])
     opt.max_resend          = DFL_MAX_RESEND;
     opt.request_page        = DFL_REQUEST_PAGE;
     opt.request_size        = DFL_REQUEST_SIZE;
+    opt.request_print       = DFL_REQUEST_PRINT;
+    opt.raw_payload_size    = DFL_RAW_PAYLOAD_SIZE;
     opt.ca_file             = DFL_CA_FILE;
     opt.ca_path             = DFL_CA_PATH;
     opt.crt_file            = DFL_CRT_FILE;
@@ -982,6 +1014,7 @@ int main(int argc, char *argv[])
     opt.set_hostname        = DFL_SET_HOSTNAME;
     opt.mfl_code            = DFL_MFL_CODE;
     opt.jumbo_record_size_limit = DFL_JUMBO_RECORD_SIZE_LIMIT;
+    opt.jumbo_record_size_limit_used = 0;
     opt.trunc_hmac          = DFL_TRUNC_HMAC;
     opt.recsplit            = DFL_RECSPLIT;
     opt.reconnect           = DFL_RECONNECT;
@@ -1127,6 +1160,17 @@ usage:
             opt.request_size = atoi(q);
             if (opt.request_size < 0 ||
                 opt.request_size > MAX_REQUEST_SIZE) {
+                goto usage;
+            }
+        } else if (strcmp(p, "request_print") == 0) {
+            opt.request_print = atoi(q);
+            if (opt.request_print < 0 || opt.request_print > 1) {
+                goto usage;
+            }
+        } else if (strcmp(p, "raw_payload_size") == 0) {
+            opt.raw_payload_size = atoi(q);
+            if (opt.raw_payload_size < 0 ||
+                opt.raw_payload_size > MAX_REQUEST_SIZE) {
                 goto usage;
             }
         } else if (strcmp(p, "ca_file") == 0) {
@@ -1399,10 +1443,11 @@ usage:
             }
         } else if (strcmp(p, "jumbo_record_size_limit") == 0) {
             opt.jumbo_record_size_limit = atoi(q);
-            // The limit is 64 bytes to 4294967040 bytes
-            // = (2^32 - 255) bytes (draft-ietf-tls-super-jumbo-record-limit)
+            opt.jumbo_record_size_limit_used = 1;
+            /* The limit is 64 bytes to (2^30 - 256) bytes
+             * (draft-ietf-tls-super-jumbo-record-limit-02). */
             if (opt.jumbo_record_size_limit < 64 ||
-                opt.jumbo_record_size_limit > 4294967040u) {
+                opt.jumbo_record_size_limit > 1073741568u) {
                 goto usage;
             }
         }
@@ -1703,6 +1748,19 @@ usage:
     }
 #endif /* MBEDTLS_SSL_ALPN */
 
+#if defined(MBEDTLS_SUPER_JUMBO_EXTENSION)
+    if (opt.raw_payload_size != DFL_RAW_PAYLOAD_SIZE &&
+        opt.jumbo_record_size_limit_used == 0) {
+        mbedtls_printf("raw_payload_size requires explicitly setting jumbo_record_size_limit\n");
+        goto usage;
+    }
+    if (opt.raw_payload_size != DFL_RAW_PAYLOAD_SIZE &&
+        opt.transport != MBEDTLS_SSL_TRANSPORT_STREAM) {
+        mbedtls_printf("raw_payload_size is only supported with transport=stream\n");
+        goto usage;
+    }
+#endif /* MBEDTLS_SUPER_JUMBO_EXTENSION */
+
     mbedtls_printf("build version: %s (build %d)\n",
                    MBEDTLS_VERSION_STRING_FULL, MBEDTLS_VERSION_NUMBER);
 
@@ -1913,7 +1971,7 @@ usage:
 #endif
 
 #if defined(MBEDTLS_SUPER_JUMBO_EXTENSION)
-    if (opt.jumbo_record_size_limit != DFL_JUMBO_RECORD_SIZE_LIMIT) {
+    if (opt.jumbo_record_size_limit_used) {
         if ((ret = mbedtls_ssl_conf_jumbo_record_size_limit(&conf, opt.jumbo_record_size_limit)) != 0) {
             mbedtls_printf(" failed\n  ! mbedtls_ssl_conf_jumbo_record_size_limit returned -0x%x\n\n",
                            (unsigned int) -ret);
@@ -2604,9 +2662,19 @@ send_request:
     mbedtls_printf("  > Write to server:");
     fflush(stdout);
 
-    ret = build_http_request(buf, sizeof(buf) - 1, &len);
-    if (ret != 0) {
-        goto exit;
+    if (opt.raw_payload_size != DFL_RAW_PAYLOAD_SIZE) {
+        len = (size_t) opt.raw_payload_size;
+        memset(buf, 'A', len);
+    } else {
+        if (opt.raw_payload_size != DFL_RAW_PAYLOAD_SIZE) {
+            len = (size_t) opt.raw_payload_size;
+            memset(buf, 'A', len);
+        } else {
+            ret = build_http_request(buf, sizeof(buf) - 1, &len);
+            if (ret != 0) {
+                goto exit;
+            }
+        }
     }
 
     if (opt.transport == MBEDTLS_SSL_TRANSPORT_STREAM) {
@@ -2679,13 +2747,17 @@ send_request:
 
     buf[written] = '\0';
     mbedtls_printf(
-        " %" MBEDTLS_PRINTF_SIZET " bytes written in %" MBEDTLS_PRINTF_SIZET " fragments\n\n%s\n",
+        " %" MBEDTLS_PRINTF_SIZET " bytes written in %" MBEDTLS_PRINTF_SIZET " fragments\n\n",
         written,
-        frags,
-        (char *) buf);
+        frags);
+    if (opt.request_print != 0 &&
+        opt.raw_payload_size == DFL_RAW_PAYLOAD_SIZE) {
+        print_buffer_truncated(buf, written);
+    }
 
     /* Send a non-empty request if request_size == 0 */
-    if (len == 0) {
+    if (opt.raw_payload_size == DFL_RAW_PAYLOAD_SIZE &&
+        len == 0) {
         opt.request_size = DFL_REQUEST_SIZE;
         goto send_request;
     }

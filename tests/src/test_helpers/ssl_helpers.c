@@ -1973,6 +1973,10 @@ int mbedtls_test_ssl_tls13_populate_session(mbedtls_ssl_session *session,
     session->record_size_limit = 2048;
 #endif
 
+#if defined(MBEDTLS_SUPER_JUMBO_EXTENSION)
+    session->jumbo_record_size_limit = 16385;
+#endif
+
     return 0;
 }
 #endif /* MBEDTLS_SSL_PROTO_TLS1_3 */

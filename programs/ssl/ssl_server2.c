@@ -66,6 +66,8 @@ int main(void)
 #define DFL_SERVER_ADDR         NULL
 #define DFL_SERVER_PORT         "4433"
 #define DFL_RESPONSE_SIZE       -1
+#define DFL_DATA_PRINT          1
+#define DFL_RAW_PAYLOAD_SIZE    -1
 #define DFL_DEBUG_LEVEL         0
 #define DFL_NBIO                0
 #define DFL_EVENT               0
@@ -516,6 +518,18 @@ int main(void)
 #define USAGE_JUMBO_RECORD_SIZE_LIMIT ""
 #endif
 
+#if defined(MBEDTLS_SUPER_JUMBO_EXTENSION)
+#define USAGE_RAW_PAYLOAD \
+    "    raw_payload_size=%%d default: -1 (disabled)\n" \
+    "                        Receive exactly N bytes of application data (no HTTP strings).\n" \
+    "                        Requires explicitly setting jumbo_record_size_limit.\n"
+#else
+#define USAGE_RAW_PAYLOAD ""
+#endif
+
+#define PRINT_MAX_DATA        1024
+#define PRINT_PREVIEW_BYTES    200
+
 /* USAGE is arbitrarily split to stay under the portable string literal
  * length limit: 4095 bytes in C99. */
 #define USAGE1 \
@@ -528,6 +542,8 @@ int main(void)
     "                        option: 1 (print build version only and stop)\n" \
     "    buffer_size=%%d      default: 200 \n" \
     "                         (minimum: 1)\n" \
+    "    data_print=%%d       default: 1 (print app data)\n" \
+    USAGE_RAW_PAYLOAD \
     "    response_size=%%d    default: about 152 (basic response)\n" \
     "                          (minimum: 0, max: 16384)\n" \
     "                          increases buffer_size if bigger\n" \
@@ -633,6 +649,8 @@ struct options {
     int exp_len;                /* Length of key to export using mbedtls_ssl_export_keying_material() */
     int response_size;          /* pad response with header to requested size */
     uint16_t buffer_size;       /* IO buffer size */
+    int data_print;             /* print received application data */
+    int raw_payload_size;       /* receive exactly N bytes from client */
     const char *ca_file;        /* the file with the CA certificate(s)      */
     const char *ca_path;        /* the path with the CA certificate(s) reside */
     const char *crt_file;       /* the file with the server certificate     */
@@ -731,9 +749,21 @@ struct options {
     const char *key2_opaque_alg1; /* Allowed opaque key 2 alg 1            */
     const char *key2_opaque_alg2; /* Allowed opaque key 2 alg 2            */
     uint32_t jumbo_record_size_limit; /* maximum size of a jumbo record */
+    int jumbo_record_size_limit_used; /* whether user set jumbo option */
 } opt;
 
 #include "ssl_test_common_source.c"
+
+static void print_buffer_truncated(const unsigned char *buf, size_t len)
+{
+    if (len <= PRINT_MAX_DATA) {
+        mbedtls_printf("%s", (const char *) buf);
+        return;
+    }
+
+    mbedtls_printf("%.*s\n", (int) PRINT_PREVIEW_BYTES, (const char *) buf);
+    mbedtls_printf("[... truncated, total %" MBEDTLS_PRINTF_SIZET " bytes ...]\n", len);
+}
 
 /*
  * Return authmode from string, or -1 on error
@@ -1711,6 +1741,8 @@ int main(int argc, char *argv[])
 #endif
 
     opt.buffer_size         = DFL_IO_BUF_LEN;
+    opt.data_print          = DFL_DATA_PRINT;
+    opt.raw_payload_size    = DFL_RAW_PAYLOAD_SIZE;
     opt.server_addr         = DFL_SERVER_ADDR;
     opt.server_port         = DFL_SERVER_PORT;
     opt.debug_level         = DFL_DEBUG_LEVEL;
@@ -1769,6 +1801,7 @@ int main(int argc, char *argv[])
     opt.cert_req_dn_hint    = DFL_CERT_REQ_DN_HINT;
     opt.mfl_code            = DFL_MFL_CODE;
     opt.jumbo_record_size_limit = DFL_JUMBO_RECORD_SIZE_LIMIT;
+    opt.jumbo_record_size_limit_used = 0;
     opt.trunc_hmac          = DFL_TRUNC_HMAC;
     opt.tickets             = DFL_TICKETS;
     opt.dummy_ticket        = DFL_DUMMY_TICKET;
@@ -1920,6 +1953,17 @@ usage:
             }
             if (opt.buffer_size < opt.response_size) {
                 opt.buffer_size = opt.response_size;
+            }
+        } else if (strcmp(p, "data_print") == 0) {
+            opt.data_print = atoi(q);
+            if (opt.data_print < 0 || opt.data_print > 1) {
+                goto usage;
+            }
+        } else if (strcmp(p, "raw_payload_size") == 0) {
+            opt.raw_payload_size = atoi(q);
+            if (opt.raw_payload_size < 0 ||
+                opt.raw_payload_size > MBEDTLS_SSL_IN_CONTENT_LEN) {
+                goto usage;
             }
         } else if (strcmp(p, "ca_file") == 0) {
             opt.ca_file = q;
@@ -2185,8 +2229,9 @@ usage:
             }
         } else if (strcmp(p, "jumbo_record_size_limit") == 0) {
             opt.jumbo_record_size_limit = atoi(q);
+            opt.jumbo_record_size_limit_used = 1;
             if (opt.jumbo_record_size_limit < 64 ||
-                opt.jumbo_record_size_limit > 4294967040u) {
+                opt.jumbo_record_size_limit > 1073741568u) {
                 goto usage;
             }
         } else if (strcmp(p, "alpn") == 0) {
@@ -2590,6 +2635,19 @@ usage:
     }
 #endif /* MBEDTLS_SSL_ALPN */
 
+#if defined(MBEDTLS_SUPER_JUMBO_EXTENSION)
+    if (opt.raw_payload_size != DFL_RAW_PAYLOAD_SIZE &&
+        opt.jumbo_record_size_limit_used == 0) {
+        mbedtls_printf("raw_payload_size requires explicitly setting jumbo_record_size_limit\n");
+        goto usage;
+    }
+    if (opt.raw_payload_size != DFL_RAW_PAYLOAD_SIZE &&
+        opt.transport != MBEDTLS_SSL_TRANSPORT_STREAM) {
+        mbedtls_printf("raw_payload_size is only supported with transport=stream\n");
+        goto usage;
+    }
+#endif /* MBEDTLS_SUPER_JUMBO_EXTENSION */
+
     mbedtls_printf("build version: %s (build %d)\n",
                    MBEDTLS_VERSION_STRING_FULL, MBEDTLS_VERSION_NUMBER);
 
@@ -2874,7 +2932,7 @@ usage:
 #endif
 
 #if defined(MBEDTLS_SUPER_JUMBO_EXTENSION)
-    if (opt.jumbo_record_size_limit != DFL_JUMBO_RECORD_SIZE_LIMIT) {
+    if (opt.jumbo_record_size_limit_used) {
         if ((ret = mbedtls_ssl_conf_jumbo_record_size_limit(&conf, opt.jumbo_record_size_limit)) != 0) {
             mbedtls_printf(" failed\n  ! mbedtls_ssl_conf_jumbo_record_size_limit returned %d\n\n", ret);
             goto exit;
@@ -3475,8 +3533,11 @@ handshake:
             ret = mbedtls_ssl_read_early_data(&ssl, buf, opt.buffer_size);
             if (ret > 0) {
                 buf[ret] = '\0';
-                mbedtls_printf(" %d early data bytes read\n\n%s\n",
-                               ret, (char *) buf);
+                mbedtls_printf(" %d early data bytes read\n\n", ret);
+                if (opt.data_print != 0) {
+                    print_buffer_truncated(buf, (size_t) ret);
+                    mbedtls_printf("\n");
+                }
             }
             continue;
         }
@@ -3769,6 +3830,61 @@ data_exchange:
      * TLS and DTLS need different reading styles (stream vs datagram)
      */
     if (opt.transport == MBEDTLS_SSL_TRANSPORT_STREAM) {
+        if (opt.raw_payload_size != DFL_RAW_PAYLOAD_SIZE) {
+            size_t remaining = (size_t) opt.raw_payload_size;
+            size_t total_read = 0;
+            size_t frags = 0;
+
+            while (remaining > 0) {
+                size_t chunk_len = opt.buffer_size;
+                if (chunk_len > remaining) {
+                    chunk_len = remaining;
+                }
+
+                memset(buf, 0, opt.buffer_size);
+                ret = mbedtls_ssl_read(&ssl, buf, chunk_len);
+
+                if (mbedtls_status_is_ssl_in_progress(ret)) {
+                    if (opt.event == 1 /* level triggered IO */) {
+#if defined(MBEDTLS_TIMING_C)
+                        idle(&client_fd, &timer, ret);
+#else
+                        idle(&client_fd, ret);
+#endif
+                    }
+
+                    continue;
+                }
+
+                if (ret <= 0) {
+                    switch (ret) {
+                        case MBEDTLS_ERR_SSL_PEER_CLOSE_NOTIFY:
+                            mbedtls_printf(" connection was closed gracefully\n");
+                            goto close_notify;
+
+                        case 0:
+                        case MBEDTLS_ERR_NET_CONN_RESET:
+                            mbedtls_printf(" connection was reset by peer\n");
+                            ret = MBEDTLS_ERR_NET_CONN_RESET;
+                            goto reset;
+
+                        default:
+                            mbedtls_printf(" mbedtls_ssl_read returned -0x%x\n",
+                                           (unsigned int) -ret);
+                            goto reset;
+                    }
+                }
+
+                frags++;
+                total_read += (size_t) ret;
+                remaining -= (size_t) ret;
+            }
+
+            mbedtls_printf(" %" MBEDTLS_PRINTF_SIZET " bytes read in %"
+                           MBEDTLS_PRINTF_SIZET " fragments (raw_payload_size)\n",
+                           total_read, frags);
+            ret = 0;
+        } else {
         do {
             int terminated = 0;
             len = opt.buffer_size;
@@ -3808,7 +3924,11 @@ data_exchange:
             if (mbedtls_ssl_get_bytes_avail(&ssl) == 0) {
                 len = ret;
                 buf[len] = '\0';
-                mbedtls_printf(" %d bytes read\n\n%s\n", len, (char *) buf);
+                mbedtls_printf(" %d bytes read\n\n", len);
+                if (opt.data_print != 0) {
+                    print_buffer_truncated(buf, (size_t) len);
+                    mbedtls_printf("\n");
+                }
 
                 /* End of message should be detected according to the syntax of the
                  * application protocol (eg HTTP), just use a dummy test here. */
@@ -3842,9 +3962,12 @@ data_exchange:
                 }
 
                 larger_buf[ori_len + extra_len] = '\0';
-                mbedtls_printf(" %d bytes read (%d + %d)\n\n%s\n",
-                               ori_len + extra_len, ori_len, extra_len,
-                               (char *) larger_buf);
+                mbedtls_printf(" %d bytes read (%d + %d)\n\n",
+                               ori_len + extra_len, ori_len, extra_len);
+                if (opt.data_print != 0) {
+                    print_buffer_truncated(larger_buf, (size_t) (ori_len + extra_len));
+                    mbedtls_printf("\n");
+                }
 
                 /* End of message should be detected according to the syntax of the
                  * application protocol (eg HTTP), just use a dummy test here. */
@@ -3860,6 +3983,7 @@ data_exchange:
                 break;
             }
         } while (1);
+        }
     } else { /* Not stream, so datagram */
         len = opt.buffer_size;
         memset(buf, 0, opt.buffer_size);
@@ -3908,7 +4032,10 @@ data_exchange:
 
         len = ret;
         buf[len] = '\0';
-        mbedtls_printf(" %d bytes read\n\n%s", len, (char *) buf);
+        mbedtls_printf(" %d bytes read\n\n", len);
+        if (opt.data_print != 0) {
+            print_buffer_truncated(buf, (size_t) len);
+        }
         ret = 0;
     }
 

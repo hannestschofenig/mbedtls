@@ -2578,7 +2578,19 @@ static int ssl_tls13_write_encrypted_extensions_body(mbedtls_ssl_context *ssl,
 #endif /* MBEDTLS_SSL_EARLY_DATA */
 
 #if defined(MBEDTLS_SSL_RECORD_SIZE_LIMIT)
-    if (ssl->handshake->received_extensions & MBEDTLS_SSL_EXT_MASK(RECORD_SIZE_LIMIT)) {
+    /*
+     * draft-ietf-tls-super-jumbo-record-limit-02:
+     * A server MUST NOT send extension responses to more than one of
+     * "large_record_size_limit", "record_size_limit", and "max_fragment_length".
+     *
+     * We implement this by preferring the (super) jumbo extension whenever it
+     * was offered by the client and the server is configured to actually send
+     * it. Otherwise, fall back to record_size_limit.
+     */
+    if ((ssl->handshake->received_extensions & MBEDTLS_SSL_EXT_MASK(RECORD_SIZE_LIMIT)) &&
+        !((ssl->handshake->received_extensions & MBEDTLS_SSL_EXT_MASK(JUMBO_RECORD_SIZE_LIMIT)) &&
+          (ssl->conf->jumbo_record_size_limit >= MBEDTLS_SSL_JUMBO_RECORD_SIZE_LIMIT_MIN &&
+           ssl->conf->jumbo_record_size_limit <= MBEDTLS_SSL_JUMBO_RECORD_SIZE_LIMIT_MAX))) {
         ret = mbedtls_ssl_tls13_write_record_size_limit_ext(
             ssl, p, end, &output_len);
         if (ret != 0) {

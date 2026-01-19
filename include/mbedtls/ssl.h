@@ -424,13 +424,13 @@
 
 
 #if defined(MBEDTLS_SUPER_JUMBO_EXTENSION) && !defined(MBEDTLS_SSL_IN_CONTENT_LEN)
-// Maximum plaintext size: 4294967040 (2^32 - 255)
-#define MBEDTLS_SSL_IN_CONTENT_LEN 4294967040
+/* Maximum plaintext size (draft-ietf-tls-super-jumbo-record-limit-02): 2^30 - 256 */
+#define MBEDTLS_SSL_IN_CONTENT_LEN 1073741568
 #endif
 
 #if defined(MBEDTLS_SUPER_JUMBO_EXTENSION) && !defined(MBEDTLS_SSL_OUT_CONTENT_LEN)
-// Maximum plaintext size: 4294967040 (2^32 - 255)
-#define MBEDTLS_SSL_OUT_CONTENT_LEN 4294967040
+/* Maximum plaintext size (draft-ietf-tls-super-jumbo-record-limit-02): 2^30 - 256 */
+#define MBEDTLS_SSL_OUT_CONTENT_LEN 1073741568
 #endif
 
 #if !defined(MBEDTLS_SSL_IN_CONTENT_LEN)

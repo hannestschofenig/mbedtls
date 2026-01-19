@@ -2524,6 +2524,10 @@ void ssl_serialize_session_save_load(int ticket_len, char *crt_file,
     TEST_EQUAL(original.record_size_limit,  restored.record_size_limit);
 #endif
 
+#if defined(MBEDTLS_SUPER_JUMBO_EXTENSION)
+    TEST_EQUAL(original.jumbo_record_size_limit, restored.jumbo_record_size_limit);
+#endif
+
 exit:
     mbedtls_ssl_session_free(&original);
     mbedtls_ssl_session_free(&restored);
@@ -2602,6 +2606,57 @@ exit:
     mbedtls_free(buf1);
     mbedtls_free(buf2);
     USE_PSA_DONE();
+}
+/* END_CASE */
+
+/* BEGIN_CASE depends_on:MBEDTLS_SSL_PROTO_TLS1_3:MBEDTLS_SUPER_JUMBO_EXTENSION */
+void ssl_tls13_jumbo_record_size_limit_ext_varuint(data_t *ext_data,
+                                                   int exp_ret,
+                                                   int exp_alert,
+                                                   int exp_value)
+{
+    mbedtls_ssl_context ssl;
+    mbedtls_ssl_config conf;
+    mbedtls_ssl_session *session_negotiate = NULL;
+    int ret;
+
+    mbedtls_ssl_init(&ssl);
+    mbedtls_ssl_config_init(&conf);
+
+    TEST_EQUAL(mbedtls_ssl_config_defaults(&conf,
+                                           MBEDTLS_SSL_IS_CLIENT,
+                                           MBEDTLS_SSL_TRANSPORT_STREAM,
+                                           MBEDTLS_SSL_PRESET_DEFAULT), 0);
+    TEST_EQUAL(mbedtls_ssl_setup(&ssl, &conf), 0);
+
+    session_negotiate = mbedtls_calloc(1, sizeof(*session_negotiate));
+    TEST_ASSERT(session_negotiate != NULL);
+    mbedtls_ssl_session_init(session_negotiate);
+    ssl.session_negotiate = session_negotiate;
+
+    ret = mbedtls_ssl_tls13_parse_jumbo_record_size_limit_ext(&ssl,
+                                                              ext_data->x,
+                                                              ext_data->x + ext_data->len);
+    TEST_EQUAL(ret, exp_ret);
+
+    if (exp_ret == 0) {
+        TEST_EQUAL(ssl.MBEDTLS_PRIVATE(send_alert), 0);
+        TEST_EQUAL(ssl.session_negotiate->jumbo_record_size_limit,
+                   (uint32_t) exp_value);
+    } else {
+        TEST_EQUAL(ssl.MBEDTLS_PRIVATE(send_alert), 1);
+        TEST_EQUAL(ssl.MBEDTLS_PRIVATE(alert_type), exp_alert);
+        TEST_EQUAL(ssl.MBEDTLS_PRIVATE(alert_reason), exp_ret);
+    }
+
+exit:
+    if (session_negotiate != NULL) {
+        mbedtls_ssl_session_free(session_negotiate);
+        mbedtls_free(session_negotiate);
+        ssl.session_negotiate = NULL;
+    }
+    mbedtls_ssl_free(&ssl);
+    mbedtls_ssl_config_free(&conf);
 }
 /* END_CASE */
 

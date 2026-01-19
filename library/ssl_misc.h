@@ -1241,6 +1241,10 @@ typedef struct {
                              * mbedtls_ssl_write_version().
                              * Keep wire-format for MAC computations.        */
 
+#if defined(MBEDTLS_SSL_PROTO_TLS1_3) && defined(MBEDTLS_SUPER_JUMBO_EXTENSION)
+    uint8_t tls13_large_record; /* Use TLSLargeCiphertext format (draft).    */
+#endif /* MBEDTLS_SSL_PROTO_TLS1_3 && MBEDTLS_SUPER_JUMBO_EXTENSION */
+
     unsigned char *buf;     /* Memory buffer enclosing the record content    */
     size_t buf_len;         /* Buffer length                                 */
     size_t data_offset;     /* Offset of record content                      */
@@ -1737,18 +1741,7 @@ static inline size_t mbedtls_ssl_in_hdr_len(const mbedtls_ssl_context *ssl)
     } else
 #endif /* MBEDTLS_SSL_PROTO_DTLS */
     {
- #if defined(MBEDTLS_SSL_PROTO_TLS1_3) && defined(MBEDTLS_SUPER_JUMBO_EXTENSION)
-        if (ssl->tls_version == MBEDTLS_SSL_VERSION_TLS1_3 &&
-            ( ssl->session != NULL &&
-              ssl->session->jumbo_record_size_limit > 16384
-            ))
-        {
-            return 3;
-        } else
-#endif // MBEDTLS_SSL_PROTO_TLS1_3 && MBEDTLS_SUPER_JUMBO_EXTENSION
-        {
-            return 5;
-        }
+        return 5;
     }
 }
 
@@ -2786,7 +2779,7 @@ int mbedtls_ssl_parse_server_name_ext(mbedtls_ssl_context *ssl,
 
 #if defined(MBEDTLS_SUPER_JUMBO_EXTENSION)
 #define MBEDTLS_SSL_JUMBO_RECORD_SIZE_LIMIT_MIN (64)      /* As defined in draft-ietf-tls-super-jumbo-record-limit */
-#define MBEDTLS_SSL_JUMBO_RECORD_SIZE_LIMIT_MAX (4294967040U) /* 2^32 - 256 */
+#define MBEDTLS_SSL_JUMBO_RECORD_SIZE_LIMIT_MAX (1073741568U) /* 2^30 - 256 */
 size_t mbedtls_ssl_get_jumbo_record_size_limit(const mbedtls_ssl_context *ssl);
 
 MBEDTLS_CHECK_RETURN_CRITICAL

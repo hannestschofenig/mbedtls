@@ -14121,28 +14121,96 @@ run_test    "JUMBO_RECORD_SIZE_LIMIT: extension exists" \
             "$P_CLI debug_level=3 force_version=tls13 jumbo_record_size_limit=16385" \
             0 \
             -c "ClientHello: jumbo(100) extension exists." \
-            -s "ServerHello: jumbo(100) extension exists."
+            -c "EncryptedExtensions: jumbo(100) extension does not exist."
 #            -s "Maximum outgoing record payload length is 16384"
 
 requires_config_enabled MBEDTLS_SSL_PROTO_TLS1_3
 requires_config_enabled MBEDTLS_SUPER_JUMBO_EXTENSION
-requires_max_content_len 1073741568
-run_test    "JUMBO_RECORD_SIZE_LIMIT: client, server <- 2^30 - 256 Bytes" \
-            "$P_SRV debug_level=3 force_version=tls13 tickets=0 jumbo_record_size_limit=1073741568" \
-            "$P_CLI debug_level=3 force_version=tls13 jumbo_record_size_limit=1073741568" \
+run_test    "JUMBO_RECORD_SIZE_LIMIT: negotiated" \
+            "$P_SRV debug_level=3 force_version=tls13 tickets=0 jumbo_record_size_limit=16385" \
+            "$P_CLI debug_level=3 force_version=tls13 jumbo_record_size_limit=16385" \
             0 \
             -c "ClientHello: jumbo(100) extension exists." \
-            -c "1073741568 bytes read" \
-            -s "1073741568 bytes written in 1 fragments"
+            -c "EncryptedExtensions: jumbo(100) extension exists."
 
 requires_config_enabled MBEDTLS_SSL_PROTO_TLS1_3
 requires_config_enabled MBEDTLS_SUPER_JUMBO_EXTENSION
-requires_max_content_len 1073741568
-run_test    "JUMBO_RECORD_SIZE_LIMIT: client <- 16385, server <- 2^30 - 256 Bytes" \
+run_test    "JUMBO_RECORD_SIZE_LIMIT: min value accepted" \
+            "$P_SRV debug_level=3 force_version=tls13 tickets=0 jumbo_record_size_limit=64" \
+            "$P_CLI debug_level=3 force_version=tls13 jumbo_record_size_limit=64" \
+            0 \
+            -c "Sent Jumbo Record Size Limit: 64 Bytes" \
+            -c "JumboRecordSizeLimit: 64 Bytes" \
+            -s "Sent Jumbo Record Size Limit: 64 Bytes" \
+            -s "JumboRecordSizeLimit: 64 Bytes"
+
+requires_config_enabled MBEDTLS_SSL_PROTO_TLS1_3
+requires_config_enabled MBEDTLS_SUPER_JUMBO_EXTENSION
+run_test    "JUMBO_RECORD_SIZE_LIMIT: 2-byte varuint (16383)" \
+            "$P_SRV debug_level=3 force_version=tls13 tickets=0 jumbo_record_size_limit=16383" \
+            "$P_CLI debug_level=3 force_version=tls13 jumbo_record_size_limit=16383" \
+            0 \
+            -c "Sent Jumbo Record Size Limit: 16383 Bytes" \
+            -c "JumboRecordSizeLimit: 16383 Bytes" \
+            -s "Sent Jumbo Record Size Limit: 16383 Bytes" \
+            -s "JumboRecordSizeLimit: 16383 Bytes"
+
+requires_config_enabled MBEDTLS_SSL_PROTO_TLS1_3
+requires_config_enabled MBEDTLS_SUPER_JUMBO_EXTENSION
+run_test    "JUMBO_RECORD_SIZE_LIMIT: 4-byte varuint (16384)" \
+            "$P_SRV debug_level=3 force_version=tls13 tickets=0 jumbo_record_size_limit=16384" \
+            "$P_CLI debug_level=3 force_version=tls13 jumbo_record_size_limit=16384" \
+            0 \
+            -c "Sent Jumbo Record Size Limit: 16384 Bytes" \
+            -c "JumboRecordSizeLimit: 16384 Bytes" \
+            -c "version = TLSLargeCiphertext" \
+            -s "Sent Jumbo Record Size Limit: 16384 Bytes" \
+            -s "JumboRecordSizeLimit: 16384 Bytes" \
+            -s "version = TLSLargeCiphertext"
+
+requires_config_enabled MBEDTLS_SSL_PROTO_TLS1_3
+requires_config_enabled MBEDTLS_SUPER_JUMBO_EXTENSION
+run_test    "JUMBO_RECORD_SIZE_LIMIT: 50k single record" \
+            "$P_SRV debug_level=3 force_version=tls13 tickets=0 jumbo_record_size_limit=60000 raw_payload_size=50000 buffer_size=60000 data_print=0" \
+            "$P_CLI debug_level=3 force_version=tls13 jumbo_record_size_limit=60000 raw_payload_size=50000" \
+            0 \
+            -c "50000 bytes written in 1 fragments" \
+            -c "version = TLSLargeCiphertext" \
+            -s "version = TLSLargeCiphertext"
+
+requires_config_enabled MBEDTLS_SSL_PROTO_TLS1_3
+requires_config_enabled MBEDTLS_SUPER_JUMBO_EXTENSION
+run_test    "JUMBO_RECORD_SIZE_LIMIT: small record uses TLSLargeCiphertext" \
+            "$P_SRV debug_level=3 force_version=tls13 tickets=0 jumbo_record_size_limit=60000 raw_payload_size=1 buffer_size=200 data_print=0" \
+            "$P_CLI debug_level=3 force_version=tls13 jumbo_record_size_limit=60000 raw_payload_size=1" \
+            0 \
+            -c "1 bytes written in 1 fragments" \
+            -c "version = TLSLargeCiphertext" \
+            -s "version = TLSLargeCiphertext"
+
+requires_config_enabled MBEDTLS_SSL_PROTO_TLS1_3
+requires_config_enabled MBEDTLS_SUPER_JUMBO_EXTENSION
+run_test    "JUMBO_RECORD_SIZE_LIMIT: max value accepted" \
             "$P_SRV debug_level=3 force_version=tls13 tickets=0 jumbo_record_size_limit=1073741568" \
-            "$P_CLI debug_level=3 force_version=tls13 jumbo_record_size_limit=16385" \
-            1 \
-            -c "ClientHello: jumbo(100) extension exists." \
+            "$P_CLI debug_level=3 force_version=tls13 jumbo_record_size_limit=1073741568" \
+            0 \
+            -c "Sent Jumbo Record Size Limit: 1073741568 Bytes" \
+            -c "JumboRecordSizeLimit: 1073741568 Bytes" \
+            -s "Sent Jumbo Record Size Limit: 1073741568 Bytes" \
+            -s "JumboRecordSizeLimit: 1073741568 Bytes"
+
+requires_config_enabled MBEDTLS_SSL_PROTO_TLS1_3
+requires_config_enabled MBEDTLS_SUPER_JUMBO_EXTENSION
+requires_config_enabled MBEDTLS_SSL_SESSION_TICKETS
+requires_config_enabled MBEDTLS_SSL_CLI_C
+requires_config_enabled MBEDTLS_SSL_SRV_C
+run_test    "JUMBO_RECORD_SIZE_LIMIT: tls13 resumption (serialize/load)" \
+            "$P_SRV debug_level=4 force_version=tls13 tickets=1 jumbo_record_size_limit=16385" \
+            "$P_CLI debug_level=4 force_version=tls13 tickets=1 jumbo_record_size_limit=16385 reconnect=1 reco_mode=1" \
+            0 \
+            -c "got new session ticket" \
+            -c "Reconnecting with saved session" \
+            -s "Ticket-resumed PSK:"
 
 
 # Test heap memory usage after handshake

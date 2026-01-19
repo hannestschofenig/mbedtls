@@ -23,6 +23,8 @@ if ! cd "$(dirname "$0")"; then
     exit 125
 fi
 
+DATA_FILES_PATH=../framework/data_files
+
 # initialise counters
 TESTS=0
 FAILED=0
@@ -32,6 +34,7 @@ SRVMEM=0
 # default commands, can be overridden by the environment
 : ${M_SRV:=../programs/ssl/ssl_server2}
 : ${M_CLI:=../programs/ssl/ssl_client2}
+: ${P_QUERY:=../programs/test/query_compile_time_config}
 : ${OPENSSL:=openssl}
 : ${GNUTLS_CLI:=gnutls-cli}
 : ${GNUTLS_SERV:=gnutls-serv}
@@ -80,6 +83,8 @@ guess_config_name() {
 : ${MBEDTLS_TEST_OUTCOME_FILE=}
 : ${MBEDTLS_TEST_CONFIGURATION:="$(guess_config_name)"}
 : ${MBEDTLS_TEST_PLATFORM:="$(uname -s | tr -c \\n0-9A-Za-z _)-$(uname -m | tr -c \\n0-9A-Za-z _)"}
+
+CONFIG_H='../include/mbedtls/mbedtls_config.h'
 
 # default values for options
 # /!\ keep this synchronised with:
@@ -157,6 +162,23 @@ list_test_cases() {
             done
         done
     done
+
+    TITLE="m->m tls13,jumbo JUMBO_RECORD_SIZE_LIMIT: extension exists"
+    echo "compat;$TITLE"
+    TITLE="m->m tls13,jumbo JUMBO_RECORD_SIZE_LIMIT: negotiated"
+    echo "compat;$TITLE"
+    TITLE="m->m tls13,jumbo JUMBO_RECORD_SIZE_LIMIT: min value accepted"
+    echo "compat;$TITLE"
+    TITLE="m->m tls13,jumbo JUMBO_RECORD_SIZE_LIMIT: 2-byte varuint (16383)"
+    echo "compat;$TITLE"
+    TITLE="m->m tls13,jumbo JUMBO_RECORD_SIZE_LIMIT: 4-byte varuint (16384)"
+    echo "compat;$TITLE"
+    TITLE="m->m tls13,jumbo JUMBO_RECORD_SIZE_LIMIT: 50k single record"
+    echo "compat;$TITLE"
+    TITLE="m->m tls13,jumbo JUMBO_RECORD_SIZE_LIMIT: max value accepted"
+    echo "compat;$TITLE"
+    TITLE="m->m tls13,jumbo JUMBO_RECORD_SIZE_LIMIT: tls13 resumption (serialize/load)"
+    echo "compat;$TITLE"
 }
 
 get_options() {
@@ -802,6 +824,45 @@ uniform_title() {
     TITLE="$1->$2 $MODE,$VERIF $3"
 }
 
+config_enabled() {
+    if [ -x "$P_QUERY" ]; then
+        "$P_QUERY" -all "$@" >/dev/null 2>&1
+        return $?
+    fi
+
+    if [ ! -r "$CONFIG_H" ]; then
+        return 1
+    fi
+
+    for cfg in "$@"; do
+        if ! grep -Eq "^[[:space:]]*#define[[:space:]]+$cfg([[:space:]]|$)" "$CONFIG_H"; then
+            return 1
+        fi
+    done
+    return 0
+}
+
+config_define_value() {
+    macro=$1
+    if [ ! -r "$CONFIG_H" ]; then
+        return 1
+    fi
+    sed -n "s/^[[:space:]]*#define[[:space:]]\\+$macro[[:space:]]\\+\\([0-9][0-9]*\\).*/\\1/p" "$CONFIG_H" | head -n 1
+}
+
+requires_max_content_len() {
+    min=$1
+    in_len=$(config_define_value MBEDTLS_SSL_IN_CONTENT_LEN || true)
+    out_len=$(config_define_value MBEDTLS_SSL_OUT_CONTENT_LEN || true)
+
+    case "$in_len" in ''|*[!0-9]*) SKIP_NEXT="YES"; return;; esac
+    case "$out_len" in ''|*[!0-9]*) SKIP_NEXT="YES"; return;; esac
+
+    if [ "$in_len" -lt "$min" ] || [ "$out_len" -lt "$min" ]; then
+        SKIP_NEXT="YES"
+    fi
+}
+
 # record_outcome <outcome> [<failure-reason>]
 record_outcome() {
     echo "$1"
@@ -953,6 +1014,202 @@ run_client() {
             ;;
     esac
 
+    rm -f $CLI_OUT
+}
+
+maybe_skip_for_unsupported_feature() {
+    # Try to interpret "feature not built in" errors as SKIP rather than FAIL
+    # to avoid breaking compatibility runs that don't enable TLS 1.3 / jumbo.
+    files=
+    if [ -f "$CLI_OUT" ]; then files="$files $CLI_OUT"; fi
+    if [ -f "$SRV_OUT" ]; then files="$files $SRV_OUT"; fi
+    if [ -z "$files" ]; then return 1; fi
+
+    grep -Ei -q \
+        'unknown option|unrecognized option|feature is not available|TLS.?1[._ ]?3.*not|TLS.?1[._ ]?3.*disable' \
+        $files 2>/dev/null
+}
+
+run_jumbo_mbedtls_test() {
+    test_name=$1
+    server_extra=${2-}
+    client_extra=${3-}
+    expected_exit=${4-0}
+    expected_cli=${5-}
+    expected_srv=${6-}
+
+    TESTS=$(( $TESTS + 1 ))
+    TITLE="$test_name"
+    DOTS72="........................................................................"
+    pad=$((71 - ${#TITLE}))
+    if [ "$pad" -lt 0 ]; then
+        pad=0
+    fi
+    printf "%s %.*s " "$TITLE" "$pad" "$DOTS72"
+
+    if [ "X$SKIP_NEXT" = "XYES" ]; then
+        SKIP_NEXT="NO"
+        record_outcome "SKIP"
+        SKIPPED=$(( $SKIPPED + 1 ))
+        return
+    fi
+
+    old_mode=${MODE-}
+    MODE=tls13
+
+    M_SERVER_ARGS="server_port=$PORT server_addr=0.0.0.0 force_version=tls13 \
+debug_level=3 tickets=0 auth_mode=none ca_file=none \
+crt_file=$DATA_FILES_PATH/server5.crt key_file=$DATA_FILES_PATH/server5.key $server_extra"
+
+    start_server "mbedTLS"
+
+    CLIENT_CMD="$M_CLI server_port=$PORT server_addr=127.0.0.1 force_version=tls13 \
+debug_level=3 auth_mode=none ca_file=none $client_extra"
+    if [ "$MEMCHECK" -gt 0 ]; then
+        CLIENT_CMD="valgrind --leak-check=full $CLIENT_CMD"
+    fi
+    log "$CLIENT_CMD"
+    echo "$CLIENT_CMD" > $CLI_OUT
+    $CLIENT_CMD >> $CLI_OUT 2>&1 &
+    wait_client_done
+
+    if [ -n "$expected_cli" ] && ! grep -F "$expected_cli" "$CLI_OUT" >/dev/null 2>&1; then
+        report_fail
+        stop_server
+        MODE=$old_mode
+        FAILED=$(( $FAILED + 1 ))
+        rm -f $CLI_OUT
+        return
+    fi
+    if [ -n "$expected_srv" ] && ! grep -F "$expected_srv" "$SRV_OUT" >/dev/null 2>&1; then
+        report_fail
+        stop_server
+        MODE=$old_mode
+        FAILED=$(( $FAILED + 1 ))
+        rm -f $CLI_OUT
+        return
+    fi
+
+    if [ "$EXIT" -ne "$expected_exit" ]; then
+        if maybe_skip_for_unsupported_feature; then
+            stop_server
+            MODE=$old_mode
+            record_outcome "SKIP"
+            SKIPPED=$(( $SKIPPED + 1 ))
+            rm -f $CLI_OUT
+            return
+        fi
+        report_fail
+        stop_server
+        MODE=$old_mode
+        FAILED=$(( $FAILED + 1 ))
+        rm -f $CLI_OUT
+        return
+    fi
+
+    stop_server
+    MODE=$old_mode
+
+    record_outcome "PASS"
+    if [ "$PRESERVE_LOGS" -gt 0 ]; then
+        save_logs
+    fi
+    rm -f $CLI_OUT
+}
+
+run_jumbo_mbedtls_resumption_test() {
+    test_name=$1
+    server_extra=${2-}
+    client_extra=${3-}
+    expected_exit=${4-0}
+    expected_cli_1=${5-}
+    expected_cli_2=${6-}
+    expected_srv_1=${7-}
+
+    TESTS=$(( $TESTS + 1 ))
+    TITLE="$test_name"
+    DOTS72="........................................................................"
+    pad=$((71 - ${#TITLE}))
+    if [ "$pad" -lt 0 ]; then
+        pad=0
+    fi
+    printf "%s %.*s " "$TITLE" "$pad" "$DOTS72"
+
+    if [ "X$SKIP_NEXT" = "XYES" ]; then
+        SKIP_NEXT="NO"
+        record_outcome "SKIP"
+        SKIPPED=$(( $SKIPPED + 1 ))
+        return
+    fi
+
+    old_mode=${MODE-}
+    MODE=tls13
+
+    M_SERVER_ARGS="server_port=$PORT server_addr=0.0.0.0 force_version=tls13 \
+debug_level=4 tickets=1 auth_mode=none ca_file=none \
+crt_file=$DATA_FILES_PATH/server5.crt key_file=$DATA_FILES_PATH/server5.key $server_extra"
+
+    start_server "mbedTLS"
+
+    CLIENT_CMD="$M_CLI server_port=$PORT server_addr=127.0.0.1 force_version=tls13 \
+debug_level=4 auth_mode=none ca_file=none $client_extra"
+    if [ "$MEMCHECK" -gt 0 ]; then
+        CLIENT_CMD="valgrind --leak-check=full $CLIENT_CMD"
+    fi
+    log "$CLIENT_CMD"
+    echo "$CLIENT_CMD" > $CLI_OUT
+    $CLIENT_CMD >> $CLI_OUT 2>&1 &
+    wait_client_done
+
+    if [ -n "$expected_cli_1" ] && ! grep -F "$expected_cli_1" "$CLI_OUT" >/dev/null 2>&1; then
+        report_fail
+        stop_server
+        MODE=$old_mode
+        FAILED=$(( $FAILED + 1 ))
+        rm -f $CLI_OUT
+        return
+    fi
+    if [ -n "$expected_cli_2" ] && ! grep -F "$expected_cli_2" "$CLI_OUT" >/dev/null 2>&1; then
+        report_fail
+        stop_server
+        MODE=$old_mode
+        FAILED=$(( $FAILED + 1 ))
+        rm -f $CLI_OUT
+        return
+    fi
+    if [ -n "$expected_srv_1" ] && ! grep -F "$expected_srv_1" "$SRV_OUT" >/dev/null 2>&1; then
+        report_fail
+        stop_server
+        MODE=$old_mode
+        FAILED=$(( $FAILED + 1 ))
+        rm -f $CLI_OUT
+        return
+    fi
+
+    if [ "$EXIT" -ne "$expected_exit" ]; then
+        if maybe_skip_for_unsupported_feature; then
+            stop_server
+            MODE=$old_mode
+            record_outcome "SKIP"
+            SKIPPED=$(( $SKIPPED + 1 ))
+            rm -f $CLI_OUT
+            return
+        fi
+        report_fail
+        stop_server
+        MODE=$old_mode
+        FAILED=$(( $FAILED + 1 ))
+        rm -f $CLI_OUT
+        return
+    fi
+
+    stop_server
+    MODE=$old_mode
+
+    record_outcome "PASS"
+    if [ "$PRESERVE_LOGS" -gt 0 ]; then
+        save_logs
+    fi
     rm -f $CLI_OUT
 }
 
@@ -1132,6 +1389,77 @@ for MODE in $MODES; do
         done
     done
 done
+
+# Jumbo extension: targeted TLS 1.3 mbedTLS<->mbedTLS tests.
+SKIP_NEXT="NO"
+if echo "$PEERS" | grep -i mbed >/dev/null 2>&1; then
+    if config_enabled MBEDTLS_SSL_PROTO_TLS1_3 MBEDTLS_SUPER_JUMBO_EXTENSION; then
+        run_jumbo_mbedtls_test \
+            "m->m tls13,jumbo JUMBO_RECORD_SIZE_LIMIT: extension exists" \
+            "" \
+            "jumbo_record_size_limit=16385" \
+            0 \
+            "EncryptedExtensions: jumbo(100) extension does not exist." \
+            ""
+
+        run_jumbo_mbedtls_test \
+            "m->m tls13,jumbo JUMBO_RECORD_SIZE_LIMIT: negotiated" \
+            "jumbo_record_size_limit=16385" \
+            "jumbo_record_size_limit=16385" \
+            0 \
+            "EncryptedExtensions: jumbo(100) extension exists." \
+            ""
+
+        run_jumbo_mbedtls_test \
+            "m->m tls13,jumbo JUMBO_RECORD_SIZE_LIMIT: min value accepted" \
+            "jumbo_record_size_limit=64" \
+            "jumbo_record_size_limit=64" \
+            0 \
+            "JumboRecordSizeLimit: 64 Bytes" \
+            "JumboRecordSizeLimit: 64 Bytes"
+
+        run_jumbo_mbedtls_test \
+            "m->m tls13,jumbo JUMBO_RECORD_SIZE_LIMIT: 2-byte varuint (16383)" \
+            "jumbo_record_size_limit=16383" \
+            "jumbo_record_size_limit=16383" \
+            0 \
+            "JumboRecordSizeLimit: 16383 Bytes" \
+            "JumboRecordSizeLimit: 16383 Bytes"
+
+        run_jumbo_mbedtls_test \
+            "m->m tls13,jumbo JUMBO_RECORD_SIZE_LIMIT: 4-byte varuint (16384)" \
+            "jumbo_record_size_limit=16384" \
+            "jumbo_record_size_limit=16384" \
+            0 \
+            "version = TLSLargeCiphertext" \
+            "version = TLSLargeCiphertext"
+
+        run_jumbo_mbedtls_test \
+            "m->m tls13,jumbo JUMBO_RECORD_SIZE_LIMIT: 50k single record" \
+            "jumbo_record_size_limit=60000 raw_payload_size=50000 buffer_size=60000 data_print=0" \
+            "jumbo_record_size_limit=60000 raw_payload_size=50000" \
+            0 \
+            "50000 bytes written in 1 fragments" \
+            ""
+
+        run_jumbo_mbedtls_test \
+            "m->m tls13,jumbo JUMBO_RECORD_SIZE_LIMIT: max value accepted" \
+            "jumbo_record_size_limit=1073741568" \
+            "jumbo_record_size_limit=1073741568" \
+            0 \
+            "JumboRecordSizeLimit: 1073741568 Bytes" \
+            "JumboRecordSizeLimit: 1073741568 Bytes"
+
+        run_jumbo_mbedtls_resumption_test \
+            "m->m tls13,jumbo JUMBO_RECORD_SIZE_LIMIT: tls13 resumption (serialize/load)" \
+            "jumbo_record_size_limit=16385" \
+            "jumbo_record_size_limit=16385 tickets=1 reconnect=1 reco_mode=1" \
+            0 \
+            "got new session ticket" \
+            "Reconnecting with saved session" \
+            "Ticket-resumed PSK:"
+    fi
+fi
 
 echo "------------------------------------------------------------------------"
 

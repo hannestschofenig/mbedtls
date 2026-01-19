@@ -29,6 +29,19 @@
 #include "psa_util_internal.h"
 #include "psa/crypto.h"
 
+#if defined(MBEDTLS_SSL_PROTO_TLS1_3) && defined(MBEDTLS_SUPER_JUMBO_EXTENSION)
+static int ssl_tls13_use_jumbo_records_out(const mbedtls_ssl_context *ssl);
+static int ssl_tls13_use_jumbo_records_in(const mbedtls_ssl_context *ssl);
+static size_t ssl_tls13_varuint_len_from_first_byte(unsigned char first);
+static int ssl_tls13_varuint_encode(uint64_t value,
+                                    unsigned char *out,
+                                    size_t out_size,
+                                    size_t *out_len);
+static int ssl_tls13_varuint_decode(const unsigned char *buf,
+                                    const unsigned char *end,
+                                    uint64_t *value);
+#endif /* MBEDTLS_SSL_PROTO_TLS1_3 && MBEDTLS_SUPER_JUMBO_EXTENSION */
+
 #if defined(MBEDTLS_X509_CRT_PARSE_C)
 #include "mbedtls/oid.h"
 #endif
@@ -706,6 +719,29 @@ static void ssl_extract_add_data_from_record(unsigned char *add_data,
     // type
     *cur = rec->type;
     cur++;
+
+#if defined(MBEDTLS_SSL_PROTO_TLS1_3) && defined(MBEDTLS_SUPER_JUMBO_EXTENSION)
+    if (tls_version == MBEDTLS_SSL_VERSION_TLS1_3 && rec->tls13_large_record) {
+        unsigned char len_enc[8];
+        size_t len_enc_len = 0;
+
+        /* TLSLargeCiphertext AAD (draft): omit legacy_record_version and
+         * encode the ciphertext length as varuint. */
+        if (ssl_tls13_varuint_encode((uint64_t) ad_len_field,
+                                     len_enc, sizeof(len_enc),
+                                     &len_enc_len) != 0) {
+            /* Should never happen for the supported jumbo range. */
+            *add_data_len = 0;
+            return;
+        }
+
+        memcpy(cur, len_enc, len_enc_len);
+        cur += len_enc_len;
+
+        *add_data_len = (size_t) (cur - add_data);
+        return;
+    }
+#endif /* MBEDTLS_SSL_PROTO_TLS1_3 && MBEDTLS_SUPER_JUMBO_EXTENSION */
 
     // version
     memcpy(cur, rec->ver, sizeof(rec->ver));
@@ -2654,6 +2690,222 @@ cleanup:
  * Record layer functions
  */
 
+#if defined(MBEDTLS_SSL_PROTO_TLS1_3) && defined(MBEDTLS_SUPER_JUMBO_EXTENSION)
+static int ssl_tls13_is_application_traffic_transform_out(const mbedtls_ssl_context *ssl)
+{
+    if (ssl->handshake == NULL) {
+        return 1;
+    }
+
+    if (ssl->transform_out == ssl->handshake->transform_handshake) {
+        return 0;
+    }
+
+#if defined(MBEDTLS_SSL_EARLY_DATA)
+    if (ssl->transform_out == ssl->handshake->transform_earlydata) {
+        return 0;
+    }
+#endif /* MBEDTLS_SSL_EARLY_DATA */
+
+    return 1;
+}
+
+static int ssl_tls13_is_application_traffic_transform_in(const mbedtls_ssl_context *ssl)
+{
+    if (ssl->handshake == NULL) {
+        return 1;
+    }
+
+    if (ssl->transform_in == ssl->handshake->transform_handshake) {
+        return 0;
+    }
+
+#if defined(MBEDTLS_SSL_EARLY_DATA)
+    if (ssl->transform_in == ssl->handshake->transform_earlydata) {
+        return 0;
+    }
+#endif /* MBEDTLS_SSL_EARLY_DATA */
+
+    return 1;
+}
+
+static int ssl_tls13_use_jumbo_records_out(const mbedtls_ssl_context *ssl)
+{
+    const mbedtls_ssl_session *session;
+
+    if (ssl->tls_version != MBEDTLS_SSL_VERSION_TLS1_3) {
+        return 0;
+    }
+
+    /* TLSLargeCiphertext is only used for protected records. Plaintext
+     * records (e.g. initial ClientHello) must keep the classic header. */
+    if (ssl->transform_out == NULL) {
+        return 0;
+    }
+
+    /* TLSLargeCiphertext is mandated by the draft for records protected with
+     * application_traffic_secret once the extension is negotiated, regardless
+     * of the negotiated limit value. */
+    if (!ssl_tls13_is_application_traffic_transform_out(ssl)) {
+        return 0;
+    }
+
+    /* Only switch record format when the local endpoint is configured to use
+     * the extension and the peer has negotiated it. */
+    if (ssl->conf->jumbo_record_size_limit < MBEDTLS_SSL_JUMBO_RECORD_SIZE_LIMIT_MIN) {
+        return 0;
+    }
+
+    session = ssl->session;
+    if (session == NULL ||
+        session->jumbo_record_size_limit < MBEDTLS_SSL_JUMBO_RECORD_SIZE_LIMIT_MIN) {
+        session = ssl->session_negotiate;
+    }
+
+    if (session == NULL ||
+        session->jumbo_record_size_limit < MBEDTLS_SSL_JUMBO_RECORD_SIZE_LIMIT_MIN) {
+        return 0;
+    }
+
+    return 1;
+}
+
+static int ssl_tls13_use_jumbo_records_in(const mbedtls_ssl_context *ssl)
+{
+    const mbedtls_ssl_session *session;
+
+    if (ssl->tls_version != MBEDTLS_SSL_VERSION_TLS1_3) {
+        return 0;
+    }
+
+    if (ssl->transform_in == NULL) {
+        return 0;
+    }
+
+    /* TLSLargeCiphertext is mandated by the draft for records protected with
+     * application_traffic_secret once the extension is negotiated, regardless
+     * of the negotiated limit value. */
+    if (!ssl_tls13_is_application_traffic_transform_in(ssl)) {
+        return 0;
+    }
+
+    /* Only switch record format when the local endpoint is configured to use
+     * the extension and the peer has negotiated it. */
+    if (ssl->conf->jumbo_record_size_limit < MBEDTLS_SSL_JUMBO_RECORD_SIZE_LIMIT_MIN) {
+        return 0;
+    }
+
+    session = ssl->session;
+    if (session == NULL ||
+        session->jumbo_record_size_limit < MBEDTLS_SSL_JUMBO_RECORD_SIZE_LIMIT_MIN) {
+        session = ssl->session_negotiate;
+    }
+
+    if (session == NULL ||
+        session->jumbo_record_size_limit < MBEDTLS_SSL_JUMBO_RECORD_SIZE_LIMIT_MIN) {
+        return 0;
+    }
+
+    return 1;
+}
+#endif /* MBEDTLS_SSL_PROTO_TLS1_3 && MBEDTLS_SUPER_JUMBO_EXTENSION */
+
+#if defined(MBEDTLS_SSL_PROTO_TLS1_3) && defined(MBEDTLS_SUPER_JUMBO_EXTENSION)
+static size_t ssl_tls13_varuint_len_from_first_byte(unsigned char first)
+{
+    switch ((first >> 6) & 0x03) {
+        case 0: return 1;
+        case 1: return 2;
+        case 2: return 4;
+        default: return 0;
+    }
+}
+
+MBEDTLS_CHECK_RETURN_CRITICAL
+static int ssl_tls13_varuint_encode(uint64_t value,
+                                    unsigned char *out,
+                                    size_t out_size,
+                                    size_t *out_len)
+{
+    *out_len = 0;
+
+    if (value <= 63) {
+        if (out_size < 1) {
+            return MBEDTLS_ERR_SSL_BUFFER_TOO_SMALL;
+        }
+        out[0] = (unsigned char) value;
+        *out_len = 1;
+        return 0;
+    }
+
+    if (value <= 16383) {
+        if (out_size < 2) {
+            return MBEDTLS_ERR_SSL_BUFFER_TOO_SMALL;
+        }
+        uint16_t v = (uint16_t) (0x4000u | (uint16_t) value);
+        MBEDTLS_PUT_UINT16_BE(v, out, 0);
+        *out_len = 2;
+        return 0;
+    }
+
+    if (value <= 1073741823ULL) {
+        if (out_size < 4) {
+            return MBEDTLS_ERR_SSL_BUFFER_TOO_SMALL;
+        }
+        uint32_t v = (uint32_t) (0x80000000u | (uint32_t) value);
+        MBEDTLS_PUT_UINT32_BE(v, out, 0);
+        *out_len = 4;
+        return 0;
+    }
+
+    return MBEDTLS_ERR_SSL_ILLEGAL_PARAMETER;
+}
+
+MBEDTLS_CHECK_RETURN_CRITICAL
+static int ssl_tls13_varuint_decode(const unsigned char *buf,
+                                    const unsigned char *end,
+                                    uint64_t *value)
+{
+    size_t len = (size_t) (end - buf);
+    uint8_t prefix;
+
+    if (len < 1) {
+        return MBEDTLS_ERR_SSL_ILLEGAL_PARAMETER;
+    }
+
+    prefix = (uint8_t) (buf[0] >> 6);
+
+    switch (prefix) {
+        case 0:
+            if (len != 1) {
+                return MBEDTLS_ERR_SSL_ILLEGAL_PARAMETER;
+            }
+            *value = (uint64_t) (buf[0] & 0x3Fu);
+            return 0;
+        case 1:
+            if (len != 2) {
+                return MBEDTLS_ERR_SSL_ILLEGAL_PARAMETER;
+            }
+            *value = (uint64_t) (MBEDTLS_GET_UINT16_BE(buf, 0) & 0x3FFFu);
+            if (*value < 64) {
+                return MBEDTLS_ERR_SSL_ILLEGAL_PARAMETER;
+            }
+            return 0;
+        case 2:
+            if (len != 4) {
+                return MBEDTLS_ERR_SSL_ILLEGAL_PARAMETER;
+            }
+            *value = (uint64_t) (MBEDTLS_GET_UINT32_BE(buf, 0) & 0x3FFFFFFFu);
+            if (*value < 16384) {
+                return MBEDTLS_ERR_SSL_ILLEGAL_PARAMETER;
+            }
+            return 0;
+        default:
+            return MBEDTLS_ERR_SSL_ILLEGAL_PARAMETER;
+    }
+}
+#endif /* MBEDTLS_SSL_PROTO_TLS1_3 && MBEDTLS_SUPER_JUMBO_EXTENSION */
+
 /*
  * Write current record.
  *
@@ -2668,14 +2920,7 @@ int mbedtls_ssl_write_record(mbedtls_ssl_context *ssl, int force_flush)
     size_t len = ssl->out_msglen;
     int flush = force_flush;
 
-    uint32_t jumbo = 0;
-
     MBEDTLS_SSL_DEBUG_MSG(2, ("=> write record"));
-
-#if defined(MBEDTLS_SSL_PROTO_TLS1_3) && defined(MBEDTLS_SUPER_JUMBO_EXTENSION)
-    if (ssl->session != NULL)
-        jumbo = ssl->session->jumbo_record_size_limit;
-#endif /* MBEDTLS_SSL_PROTO_TLS1_3 && MBEDTLS_SUPER_JUMBO_EXTENSION */
 
     if (!done) {
         unsigned i;
@@ -2697,16 +2942,16 @@ int mbedtls_ssl_write_record(mbedtls_ssl_context *ssl, int force_flush)
 #endif /* MBEDTLS_SSL_PROTO_TLS1_3 */
 /* For the TLSLargeCiphertext structure we do not need a version field in the header. */
 #if defined(MBEDTLS_SSL_PROTO_TLS1_3) && defined(MBEDTLS_SUPER_JUMBO_EXTENSION)
-        if (!(ssl->tls_version == MBEDTLS_SSL_VERSION_TLS1_3 &&
-              jumbo > 16384))
-        {
+        if (!ssl_tls13_use_jumbo_records_out(ssl)) {
             mbedtls_ssl_write_version(ssl->out_hdr + 1, ssl->conf->transport,
-                                    tls_ver);
+                                      tls_ver);
         }
+#else
+        mbedtls_ssl_write_version(ssl->out_hdr + 1, ssl->conf->transport,
+                                  tls_ver);
 #endif /* MBEDTLS_SSL_PROTO_TLS1_3 && MBEDTLS_SUPER_JUMBO_EXTENSION */
 
         memcpy(ssl->out_ctr, ssl->cur_out_ctr, MBEDTLS_SSL_SEQUENCE_NUMBER_LEN);
-        MBEDTLS_PUT_UINT16_BE(len, ssl->out_len, 0);
 
         if (ssl->transform_out != NULL) {
             mbedtls_record rec;
@@ -2719,6 +2964,10 @@ int mbedtls_ssl_write_record(mbedtls_ssl_context *ssl, int force_flush)
             memcpy(&rec.ctr[0], ssl->out_ctr, sizeof(rec.ctr));
             mbedtls_ssl_write_version(rec.ver, ssl->conf->transport, tls_ver);
             rec.type = ssl->out_msgtype;
+
+#if defined(MBEDTLS_SSL_PROTO_TLS1_3) && defined(MBEDTLS_SUPER_JUMBO_EXTENSION)
+            rec.tls13_large_record = ssl_tls13_use_jumbo_records_out(ssl);
+#endif /* MBEDTLS_SSL_PROTO_TLS1_3 && MBEDTLS_SUPER_JUMBO_EXTENSION */
 
 #if defined(MBEDTLS_SSL_DTLS_CONNECTION_ID)
             /* The CID is set by mbedtls_ssl_encrypt_buf(). */
@@ -2741,19 +2990,42 @@ int mbedtls_ssl_write_record(mbedtls_ssl_context *ssl, int force_flush)
             memcpy(ssl->out_cid, rec.cid, rec.cid_len);
 #endif /* MBEDTLS_SSL_DTLS_CONNECTION_ID */
             ssl->out_msglen = len = rec.data_len;
-            MBEDTLS_PUT_UINT16_BE(rec.data_len, ssl->out_len, 0);
         }
-
-        protected_record_size = len + mbedtls_ssl_out_hdr_len(ssl);
 
 #if defined(MBEDTLS_SSL_PROTO_TLS1_3) && defined(MBEDTLS_SUPER_JUMBO_EXTENSION)
-        if (ssl->tls_version == MBEDTLS_SSL_VERSION_TLS1_3 &&
-              jumbo > 16384)
-        {
-            /* We omitted the version field */
-            protected_record_size -= 2;
-        }
+        if (ssl_tls13_use_jumbo_records_out(ssl)) {
+            unsigned char len_enc[8];
+            size_t len_enc_len = 0;
+            size_t hdr_len = 0;
+            const size_t reserved_hdr_len = (size_t) (ssl->out_iv - ssl->out_hdr);
+
+            /* Encode length as varuint and compact the record header in-place. */
+            if (ssl_tls13_varuint_encode((uint64_t) len, len_enc, sizeof(len_enc),
+                                         &len_enc_len) != 0) {
+                return MBEDTLS_ERR_SSL_ILLEGAL_PARAMETER;
+            }
+
+            hdr_len = 1 + len_enc_len;
+            if (hdr_len > reserved_hdr_len) {
+                return MBEDTLS_ERR_SSL_INTERNAL_ERROR;
+            }
+
+            ssl->out_hdr[0] = (unsigned char) ssl->out_msgtype;
+            memcpy(ssl->out_hdr + 1, len_enc, len_enc_len);
+
+            /* Shift record content down to immediately follow the header. */
+            if (reserved_hdr_len != hdr_len) {
+                memmove(ssl->out_hdr + hdr_len, ssl->out_iv, len);
+            }
+
+            protected_record_size = hdr_len + len;
+        } else
 #endif /* MBEDTLS_SSL_PROTO_TLS1_3 && MBEDTLS_SUPER_JUMBO_EXTENSION */
+        {
+            /* Classic TLSCiphertext header. */
+            MBEDTLS_PUT_UINT16_BE(len, ssl->out_len, 0);
+            protected_record_size = len + mbedtls_ssl_out_hdr_len(ssl);
+        }
 
 #if defined(MBEDTLS_SSL_PROTO_DTLS)
         /* In case of DTLS, double-check that we don't exceed
@@ -2775,18 +3047,10 @@ int mbedtls_ssl_write_record(mbedtls_ssl_context *ssl, int force_flush)
         ssl->out_hdr[0] = (unsigned char) ssl->out_msgtype;
 
 #if defined(MBEDTLS_SSL_PROTO_TLS1_3) && defined(MBEDTLS_SUPER_JUMBO_EXTENSION)
-        /* Update the length information */
-        if (ssl->tls_version == MBEDTLS_SSL_VERSION_TLS1_3 &&
-            jumbo > 16384)
-        {
-
-            memmove(ssl->out_hdr + 1, ssl->out_hdr + 3, ssl->out_msglen + 2);
-//            MBEDTLS_PUT_UINT16_BE(ssl->out_msglen, ssl->out_hdr, 1);
-
+        if (ssl_tls13_use_jumbo_records_out(ssl)) {
             MBEDTLS_SSL_DEBUG_MSG(3, ("output record: msgtype = %u, "
-                "version = TLS 1.3 with Jumbo Extension, msglen = %" MBEDTLS_PRINTF_SIZET,
-                ssl->out_hdr[0], len));
-
+                                      "version = TLSLargeCiphertext, msglen = %" MBEDTLS_PRINTF_SIZET,
+                                      ssl->out_hdr[0], len));
         } else
 #endif /* MBEDTLS_SSL_PROTO_TLS1_3 && MBEDTLS_SUPER_JUMBO_EXTENSION */
         {
@@ -3612,22 +3876,20 @@ static int ssl_parse_record_header(mbedtls_ssl_context const *ssl,
 #endif /* MBEDTLS_SSL_PROTO_DTLS */
 
     size_t       rec_hdr_len_offset; /* To be determined */
-    size_t const rec_hdr_len_len    = 2;
+    size_t       rec_hdr_len_len    = 2;
 
     /*
      * Check minimum lengths for record header.
      */
 
 #if defined(MBEDTLS_SSL_PROTO_TLS1_3) && defined(MBEDTLS_SUPER_JUMBO_EXTENSION)
-    /* For the Super Jumbo Record Limit the Version Field is set to zero length
-     * for application data payloads.
-     */
-    if (ssl->tls_version == MBEDTLS_SSL_VERSION_TLS1_3 &&
-        ( ssl->session != NULL &&
-            ssl->session->jumbo_record_size_limit > 16384
-        ))
-    {
+    if (ssl_tls13_use_jumbo_records_in(ssl)) {
+        /* TLSLargeCiphertext: omit version, length is varuint (1/2/4/8). */
         rec_hdr_version_len = 0;
+        if (ssl->conf->transport == MBEDTLS_SSL_TRANSPORT_STREAM) {
+            /* Minimum varuint length is 1 byte. */
+            rec_hdr_len_len = 1;
+        }
     }
 #endif // MBEDTLS_SSL_PROTO_TLS1_3 && MBEDTLS_SUPER_JUMBO_EXTENSION
 
@@ -3708,18 +3970,14 @@ static int ssl_parse_record_header(mbedtls_ssl_context const *ssl,
      */
 
 #if defined(MBEDTLS_SSL_PROTO_TLS1_3) && defined(MBEDTLS_SUPER_JUMBO_EXTENSION)
-    /* For the Super Jumbo Record Limit the Version Field is set to zero length
-     * for application data payloads.
-     */
-    if (ssl->tls_version == MBEDTLS_SSL_VERSION_TLS1_3 &&
-        ( ssl->session != NULL &&
-            ssl->session->jumbo_record_size_limit > 16384
-        ))
-    {
+    if (ssl_tls13_use_jumbo_records_in(ssl)) {
         rec_hdr_version_len = 0;
+        /* TLSLargeCiphertext omits legacy_record_version on the wire, but the
+         * implicit value 0x0303 is used for MAC computations. */
         rec->ver[0] = 3;
         rec->ver[1] = 3;
         tls_version = MBEDTLS_GET_UINT16_BE(rec->ver, 0);
+        rec->tls13_large_record = 1;
     } else
 #endif // MBEDTLS_SSL_PROTO_TLS1_3 && MBEDTLS_SUPER_JUMBO_EXTENSION
     {
@@ -3736,6 +3994,9 @@ static int ssl_parse_record_header(mbedtls_ssl_context const *ssl,
 
             return MBEDTLS_ERR_SSL_INVALID_RECORD;
         }
+        #if defined(MBEDTLS_SSL_PROTO_TLS1_3) && defined(MBEDTLS_SUPER_JUMBO_EXTENSION)
+        rec->tls13_large_record = 0;
+        #endif
     }
 
     /*
@@ -3758,8 +4019,39 @@ static int ssl_parse_record_header(mbedtls_ssl_context const *ssl,
      * Parse record length.
      */
 
-    rec->data_offset = rec_hdr_len_offset + rec_hdr_len_len;
-    rec->data_len    = MBEDTLS_GET_UINT16_BE(buf, rec_hdr_len_offset);
+#if defined(MBEDTLS_SSL_PROTO_TLS1_3) && defined(MBEDTLS_SUPER_JUMBO_EXTENSION)
+    if (ssl_tls13_use_jumbo_records_in(ssl) &&
+        ssl->conf->transport == MBEDTLS_SSL_TRANSPORT_STREAM) {
+        size_t len_bytes;
+        uint64_t decoded_len;
+
+        if (len < 2) {
+            return MBEDTLS_ERR_SSL_INVALID_RECORD;
+        }
+
+        len_bytes = ssl_tls13_varuint_len_from_first_byte(buf[rec_hdr_len_offset]);
+        if (len_bytes == 0) {
+            return MBEDTLS_ERR_SSL_INVALID_RECORD;
+        }
+        if (len < rec_hdr_len_offset + len_bytes) {
+            return MBEDTLS_ERR_SSL_INVALID_RECORD;
+        }
+
+        if (ssl_tls13_varuint_decode(buf + rec_hdr_len_offset,
+                                     buf + rec_hdr_len_offset + len_bytes,
+                                     &decoded_len) != 0 ||
+            decoded_len > SIZE_MAX) {
+            return MBEDTLS_ERR_SSL_INVALID_RECORD;
+        }
+
+        rec->data_offset = rec_hdr_len_offset + len_bytes;
+        rec->data_len = (size_t) decoded_len;
+    } else
+ #endif /* MBEDTLS_SSL_PROTO_TLS1_3 && MBEDTLS_SUPER_JUMBO_EXTENSION */
+    {
+        rec->data_offset = rec_hdr_len_offset + rec_hdr_len_len;
+        rec->data_len    = MBEDTLS_GET_UINT16_BE(buf, rec_hdr_len_offset);
+    }
     MBEDTLS_SSL_DEBUG_BUF(4, "input record header", buf, rec->data_offset);
 
     MBEDTLS_SSL_DEBUG_MSG(3, ("input record: msgtype = %u, "
@@ -3772,6 +4064,23 @@ static int ssl_parse_record_header(mbedtls_ssl_context const *ssl,
     if (rec->data_len == 0) {
         MBEDTLS_SSL_DEBUG_MSG(1, ("rejecting empty record"));
         return MBEDTLS_ERR_SSL_INVALID_RECORD;
+    }
+
+    if (ssl->conf->transport == MBEDTLS_SSL_TRANSPORT_STREAM) {
+        size_t max_payload = MBEDTLS_SSL_IN_CONTENT_LEN;
+
+#if defined(MBEDTLS_SSL_PROTO_TLS1_3) && defined(MBEDTLS_SUPER_JUMBO_EXTENSION)
+        if (ssl_tls13_use_jumbo_records_in(ssl)) {
+            max_payload = mbedtls_ssl_get_max_in_record_payload(ssl);
+        }
+#endif /* MBEDTLS_SSL_PROTO_TLS1_3 && MBEDTLS_SUPER_JUMBO_EXTENSION */
+
+        if (rec->data_len > max_payload) {
+            MBEDTLS_SSL_DEBUG_MSG(1,
+                                  ("record payload too large: %" MBEDTLS_PRINTF_SIZET,
+                                   rec->data_len));
+            return MBEDTLS_ERR_SSL_INVALID_RECORD;
+        }
     }
 
     /*
@@ -4771,10 +5080,29 @@ static int ssl_get_next_record(mbedtls_ssl_context *ssl)
     }
 #endif /* MBEDTLS_SSL_PROTO_DTLS */
 
-    /* Ensure that we have enough space available for the default form
-     * of TLS / DTLS record headers (5 Bytes for TLS, 13 Bytes for DTLS,
-     * with no space for CIDs counted in). */
-    ret = mbedtls_ssl_fetch_input(ssl, mbedtls_ssl_in_hdr_len(ssl));
+    /* Fetch at least enough header bytes to parse the record header. */
+#if defined(MBEDTLS_SSL_PROTO_TLS1_3) && defined(MBEDTLS_SUPER_JUMBO_EXTENSION)
+    if (ssl_tls13_use_jumbo_records_in(ssl) &&
+        ssl->conf->transport == MBEDTLS_SSL_TRANSPORT_STREAM) {
+        size_t len_bytes;
+        ret = mbedtls_ssl_fetch_input(ssl, 2); /* type + first varuint length byte */
+        if (ret != 0) {
+            MBEDTLS_SSL_DEBUG_RET(1, "mbedtls_ssl_fetch_input", ret);
+            return ret;
+        }
+        len_bytes = ssl_tls13_varuint_len_from_first_byte(ssl->in_hdr[1]);
+        if (len_bytes == 0) {
+            MBEDTLS_SSL_PEND_FATAL_ALERT(MBEDTLS_SSL_ALERT_MSG_DECODE_ERROR,
+                                         MBEDTLS_ERR_SSL_INVALID_RECORD);
+            return MBEDTLS_ERR_SSL_INVALID_RECORD;
+        }
+        ret = mbedtls_ssl_fetch_input(ssl, 1 + len_bytes);
+    } else
+#endif
+    {
+        /* Default TLS/DTLS record headers (5 Bytes for TLS, 13 Bytes for DTLS). */
+        ret = mbedtls_ssl_fetch_input(ssl, mbedtls_ssl_in_hdr_len(ssl));
+    }
     if (ret != 0) {
         MBEDTLS_SSL_DEBUG_RET(1, "mbedtls_ssl_fetch_input", ret);
         return ret;
@@ -4782,6 +5110,20 @@ static int ssl_get_next_record(mbedtls_ssl_context *ssl)
 
     ret = ssl_parse_record_header(ssl, ssl->in_hdr, ssl->in_left, &rec);
     if (ret != 0) {
+#if defined(MBEDTLS_SSL_PROTO_TLS1_3) && defined(MBEDTLS_SUPER_JUMBO_EXTENSION)
+        if (ssl->conf->transport == MBEDTLS_SSL_TRANSPORT_STREAM &&
+            ssl_tls13_use_jumbo_records_in(ssl) &&
+            ret == MBEDTLS_ERR_SSL_INVALID_RECORD) {
+            size_t max_payload = mbedtls_ssl_get_max_in_record_payload(ssl);
+            if (rec.data_len > max_payload) {
+                MBEDTLS_SSL_PEND_FATAL_ALERT(MBEDTLS_SSL_ALERT_MSG_RECORD_OVERFLOW,
+                                             MBEDTLS_ERR_SSL_INVALID_RECORD);
+            } else {
+                MBEDTLS_SSL_PEND_FATAL_ALERT(MBEDTLS_SSL_ALERT_MSG_DECODE_ERROR,
+                                             MBEDTLS_ERR_SSL_INVALID_RECORD);
+            }
+        }
+#endif /* MBEDTLS_SSL_PROTO_TLS1_3 && MBEDTLS_SUPER_JUMBO_EXTENSION */
 #if defined(MBEDTLS_SSL_PROTO_DTLS)
         if (ssl->conf->transport == MBEDTLS_SSL_TRANSPORT_DATAGRAM) {
             if (ret == MBEDTLS_ERR_SSL_EARLY_MESSAGE) {
@@ -4937,7 +5279,15 @@ static int ssl_get_next_record(mbedtls_ssl_context *ssl)
     ssl->in_hdr[0] = rec.type;
     ssl->in_msg    = rec.buf + rec.data_offset;
     ssl->in_msglen = rec.data_len;
-    MBEDTLS_PUT_UINT16_BE(rec.data_len, ssl->in_len, 0);
+#if defined(MBEDTLS_SSL_PROTO_TLS1_3) && defined(MBEDTLS_SUPER_JUMBO_EXTENSION)
+    if (!rec.tls13_large_record && rec.data_len <= 0xFFFF) {
+        MBEDTLS_PUT_UINT16_BE(rec.data_len, ssl->in_len, 0);
+    }
+#else
+    if (rec.data_len <= 0xFFFF) {
+        MBEDTLS_PUT_UINT16_BE(rec.data_len, ssl->in_len, 0);
+    }
+#endif
 
     return 0;
 }
@@ -5226,13 +5576,10 @@ void mbedtls_ssl_update_out_pointers(mbedtls_ssl_context *ssl,
     }
 
 #if defined(MBEDTLS_SSL_PROTO_TLS1_3) && defined(MBEDTLS_SUPER_JUMBO_EXTENSION)
-        if (ssl->tls_version == MBEDTLS_SSL_VERSION_TLS1_3 &&
-            ( ssl->session != NULL &&
-              ssl->session->jumbo_record_size_limit > 16384
-            ))
-        {
+        if (transform != NULL && ssl_tls13_use_jumbo_records_out(ssl)) {
+            /* Reserve space for TLSLargeCiphertext: 1 byte type + up to 8 bytes varuint length. */
             ssl->out_len = ssl->out_hdr + 1;
-            ssl->out_iv  = ssl->out_hdr + 3;
+            ssl->out_iv  = ssl->out_hdr + 9;
         }
 #endif // MBEDTLS_SSL_PROTO_TLS1_3 && MBEDTLS_SUPER_JUMBO_EXTENSION
 
@@ -5287,17 +5634,6 @@ void mbedtls_ssl_update_in_pointers(mbedtls_ssl_context *ssl)
 #endif
         ssl->in_iv  = ssl->in_hdr + 5;
     }
-
-#if defined(MBEDTLS_SSL_PROTO_TLS1_3) && defined(MBEDTLS_SUPER_JUMBO_EXTENSION)
-        if (ssl->tls_version == MBEDTLS_SSL_VERSION_TLS1_3 &&
-            ( ssl->session != NULL &&
-              ssl->session->jumbo_record_size_limit > 16384
-            ))
-        {
-            ssl->in_len = ssl->in_hdr + 1;
-            ssl->in_iv  = ssl->in_hdr + 3;
-        }
-#endif // MBEDTLS_SSL_PROTO_TLS1_3 && MBEDTLS_SUPER_JUMBO_EXTENSION
 
     /* This will be adjusted at record decryption time. */
     ssl->in_msg = ssl->in_iv;
