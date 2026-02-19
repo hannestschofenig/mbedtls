@@ -2694,7 +2694,7 @@ int mbedtls_ssl_conf_max_frag_len(mbedtls_ssl_config *conf, unsigned char mfl_co
 #if defined(MBEDTLS_SUPER_JUMBO_EXTENSION)
 int mbedtls_ssl_conf_jumbo_record_size_limit(mbedtls_ssl_config *conf, uint32_t limit)
 {
-    /* Acceptable range: 64 .. (2^30 - 256) (draft-ietf-tls-super-jumbo-record-limit-02). */
+    /* Acceptable range: 64 .. (2^30 - 256) (draft-ietf-tls-super-jumbo-record-limit). */
     if (limit < 64 || limit > MBEDTLS_SSL_JUMBO_RECORD_SIZE_LIMIT_MAX) {
         return MBEDTLS_ERR_SSL_BAD_INPUT_DATA;
     }

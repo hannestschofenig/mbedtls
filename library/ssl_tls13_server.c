@@ -1467,6 +1467,10 @@ static int ssl_tls13_parse_client_hello(mbedtls_ssl_context *ssl,
 
     MBEDTLS_SSL_DEBUG_BUF(3, "client hello extensions", p, extensions_len);
     handshake->received_extensions = MBEDTLS_SSL_EXT_MASK_NONE;
+#if defined(MBEDTLS_SUPER_JUMBO_EXTENSION)
+    /* Reset to "not negotiated"; updated only if extension is present. */
+    ssl->session_negotiate->jumbo_record_size_limit = 0;
+#endif
 
     while (p < extensions_end) {
         unsigned int extension_type;
@@ -2579,7 +2583,7 @@ static int ssl_tls13_write_encrypted_extensions_body(mbedtls_ssl_context *ssl,
 
 #if defined(MBEDTLS_SSL_RECORD_SIZE_LIMIT)
     /*
-     * draft-ietf-tls-super-jumbo-record-limit-02:
+     * draft-ietf-tls-super-jumbo-record-limit:
      * A server MUST NOT send extension responses to more than one of
      * "large_record_size_limit", "record_size_limit", and "max_fragment_length".
      *

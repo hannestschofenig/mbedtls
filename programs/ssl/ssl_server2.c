@@ -3833,7 +3833,7 @@ data_exchange:
         if (opt.raw_payload_size != DFL_RAW_PAYLOAD_SIZE) {
             size_t remaining = (size_t) opt.raw_payload_size;
             size_t total_read = 0;
-            size_t frags = 0;
+            size_t raw_frags = 0;
 
             while (remaining > 0) {
                 size_t chunk_len = opt.buffer_size;
@@ -3875,14 +3875,14 @@ data_exchange:
                     }
                 }
 
-                frags++;
+                raw_frags++;
                 total_read += (size_t) ret;
                 remaining -= (size_t) ret;
             }
 
             mbedtls_printf(" %" MBEDTLS_PRINTF_SIZET " bytes read in %"
                            MBEDTLS_PRINTF_SIZET " fragments (raw_payload_size)\n",
-                           total_read, frags);
+                           total_read, raw_frags);
             ret = 0;
         } else {
         do {

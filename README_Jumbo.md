@@ -1,19 +1,19 @@
 # Jumbo / TLSLargeCiphertext – Tests
 
 This branch contains an implementation of the IETF draft
-`draft-ietf-tls-super-jumbo-record-limit-02` (Large Record Size Limit + `TLSLargeCiphertext`).
+`draft-ietf-tls-super-jumbo-record-limit-03` (Large Record Size Limit + `TLSLargeCiphertext`).
 The tests primarily use the example applications `ssl_client2` and `ssl_server2`.
 
 ## Current behavior (implementation notes)
 
 - If the Jumbo extension is negotiated, **all TLS 1.3 records protected with `application_traffic_secret` use `TLSLargeCiphertext`** (independent of the negotiated numeric limit).
   Records protected with `early_traffic_secret` or `handshake_traffic_secret` remain in the classic TLSCiphertext format (as per the draft: they are not subject to the large record size limit).
-- The Jumbo record length field uses the draft-02 varuint format and is **strict**:
+- The Jumbo record length field uses the draft-03 varuint format and is **strict**:
   only 1/2/4-byte encodings are accepted and decoding rejects non-minimal encodings.
-- Alert behavior (best-effort alignment with draft-02):
+- Record handling behavior (draft-03 alignment):
   invalid Jumbo extension values → `illegal_parameter`;
-  receiving a Jumbo record larger than the advertised limit → `record_overflow`;
-  malformed Jumbo record header varuint → `decode_error`.
+  receiving a Jumbo record larger than the advertised limit → record is discarded;
+  malformed Jumbo record header varuint length encoding → treated as exceeding the advertised limit and record is discarded.
 
 ## Prerequisites
 
@@ -36,7 +36,7 @@ These tests exercise Jumbo negotiation, varuint boundary cases, and TLS 1.3 resu
 - `JUMBO_RECORD_SIZE_LIMIT: 4-byte varuint (16384)` (lower bound of the 30-bit range, and enforces `TLSLargeCiphertext`)
 - `JUMBO_RECORD_SIZE_LIMIT: 50k single record` (sends 50k Application Data via `raw_payload_size` and expects a single record/write fragment)
 - `JUMBO_RECORD_SIZE_LIMIT: small record uses TLSLargeCiphertext` (ensures `TLSLargeCiphertext` is used even for small Application Data once negotiated)
-- `JUMBO_RECORD_SIZE_LIMIT: max value accepted` (checks parsing/range; max in draft-02 is `2^30 - 256` = `1073741568`)
+- `JUMBO_RECORD_SIZE_LIMIT: max value accepted` (checks parsing/range; max is `2^30 - 256` = `1073741568`)
 - `JUMBO_RECORD_SIZE_LIMIT: tls13 resumption (serialize/load)` (ticket-based resumption with `reco_mode=1`)
 
 Run (Jumbo subset only):

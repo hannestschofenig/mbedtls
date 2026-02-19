@@ -1647,100 +1647,14 @@ int mbedtls_ssl_tls13_check_received_extension(
 /* * Super Jumbo Extension
  *
  * This extension is used to indicate that the peer supports super jumbo frames.
- * varuint LargeRecordSizeLimit;
+ * uint32 LargeRecordSizeLimit;
  */
-MBEDTLS_CHECK_RETURN_CRITICAL
-static int ssl_tls13_varuint_encode(uint64_t value,
-                                    unsigned char *out,
-                                    size_t out_size,
-                                    size_t *out_len)
-{
-    *out_len = 0;
-
-    if (value <= 63) {
-        if (out_size < 1) {
-            return MBEDTLS_ERR_SSL_BUFFER_TOO_SMALL;
-        }
-        out[0] = (unsigned char) value;
-        *out_len = 1;
-        return 0;
-    }
-
-    if (value <= 16383) {
-        if (out_size < 2) {
-            return MBEDTLS_ERR_SSL_BUFFER_TOO_SMALL;
-        }
-        uint16_t v = (uint16_t) (0x4000u | (uint16_t) value);
-        MBEDTLS_PUT_UINT16_BE(v, out, 0);
-        *out_len = 2;
-        return 0;
-    }
-
-    if (value <= 1073741823ULL) {
-        if (out_size < 4) {
-            return MBEDTLS_ERR_SSL_BUFFER_TOO_SMALL;
-        }
-        uint32_t v = (uint32_t) (0x80000000u | (uint32_t) value);
-        MBEDTLS_PUT_UINT32_BE(v, out, 0);
-        *out_len = 4;
-        return 0;
-    }
-
-    return MBEDTLS_ERR_SSL_ILLEGAL_PARAMETER;
-}
-
-MBEDTLS_CHECK_RETURN_CRITICAL
-static int ssl_tls13_varuint_decode(const unsigned char *buf,
-                                    const unsigned char *end,
-                                    uint64_t *value)
-{
-    size_t len = (size_t) (end - buf);
-    uint8_t prefix;
-
-    if (len < 1) {
-        return MBEDTLS_ERR_SSL_ILLEGAL_PARAMETER;
-    }
-
-    prefix = (uint8_t) (buf[0] >> 6);
-
-    switch (prefix) {
-        case 0:
-            if (len != 1) {
-                return MBEDTLS_ERR_SSL_ILLEGAL_PARAMETER;
-            }
-            *value = (uint64_t) (buf[0] & 0x3Fu);
-            return 0;
-        case 1:
-            if (len != 2) {
-                return MBEDTLS_ERR_SSL_ILLEGAL_PARAMETER;
-            }
-            *value = (uint64_t) (MBEDTLS_GET_UINT16_BE(buf, 0) & 0x3FFFu);
-            if (*value < 64) {
-                return MBEDTLS_ERR_SSL_ILLEGAL_PARAMETER;
-            }
-            return 0;
-        case 2:
-            if (len != 4) {
-                return MBEDTLS_ERR_SSL_ILLEGAL_PARAMETER;
-            }
-            *value = (uint64_t) (MBEDTLS_GET_UINT32_BE(buf, 0) & 0x3FFFFFFFu);
-            if (*value < 16384) {
-                return MBEDTLS_ERR_SSL_ILLEGAL_PARAMETER;
-            }
-            return 0;
-        default:
-            return MBEDTLS_ERR_SSL_ILLEGAL_PARAMETER;
-    }
-}
-
 int mbedtls_ssl_tls13_write_jumbo_record_size_limit_ext(mbedtls_ssl_context *ssl,
                                              unsigned char *buf,
                                              const unsigned char *end,
                                              size_t *out_len)
 {
     unsigned char *p = buf;
-    unsigned char value_buf[8];
-    size_t value_len = 0;
     *out_len = 0;
 
     MBEDTLS_STATIC_ASSERT(MBEDTLS_SSL_IN_CONTENT_LEN >= MBEDTLS_SSL_JUMBO_RECORD_SIZE_LIMIT_MIN,
@@ -1753,26 +1667,18 @@ int mbedtls_ssl_tls13_write_jumbo_record_size_limit_ext(mbedtls_ssl_context *ssl
 
         MBEDTLS_SSL_DEBUG_MSG(3, ("encrypted extensions: adding jumbo extension"));
 
-        if (ssl_tls13_varuint_encode((uint64_t) ssl->conf->jumbo_record_size_limit,
-                                     value_buf, sizeof(value_buf), &value_len) != 0) {
-            MBEDTLS_SSL_PEND_FATAL_ALERT(
-                MBEDTLS_SSL_ALERT_MSG_ILLEGAL_PARAMETER,
-                MBEDTLS_ERR_SSL_ILLEGAL_PARAMETER);
-            return MBEDTLS_ERR_SSL_ILLEGAL_PARAMETER;
-        }
-
-        MBEDTLS_SSL_CHK_BUF_PTR(p, end, 4 + value_len);
+        MBEDTLS_SSL_CHK_BUF_PTR(p, end, 8);
 
         /* Write extension_type */
         MBEDTLS_PUT_UINT16_BE(MBEDTLS_TLS_EXT_JUMBO_RECORD_SIZE_LIMIT, p, 0);
 
         /* Write extension_data_length */
-        MBEDTLS_PUT_UINT16_BE((uint16_t) value_len, p, 2);
+        MBEDTLS_PUT_UINT16_BE(4, p, 2);
 
-        /* Write jumbo record length (varuint) */
-        memcpy(p + 4, value_buf, value_len);
+        /* Write jumbo record limit as uint32. */
+        MBEDTLS_PUT_UINT32_BE(ssl->conf->jumbo_record_size_limit, p, 4);
 
-        *out_len = 4 + value_len;
+        *out_len = 8;
 
         MBEDTLS_SSL_DEBUG_MSG(2, ("Sent Jumbo Record Size Limit: %" PRIu32 " Bytes",
                                   (uint32_t) ssl->conf->jumbo_record_size_limit));
@@ -1788,14 +1694,10 @@ int mbedtls_ssl_tls13_parse_jumbo_record_size_limit_ext(mbedtls_ssl_context *ssl
                                                         const unsigned char *buf,
                                                         const unsigned char *end)
 {
-    uint64_t jumbo_record_size_limit_ull;
     uint32_t jumbo_record_size_limit;
     const size_t extension_data_len = end - buf;
 
-    /* varuint length is 1, 2, or 4 bytes */
-    if (extension_data_len != 1 &&
-        extension_data_len != 2 &&
-        extension_data_len != 4) {
+    if (extension_data_len != 4) {
         MBEDTLS_SSL_DEBUG_MSG(2,
             ("jumbo_record_size_limit extension has invalid length: %"
              MBEDTLS_PRINTF_SIZET " Bytes", extension_data_len));
@@ -1805,14 +1707,7 @@ int mbedtls_ssl_tls13_parse_jumbo_record_size_limit_ext(mbedtls_ssl_context *ssl
         return MBEDTLS_ERR_SSL_ILLEGAL_PARAMETER;
     }
 
-    if (ssl_tls13_varuint_decode(buf, end, &jumbo_record_size_limit_ull) != 0 ||
-        jumbo_record_size_limit_ull > UINT32_MAX) {
-        MBEDTLS_SSL_PEND_FATAL_ALERT(
-            MBEDTLS_SSL_ALERT_MSG_ILLEGAL_PARAMETER,
-            MBEDTLS_ERR_SSL_ILLEGAL_PARAMETER);
-        return MBEDTLS_ERR_SSL_ILLEGAL_PARAMETER;
-    }
-    jumbo_record_size_limit = (uint32_t) jumbo_record_size_limit_ull;
+    jumbo_record_size_limit = MBEDTLS_GET_UINT32_BE(buf, 0);
 
     MBEDTLS_SSL_DEBUG_MSG(2, ("JumboRecordSizeLimit: %" PRIu32 " Bytes", jumbo_record_size_limit));
 

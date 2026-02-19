@@ -1162,12 +1162,23 @@ int mbedtls_ssl_tls13_write_client_hello_exts(mbedtls_ssl_context *ssl,
     p += ext_len;
 
 #if defined(MBEDTLS_SSL_RECORD_SIZE_LIMIT)
-    ret = mbedtls_ssl_tls13_write_record_size_limit_ext(
-        ssl, p, end, &ext_len);
-    if (ret != 0) {
-        return ret;
+    {
+        int send_record_size_limit = 1;
+#if defined(MBEDTLS_SUPER_JUMBO_EXTENSION)
+        if (ssl->conf->jumbo_record_size_limit >= MBEDTLS_SSL_JUMBO_RECORD_SIZE_LIMIT_MIN &&
+            ssl->conf->jumbo_record_size_limit <= MBEDTLS_SSL_JUMBO_RECORD_SIZE_LIMIT_MAX) {
+            send_record_size_limit = 0;
+        }
+#endif
+        if (send_record_size_limit) {
+            ret = mbedtls_ssl_tls13_write_record_size_limit_ext(
+                ssl, p, end, &ext_len);
+            if (ret != 0) {
+                return ret;
+            }
+            p += ext_len;
+        }
     }
-    p += ext_len;
 #endif
 
 #if defined(MBEDTLS_SSL_TLS1_3_KEY_EXCHANGE_MODE_SOME_EPHEMERAL_ENABLED)
@@ -2089,6 +2100,10 @@ static int ssl_tls13_parse_encrypted_extensions(mbedtls_ssl_context *ssl,
     MBEDTLS_SSL_DEBUG_BUF(3, "encrypted extensions", p, extensions_len);
 
     handshake->received_extensions = MBEDTLS_SSL_EXT_MASK_NONE;
+#if defined(MBEDTLS_SUPER_JUMBO_EXTENSION)
+    /* Reset to "not negotiated"; updated only if extension is present. */
+    ssl->session_negotiate->jumbo_record_size_limit = 0;
+#endif
 
     while (p < extensions_end) {
         unsigned int extension_type;
@@ -2179,7 +2194,7 @@ static int ssl_tls13_parse_encrypted_extensions(mbedtls_ssl_context *ssl,
     }
 
     /*
-     * draft-ietf-tls-super-jumbo-record-limit-02:
+     * draft-ietf-tls-super-jumbo-record-limit:
      * A client MUST treat receipt of more than one of
      * "large_record_size_limit", "record_size_limit", and "max_fragment_length"
      * as a fatal error and it SHOULD generate an "illegal_parameter" alert.

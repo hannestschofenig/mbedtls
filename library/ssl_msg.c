@@ -2817,7 +2817,7 @@ static size_t ssl_tls13_varuint_len_from_first_byte(unsigned char first)
         case 0: return 1;
         case 1: return 2;
         case 2: return 4;
-        default: return 0;
+        default: return 8;
     }
 }
 
@@ -2899,6 +2899,50 @@ static int ssl_tls13_varuint_decode(const unsigned char *buf,
             if (*value < 16384) {
                 return MBEDTLS_ERR_SSL_ILLEGAL_PARAMETER;
             }
+            return 0;
+        default:
+            return MBEDTLS_ERR_SSL_ILLEGAL_PARAMETER;
+    }
+}
+
+MBEDTLS_CHECK_RETURN_CRITICAL
+static int ssl_tls13_varuint_decode_loose(const unsigned char *buf,
+                                          const unsigned char *end,
+                                          uint64_t *value)
+{
+    size_t len = (size_t) (end - buf);
+    uint8_t prefix;
+
+    if (len < 1) {
+        return MBEDTLS_ERR_SSL_ILLEGAL_PARAMETER;
+    }
+
+    prefix = (uint8_t) (buf[0] >> 6);
+
+    switch (prefix) {
+        case 0:
+            if (len != 1) {
+                return MBEDTLS_ERR_SSL_ILLEGAL_PARAMETER;
+            }
+            *value = (uint64_t) (buf[0] & 0x3Fu);
+            return 0;
+        case 1:
+            if (len != 2) {
+                return MBEDTLS_ERR_SSL_ILLEGAL_PARAMETER;
+            }
+            *value = (uint64_t) (MBEDTLS_GET_UINT16_BE(buf, 0) & 0x3FFFu);
+            return 0;
+        case 2:
+            if (len != 4) {
+                return MBEDTLS_ERR_SSL_ILLEGAL_PARAMETER;
+            }
+            *value = (uint64_t) (MBEDTLS_GET_UINT32_BE(buf, 0) & 0x3FFFFFFFu);
+            return 0;
+        case 3:
+            if (len != 8) {
+                return MBEDTLS_ERR_SSL_ILLEGAL_PARAMETER;
+            }
+            *value = MBEDTLS_GET_UINT64_BE(buf, 0) & UINT64_C(0x3FFFFFFFFFFFFFFF);
             return 0;
         default:
             return MBEDTLS_ERR_SSL_ILLEGAL_PARAMETER;
@@ -3883,8 +3927,10 @@ static int ssl_parse_record_header(mbedtls_ssl_context const *ssl,
      */
 
 #if defined(MBEDTLS_SSL_PROTO_TLS1_3) && defined(MBEDTLS_SUPER_JUMBO_EXTENSION)
+    rec->jumbo_len_invalid_as_overflow = 0;
+
     if (ssl_tls13_use_jumbo_records_in(ssl)) {
-        /* TLSLargeCiphertext: omit version, length is varuint (1/2/4/8). */
+        /* TLSLargeCiphertext: omit version, length is varuint. */
         rec_hdr_version_len = 0;
         if (ssl->conf->transport == MBEDTLS_SSL_TRANSPORT_STREAM) {
             /* Minimum varuint length is 1 byte. */
@@ -4039,8 +4085,16 @@ static int ssl_parse_record_header(mbedtls_ssl_context const *ssl,
 
         if (ssl_tls13_varuint_decode(buf + rec_hdr_len_offset,
                                      buf + rec_hdr_len_offset + len_bytes,
-                                     &decoded_len) != 0 ||
-            decoded_len > SIZE_MAX) {
+                                     &decoded_len) != 0) {
+            if (ssl_tls13_varuint_decode_loose(buf + rec_hdr_len_offset,
+                                               buf + rec_hdr_len_offset + len_bytes,
+                                               &decoded_len) != 0) {
+                return MBEDTLS_ERR_SSL_INVALID_RECORD;
+            }
+            rec->jumbo_len_invalid_as_overflow = 1;
+        }
+
+        if (decoded_len > SIZE_MAX) {
             return MBEDTLS_ERR_SSL_INVALID_RECORD;
         }
 
@@ -4072,6 +4126,10 @@ static int ssl_parse_record_header(mbedtls_ssl_context const *ssl,
 #if defined(MBEDTLS_SSL_PROTO_TLS1_3) && defined(MBEDTLS_SUPER_JUMBO_EXTENSION)
         if (ssl_tls13_use_jumbo_records_in(ssl)) {
             max_payload = mbedtls_ssl_get_max_in_record_payload(ssl);
+            if (rec->jumbo_len_invalid_as_overflow == 1) {
+                MBEDTLS_SSL_DEBUG_MSG(1, ("invalid jumbo varuint length encoding"));
+                return MBEDTLS_ERR_SSL_INVALID_RECORD;
+            }
         }
 #endif /* MBEDTLS_SSL_PROTO_TLS1_3 && MBEDTLS_SUPER_JUMBO_EXTENSION */
 
@@ -5065,7 +5123,7 @@ MBEDTLS_CHECK_RETURN_CRITICAL
 static int ssl_get_next_record(mbedtls_ssl_context *ssl)
 {
     int ret = MBEDTLS_ERR_ERROR_CORRUPTION_DETECTED;
-    mbedtls_record rec;
+    mbedtls_record rec = { 0 };
 
 #if defined(MBEDTLS_SSL_PROTO_DTLS)
     /* We might have buffered a future record; if so,
@@ -5114,14 +5172,39 @@ static int ssl_get_next_record(mbedtls_ssl_context *ssl)
         if (ssl->conf->transport == MBEDTLS_SSL_TRANSPORT_STREAM &&
             ssl_tls13_use_jumbo_records_in(ssl) &&
             ret == MBEDTLS_ERR_SSL_INVALID_RECORD) {
-            size_t max_payload = mbedtls_ssl_get_max_in_record_payload(ssl);
-            if (rec.data_len > max_payload) {
-                MBEDTLS_SSL_PEND_FATAL_ALERT(MBEDTLS_SSL_ALERT_MSG_RECORD_OVERFLOW,
-                                             MBEDTLS_ERR_SSL_INVALID_RECORD);
-            } else {
+            int overflow_like = 0;
+
+            if (rec.jumbo_len_invalid_as_overflow == 1) {
+                overflow_like = 1;
+            } else if (rec.data_offset > 0) {
+                size_t max_payload = mbedtls_ssl_get_max_in_record_payload(ssl);
+                if (rec.data_len > max_payload) {
+                    overflow_like = 1;
+                }
+            }
+
+            if (!overflow_like) {
                 MBEDTLS_SSL_PEND_FATAL_ALERT(MBEDTLS_SSL_ALERT_MSG_DECODE_ERROR,
                                              MBEDTLS_ERR_SSL_INVALID_RECORD);
+                return MBEDTLS_ERR_SSL_INVALID_RECORD;
             }
+
+            /* Draft-03: oversized records or invalid varuint encodings are
+             * treated as exceeding the record size limit and discarded. */
+            if (rec.data_offset > 0 && rec.data_len > 0 &&
+                rec.data_offset <= SIZE_MAX - rec.data_len) {
+                size_t record_len = rec.data_offset + rec.data_len;
+
+                ret = mbedtls_ssl_fetch_input(ssl, record_len);
+                if (ret != 0) {
+                    MBEDTLS_SSL_DEBUG_RET(1, "mbedtls_ssl_fetch_input", ret);
+                    return ret;
+                }
+            }
+
+            ssl->in_left = 0;
+            MBEDTLS_SSL_DEBUG_MSG(1, ("discarding invalid jumbo record (header)"));
+            return MBEDTLS_ERR_SSL_CONTINUE_PROCESSING;
         }
 #endif /* MBEDTLS_SSL_PROTO_TLS1_3 && MBEDTLS_SUPER_JUMBO_EXTENSION */
 #if defined(MBEDTLS_SSL_PROTO_DTLS)

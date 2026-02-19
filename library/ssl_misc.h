@@ -1243,6 +1243,8 @@ typedef struct {
 
 #if defined(MBEDTLS_SSL_PROTO_TLS1_3) && defined(MBEDTLS_SUPER_JUMBO_EXTENSION)
     uint8_t tls13_large_record; /* Use TLSLargeCiphertext format (draft).    */
+    uint8_t jumbo_len_invalid_as_overflow; /* Invalid jumbo varuint length
+                                            * encoding; treat as overflow.     */
 #endif /* MBEDTLS_SSL_PROTO_TLS1_3 && MBEDTLS_SUPER_JUMBO_EXTENSION */
 
     unsigned char *buf;     /* Memory buffer enclosing the record content    */
