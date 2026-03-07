@@ -484,6 +484,19 @@
 #define MBEDTLS_SSL_DTLS_CONNECTION_ID
 
 /**
+ * \def MBEDTLS_SSL_DTLS_CONNECTION_ID_RRC
+ *
+ * Enable support for Return Routability Check (RRC) for DTLS when
+ * Connection ID (CID) is in use. The RRC functionality is described
+ * in RFC 9853.
+ *
+ * Requires: MBEDTLS_SSL_DTLS_CONNECTION_ID
+ *
+ * Comment this to disable RRC while keeping CID support enabled.
+ */
+#define MBEDTLS_SSL_DTLS_CONNECTION_ID_RRC
+
+/**
  * \def MBEDTLS_SSL_DTLS_HELLO_VERIFY
  *
  * Enable support for HelloVerifyRequest on DTLS servers.

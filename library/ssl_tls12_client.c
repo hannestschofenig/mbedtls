@@ -232,6 +232,36 @@ static int ssl_write_cid_ext(mbedtls_ssl_context *ssl,
 
     return 0;
 }
+
+#if defined(MBEDTLS_SSL_DTLS_CONNECTION_ID_RRC)
+MBEDTLS_CHECK_RETURN_CRITICAL
+static int ssl_write_rrc_ext(mbedtls_ssl_context *ssl,
+                             unsigned char *buf,
+                             const unsigned char *end,
+                             size_t *olen)
+{
+    unsigned char *p = buf;
+
+    *olen = 0;
+    if (ssl->conf->transport != MBEDTLS_SSL_TRANSPORT_DATAGRAM ||
+        ssl->negotiate_cid == MBEDTLS_SSL_CID_DISABLED) {
+        return 0;
+    }
+
+    MBEDTLS_SSL_DEBUG_MSG(3, ("client hello, adding RRC extension"));
+
+    MBEDTLS_SSL_CHK_BUF_PTR(p, end, 4);
+
+    MBEDTLS_PUT_UINT16_BE(MBEDTLS_TLS_EXT_RRC, p, 0);
+    p += 2;
+    MBEDTLS_PUT_UINT16_BE(0, p, 0);
+    p += 2;
+
+    *olen = 4;
+
+    return 0;
+}
+#endif /* MBEDTLS_SSL_DTLS_CONNECTION_ID_RRC */
 #endif /* MBEDTLS_SSL_DTLS_CONNECTION_ID */
 
 #if defined(MBEDTLS_SSL_MAX_FRAGMENT_LENGTH)
@@ -544,6 +574,14 @@ int mbedtls_ssl_tls12_write_client_hello_exts(mbedtls_ssl_context *ssl,
         return ret;
     }
     p += ext_len;
+
+#if defined(MBEDTLS_SSL_DTLS_CONNECTION_ID_RRC)
+    if ((ret = ssl_write_rrc_ext(ssl, p, end, &ext_len)) != 0) {
+        MBEDTLS_SSL_DEBUG_RET(1, "ssl_write_rrc_ext", ret);
+        return ret;
+    }
+    p += ext_len;
+#endif /* MBEDTLS_SSL_DTLS_CONNECTION_ID_RRC */
 #endif /* MBEDTLS_SSL_DTLS_CONNECTION_ID */
 
 #if defined(MBEDTLS_SSL_MAX_FRAGMENT_LENGTH)
@@ -709,6 +747,35 @@ static int ssl_parse_cid_ext(mbedtls_ssl_context *ssl,
 
     return 0;
 }
+
+#if defined(MBEDTLS_SSL_DTLS_CONNECTION_ID_RRC)
+MBEDTLS_CHECK_RETURN_CRITICAL
+static int ssl_parse_rrc_ext(mbedtls_ssl_context *ssl,
+                             const unsigned char *buf,
+                             size_t len)
+{
+    if (ssl->conf->transport != MBEDTLS_SSL_TRANSPORT_DATAGRAM ||
+        ssl->negotiate_cid == MBEDTLS_SSL_CID_DISABLED) {
+        MBEDTLS_SSL_DEBUG_MSG(1, ("RRC extension unexpected"));
+        mbedtls_ssl_send_alert_message(ssl, MBEDTLS_SSL_ALERT_LEVEL_FATAL,
+                                       MBEDTLS_SSL_ALERT_MSG_UNSUPPORTED_EXT);
+        return MBEDTLS_ERR_SSL_UNSUPPORTED_EXTENSION;
+    }
+
+    if (len != 0) {
+        MBEDTLS_SSL_DEBUG_MSG(1, ("RRC extension invalid"));
+        mbedtls_ssl_send_alert_message(ssl, MBEDTLS_SSL_ALERT_LEVEL_FATAL,
+                                       MBEDTLS_SSL_ALERT_MSG_DECODE_ERROR);
+        return MBEDTLS_ERR_SSL_DECODE_ERROR;
+    }
+
+    (void) buf;
+    ssl->handshake->rrc_in_use = MBEDTLS_SSL_CID_ENABLED;
+    MBEDTLS_SSL_DEBUG_MSG(3, ("Use of RRC extension negotiated"));
+
+    return 0;
+}
+#endif /* MBEDTLS_SSL_DTLS_CONNECTION_ID_RRC */
 #endif /* MBEDTLS_SSL_DTLS_CONNECTION_ID */
 
 #if defined(MBEDTLS_SSL_ENCRYPT_THEN_MAC)
@@ -1455,6 +1522,18 @@ static int ssl_parse_server_hello(mbedtls_ssl_context *ssl)
                 break;
 #endif /* MBEDTLS_SSL_DTLS_CONNECTION_ID */
 
+#if defined(MBEDTLS_SSL_DTLS_CONNECTION_ID) && \
+    defined(MBEDTLS_SSL_DTLS_CONNECTION_ID_RRC)
+            case MBEDTLS_TLS_EXT_RRC:
+                MBEDTLS_SSL_DEBUG_MSG(3, ("found RRC extension"));
+
+                if ((ret = ssl_parse_rrc_ext(ssl, ext + 4, ext_size)) != 0) {
+                    return ret;
+                }
+
+                break;
+#endif /* MBEDTLS_SSL_DTLS_CONNECTION_ID && MBEDTLS_SSL_DTLS_CONNECTION_ID_RRC */
+
 #if defined(MBEDTLS_SSL_ENCRYPT_THEN_MAC)
             case MBEDTLS_TLS_EXT_ENCRYPT_THEN_MAC:
                 MBEDTLS_SSL_DEBUG_MSG(3, ("found encrypt_then_mac extension"));
@@ -1556,6 +1635,17 @@ static int ssl_parse_server_hello(mbedtls_ssl_context *ssl)
             return MBEDTLS_ERR_SSL_DECODE_ERROR;
         }
     }
+
+#if defined(MBEDTLS_SSL_DTLS_CONNECTION_ID) && \
+    defined(MBEDTLS_SSL_DTLS_CONNECTION_ID_RRC)
+    if (ssl->handshake->rrc_in_use == MBEDTLS_SSL_CID_ENABLED &&
+        ssl->handshake->cid_in_use == MBEDTLS_SSL_CID_DISABLED) {
+        MBEDTLS_SSL_DEBUG_MSG(1, ("RRC extension negotiated without CID"));
+        mbedtls_ssl_send_alert_message(ssl, MBEDTLS_SSL_ALERT_LEVEL_FATAL,
+                                       MBEDTLS_SSL_ALERT_MSG_ILLEGAL_PARAMETER);
+        return MBEDTLS_ERR_SSL_ILLEGAL_PARAMETER;
+    }
+#endif
 
     /*
      * mbedtls_ssl_derive_keys() has to be called after the parsing of the

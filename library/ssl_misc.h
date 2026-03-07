@@ -879,6 +879,10 @@ struct mbedtls_ssl_handshake_params {
     unsigned char peer_cid[MBEDTLS_SSL_CID_OUT_LEN_MAX];   /*! The peer's CID */
     uint8_t peer_cid_len;                                  /*!< The length of
                                                             *   \c peer_cid.  */
+#if defined(MBEDTLS_SSL_DTLS_CONNECTION_ID_RRC)
+    uint8_t rrc_in_use; /*!< This indicates whether use of the RRC extension
+                         *   has been negotiated in this handshake. */
+#endif /* MBEDTLS_SSL_DTLS_CONNECTION_ID_RRC */
 #endif /* MBEDTLS_SSL_DTLS_CONNECTION_ID */
 
     uint16_t mtu;                       /*!<  Handshake mtu, used to fragment outgoing messages */
@@ -1106,6 +1110,9 @@ struct mbedtls_ssl_transform {
     uint8_t out_cid_len;
     unsigned char in_cid[MBEDTLS_SSL_CID_IN_LEN_MAX];
     unsigned char out_cid[MBEDTLS_SSL_CID_OUT_LEN_MAX];
+#if defined(MBEDTLS_SSL_DTLS_CONNECTION_ID_RRC)
+    uint8_t rrc_in_use;
+#endif
 #endif /* MBEDTLS_SSL_DTLS_CONNECTION_ID */
 
 #if defined(MBEDTLS_SSL_KEEP_RANDBYTES)

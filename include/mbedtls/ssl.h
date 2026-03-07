@@ -526,6 +526,7 @@
 #define MBEDTLS_SSL_MSG_HANDSHAKE              22
 #define MBEDTLS_SSL_MSG_APPLICATION_DATA       23
 #define MBEDTLS_SSL_MSG_CID                    25
+#define MBEDTLS_SSL_MSG_RETURN_ROUTABILITY_CHECK 27
 
 #define MBEDTLS_SSL_ALERT_LEVEL_WARNING         1
 #define MBEDTLS_SSL_ALERT_LEVEL_FATAL           2
@@ -622,6 +623,7 @@
 #define MBEDTLS_TLS_EXT_KEY_SHARE                   51 /* RFC 8446 TLS 1.3 */
 
 #define MBEDTLS_TLS_EXT_CID                         54 /* RFC 9146 DTLS 1.2 CID */
+#define MBEDTLS_TLS_EXT_RRC                         61 /* RFC 9853 DTLS 1.2/1.3 RRC */
 
 #define MBEDTLS_TLS_EXT_ECJPAKE_KKPP               256 /* experimental */
 

@@ -203,6 +203,16 @@
 #error "MBEDTLS_SSL_DTLS_CONNECTION_ID  defined, but not all prerequisites"
 #endif
 
+#if defined(MBEDTLS_SSL_DTLS_CONNECTION_ID_RRC) && \
+    !defined(MBEDTLS_SSL_DTLS_CONNECTION_ID)
+#error "MBEDTLS_SSL_DTLS_CONNECTION_ID_RRC defined, but MBEDTLS_SSL_DTLS_CONNECTION_ID is not"
+#endif
+
+#if defined(MBEDTLS_SSL_DTLS_CONNECTION_ID_RRC) &&                              \
+    ( !defined(MBEDTLS_SSL_TLS_C) || !defined(MBEDTLS_SSL_PROTO_DTLS) )
+#error "MBEDTLS_SSL_DTLS_CONNECTION_ID_RRC defined, but not all prerequisites"
+#endif
+
 #if defined(MBEDTLS_SSL_DTLS_CONNECTION_ID)            &&                 \
     defined(MBEDTLS_SSL_CID_IN_LEN_MAX) &&                 \
     MBEDTLS_SSL_CID_IN_LEN_MAX > 255

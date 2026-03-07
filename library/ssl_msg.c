@@ -3500,12 +3500,81 @@ static int ssl_check_record_type(uint8_t record_type)
     if (record_type != MBEDTLS_SSL_MSG_HANDSHAKE &&
         record_type != MBEDTLS_SSL_MSG_ALERT &&
         record_type != MBEDTLS_SSL_MSG_CHANGE_CIPHER_SPEC &&
-        record_type != MBEDTLS_SSL_MSG_APPLICATION_DATA) {
+        record_type != MBEDTLS_SSL_MSG_APPLICATION_DATA &&
+#if defined(MBEDTLS_SSL_DTLS_CONNECTION_ID) && \
+    defined(MBEDTLS_SSL_DTLS_CONNECTION_ID_RRC)
+        record_type != MBEDTLS_SSL_MSG_RETURN_ROUTABILITY_CHECK &&
+#endif
+        1) {
         return MBEDTLS_ERR_SSL_INVALID_RECORD;
     }
 
     return 0;
 }
+
+#if defined(MBEDTLS_SSL_DTLS_CONNECTION_ID) && \
+    defined(MBEDTLS_SSL_DTLS_CONNECTION_ID_RRC)
+
+/* RFC 9853 return_routability_check message types. */
+#define MBEDTLS_SSL_RRC_MSG_PATH_CHALLENGE 0
+#define MBEDTLS_SSL_RRC_MSG_PATH_RESPONSE  1
+#define MBEDTLS_SSL_RRC_MSG_PATH_DROP      2
+
+MBEDTLS_CHECK_RETURN_CRITICAL
+static int ssl_handle_rrc_message(mbedtls_ssl_context *ssl)
+{
+    int ret = MBEDTLS_ERR_ERROR_CORRUPTION_DETECTED;
+    unsigned char rrc_type;
+
+    /* RFC 9853, Section 4: rrc message = 1-byte type + 8-byte cookie. */
+    if (ssl->in_msglen < 1) {
+        MBEDTLS_SSL_DEBUG_MSG(1, ("invalid RRC message"));
+        return MBEDTLS_ERR_SSL_INVALID_RECORD;
+    }
+
+    if (ssl->conf->transport != MBEDTLS_SSL_TRANSPORT_DATAGRAM ||
+        ssl->transform_in == NULL ||
+        ssl->transform_out == NULL ||
+        ssl->transform_in->rrc_in_use != MBEDTLS_SSL_CID_ENABLED ||
+        ssl->transform_out->rrc_in_use != MBEDTLS_SSL_CID_ENABLED) {
+        MBEDTLS_SSL_DEBUG_MSG(1, ("dropping unexpected RRC message"));
+        return MBEDTLS_ERR_SSL_NON_FATAL;
+    }
+
+    rrc_type = ssl->in_msg[0];
+
+    if (rrc_type > MBEDTLS_SSL_RRC_MSG_PATH_DROP) {
+        MBEDTLS_SSL_DEBUG_MSG(3, ("ignore unknown RRC message type %u", rrc_type));
+        return MBEDTLS_ERR_SSL_CONTINUE_PROCESSING;
+    }
+
+    if (ssl->in_msglen != 9) {
+        MBEDTLS_SSL_DEBUG_MSG(1, ("invalid RRC message length"));
+        return MBEDTLS_ERR_SSL_INVALID_RECORD;
+    }
+
+    if (rrc_type != MBEDTLS_SSL_RRC_MSG_PATH_CHALLENGE) {
+        /* Client-side implementation: process incoming path_challenge only. */
+        return MBEDTLS_ERR_SSL_CONTINUE_PROCESSING;
+    }
+
+    MBEDTLS_SSL_DEBUG_BUF(3, "RRC path_challenge cookie", ssl->in_msg + 1, 8);
+
+    ssl->out_msgtype = MBEDTLS_SSL_MSG_RETURN_ROUTABILITY_CHECK;
+    ssl->out_msglen = 9;
+    ssl->out_msg[0] = MBEDTLS_SSL_RRC_MSG_PATH_RESPONSE;
+    memcpy(ssl->out_msg + 1, ssl->in_msg + 1, 8);
+
+    ret = mbedtls_ssl_write_record(ssl, SSL_FORCE_FLUSH);
+    if (ret != 0) {
+        MBEDTLS_SSL_DEBUG_RET(1, "mbedtls_ssl_write_record", ret);
+        return ret;
+    }
+
+    MBEDTLS_SSL_DEBUG_MSG(3, ("sent RRC path_response"));
+    return MBEDTLS_ERR_SSL_CONTINUE_PROCESSING;
+}
+#endif /* MBEDTLS_SSL_DTLS_CONNECTION_ID && MBEDTLS_SSL_DTLS_CONNECTION_ID_RRC */
 
 /*
  * ContentType type;
@@ -4957,6 +5026,13 @@ int mbedtls_ssl_handle_message_type(mbedtls_ssl_context *ssl)
         /* Silently ignore: fetch new message */
         return MBEDTLS_ERR_SSL_NON_FATAL;
     }
+
+#if defined(MBEDTLS_SSL_DTLS_CONNECTION_ID) && \
+    defined(MBEDTLS_SSL_DTLS_CONNECTION_ID_RRC)
+    if (ssl->in_msgtype == MBEDTLS_SSL_MSG_RETURN_ROUTABILITY_CHECK) {
+        return ssl_handle_rrc_message(ssl);
+    }
+#endif
 
 #if defined(MBEDTLS_SSL_PROTO_DTLS)
     if (ssl->conf->transport == MBEDTLS_SSL_TRANSPORT_DATAGRAM) {

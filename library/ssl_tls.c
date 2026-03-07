@@ -7741,6 +7741,10 @@ static int ssl_tls12_populate_transform(mbedtls_ssl_transform *transform,
                ssl->handshake->peer_cid_len);
         MBEDTLS_SSL_DEBUG_BUF(3, "Outgoing CID", transform->out_cid,
                               transform->out_cid_len);
+
+#if defined(MBEDTLS_SSL_DTLS_CONNECTION_ID_RRC)
+        transform->rrc_in_use = ssl->handshake->rrc_in_use;
+#endif /* MBEDTLS_SSL_DTLS_CONNECTION_ID_RRC */
     }
 #endif /* MBEDTLS_SSL_DTLS_CONNECTION_ID */
 
