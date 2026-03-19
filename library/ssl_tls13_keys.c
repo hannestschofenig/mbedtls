@@ -290,6 +290,187 @@ int mbedtls_ssl_tls13_make_traffic_keys(
     return 0;
 }
 
+int mbedtls_ssl_tls13_set_application_keys_from_secret(mbedtls_ssl_context *ssl,
+                                                       int direction,
+                                                       const unsigned char *traffic_secret,
+                                                       size_t traffic_secret_len)
+{
+    int ret = MBEDTLS_ERR_ERROR_CORRUPTION_DETECTED;
+    const mbedtls_ssl_ciphersuite_t *ciphersuite_info;
+    psa_algorithm_t hash_alg;
+    size_t hash_len;
+    psa_key_type_t key_type;
+    psa_key_attributes_t attributes = PSA_KEY_ATTRIBUTES_INIT;
+    psa_algorithm_t alg;
+    size_t key_bits;
+    size_t key_len = 0;
+    size_t iv_len = 0;
+    size_t taglen = 0;
+    psa_status_t status = PSA_ERROR_CORRUPTION_DETECTED;
+    mbedtls_ssl_transform *transform;
+    unsigned char new_key[MBEDTLS_SSL_MAX_KEY_LENGTH];
+    unsigned char new_iv[16];
+    mbedtls_svc_key_id_t new_psa_key = MBEDTLS_SVC_KEY_ID_INIT;
+
+    if (ssl == NULL || ssl->session == NULL || ssl->transform_application == NULL) {
+        return MBEDTLS_ERR_SSL_INTERNAL_ERROR;
+    }
+
+    transform = ssl->transform_application;
+
+    ciphersuite_info = mbedtls_ssl_ciphersuite_from_id(ssl->session->ciphersuite);
+    if (ciphersuite_info == NULL) {
+        return MBEDTLS_ERR_SSL_INTERNAL_ERROR;
+    }
+
+    if (ciphersuite_info->flags & MBEDTLS_CIPHERSUITE_SHORT_TAG) {
+        taglen = 8;
+    } else {
+        taglen = 16;
+    }
+
+    status = mbedtls_ssl_cipher_to_psa((mbedtls_cipher_type_t) ciphersuite_info->cipher,
+                                       taglen, &alg, &key_type, &key_bits);
+    if (status != PSA_SUCCESS) {
+        return PSA_TO_MBEDTLS_ERR(status);
+    }
+
+    key_len = PSA_BITS_TO_BYTES(key_bits);
+    iv_len = 12;
+
+    if (key_len > sizeof(new_key) || iv_len > sizeof(new_iv)) {
+        return MBEDTLS_ERR_SSL_INTERNAL_ERROR;
+    }
+
+    hash_alg = mbedtls_md_psa_alg_from_type((mbedtls_md_type_t) ciphersuite_info->mac);
+    hash_len = PSA_HASH_LENGTH(hash_alg);
+
+    if (traffic_secret_len < hash_len) {
+        return MBEDTLS_ERR_SSL_INTERNAL_ERROR;
+    }
+
+    ret = mbedtls_ssl_tls13_hkdf_expand_label(
+        hash_alg,
+        traffic_secret, hash_len,
+        MBEDTLS_SSL_TLS1_3_LBL_WITH_LEN(key),
+        NULL, 0,
+        new_key, key_len);
+    if (ret != 0) {
+        goto cleanup;
+    }
+
+    ret = mbedtls_ssl_tls13_hkdf_expand_label(
+        hash_alg,
+        traffic_secret, hash_len,
+        MBEDTLS_SSL_TLS1_3_LBL_WITH_LEN(iv),
+        NULL, 0,
+        new_iv, iv_len);
+    if (ret != 0) {
+        goto cleanup;
+    }
+
+    psa_set_key_algorithm(&attributes, alg);
+    psa_set_key_type(&attributes, key_type);
+
+    if (direction == MBEDTLS_SSL_TLS1_3_KEY_UPDATE_TX) {
+        psa_set_key_usage_flags(&attributes, PSA_KEY_USAGE_ENCRYPT);
+    } else if (direction == MBEDTLS_SSL_TLS1_3_KEY_UPDATE_RX) {
+        psa_set_key_usage_flags(&attributes, PSA_KEY_USAGE_DECRYPT);
+    } else {
+        return MBEDTLS_ERR_SSL_BAD_INPUT_DATA;
+    }
+
+    status = psa_import_key(&attributes, new_key, key_len, &new_psa_key);
+    if (status != PSA_SUCCESS) {
+        ret = PSA_TO_MBEDTLS_ERR(status);
+        goto cleanup;
+    }
+
+    if (direction == MBEDTLS_SSL_TLS1_3_KEY_UPDATE_TX) {
+        psa_destroy_key(transform->psa_key_enc);
+        transform->psa_key_enc = new_psa_key;
+        memcpy(transform->iv_enc, new_iv, iv_len);
+        memset(ssl->cur_out_ctr, 0, sizeof(ssl->cur_out_ctr));
+    } else {
+        psa_destroy_key(transform->psa_key_dec);
+        transform->psa_key_dec = new_psa_key;
+        memcpy(transform->iv_dec, new_iv, iv_len);
+        memset(ssl->in_ctr, 0, MBEDTLS_SSL_SEQUENCE_NUMBER_LEN);
+    }
+
+    new_psa_key = MBEDTLS_SVC_KEY_ID_INIT;
+    ret = 0;
+
+cleanup:
+    psa_destroy_key(new_psa_key);
+    mbedtls_platform_zeroize(new_key, sizeof(new_key));
+    mbedtls_platform_zeroize(new_iv, sizeof(new_iv));
+    return ret;
+}
+
+int mbedtls_ssl_tls13_update_application_keys(mbedtls_ssl_context *ssl, int direction)
+{
+    int ret = MBEDTLS_ERR_ERROR_CORRUPTION_DETECTED;
+    const mbedtls_ssl_ciphersuite_t *ciphersuite_info;
+    psa_algorithm_t hash_alg;
+    size_t hash_len;
+    unsigned char *traffic_secret;
+    unsigned char new_secret[PSA_HASH_MAX_SIZE];
+
+    if (ssl == NULL || ssl->session == NULL || ssl->transform_application == NULL) {
+        return MBEDTLS_ERR_SSL_INTERNAL_ERROR;
+    }
+
+    ciphersuite_info = mbedtls_ssl_ciphersuite_from_id(ssl->session->ciphersuite);
+    if (ciphersuite_info == NULL) {
+        return MBEDTLS_ERR_SSL_INTERNAL_ERROR;
+    }
+
+    hash_alg = mbedtls_md_psa_alg_from_type((mbedtls_md_type_t) ciphersuite_info->mac);
+    hash_len = PSA_HASH_LENGTH(hash_alg);
+
+    if (hash_len > sizeof(new_secret)) {
+        return MBEDTLS_ERR_SSL_INTERNAL_ERROR;
+    }
+
+    if (direction == MBEDTLS_SSL_TLS1_3_KEY_UPDATE_TX) {
+        if (ssl->conf->endpoint == MBEDTLS_SSL_IS_CLIENT) {
+            traffic_secret = ssl->session->app_secrets.client_application_traffic_secret_N;
+        } else {
+            traffic_secret = ssl->session->app_secrets.server_application_traffic_secret_N;
+        }
+    } else if (direction == MBEDTLS_SSL_TLS1_3_KEY_UPDATE_RX) {
+        if (ssl->conf->endpoint == MBEDTLS_SSL_IS_CLIENT) {
+            traffic_secret = ssl->session->app_secrets.server_application_traffic_secret_N;
+        } else {
+            traffic_secret = ssl->session->app_secrets.client_application_traffic_secret_N;
+        }
+    } else {
+        return MBEDTLS_ERR_SSL_BAD_INPUT_DATA;
+    }
+
+    ret = mbedtls_ssl_tls13_hkdf_expand_label(
+        hash_alg,
+        traffic_secret, hash_len,
+        MBEDTLS_SSL_TLS1_3_LBL_WITH_LEN(traffic_upd),
+        NULL, 0,
+        new_secret, hash_len);
+    if (ret != 0) {
+        return ret;
+    }
+
+    memcpy(traffic_secret, new_secret, hash_len);
+    ret = mbedtls_ssl_tls13_set_application_keys_from_secret(
+        ssl, direction, traffic_secret, hash_len);
+    if (ret != 0) {
+        goto cleanup;
+    }
+
+cleanup:
+    mbedtls_platform_zeroize(new_secret, sizeof(new_secret));
+    return ret;
+}
+
 int mbedtls_ssl_tls13_derive_secret(
     psa_algorithm_t hash_alg,
     const unsigned char *secret, size_t secret_len,
@@ -610,6 +791,14 @@ int mbedtls_ssl_tls13_derive_application_secrets(
     if (ret != 0) {
         return ret;
     }
+
+    memcpy(derived->eku_current_exporter_master_secret,
+           derived->exporter_master_secret, hash_len);
+    mbedtls_platform_zeroize(derived->eku_previous_exporter_master_secret,
+                             sizeof(derived->eku_previous_exporter_master_secret));
+    derived->eku_current_exporter_epoch = 0;
+    derived->eku_previous_exporter_epoch = 0;
+    derived->eku_previous_exporter_valid = 0;
 
     return 0;
 }
@@ -1723,6 +1912,31 @@ int mbedtls_ssl_tls13_compute_resumption_master_secret(mbedtls_ssl_context *ssl)
     if (ret != 0) {
         return ret;
     }
+
+#if defined(MBEDTLS_EXTENDED_KEY_UPDATE)
+    if (ssl->conf->tls13_extended_key_update) {
+        psa_algorithm_t const hash_alg = mbedtls_md_psa_alg_from_type(md_type);
+        size_t const hash_len = PSA_HASH_LENGTH(hash_alg);
+
+        /* Store Derive-Secret(main_secret, "derived", "") for EKU. */
+        ret = mbedtls_ssl_tls13_derive_secret(
+            hash_alg,
+            handshake->tls13_master_secrets.app, hash_len,
+            MBEDTLS_SSL_TLS1_3_LBL_WITH_LEN(derived),
+            NULL, 0,
+            MBEDTLS_SSL_TLS1_3_CONTEXT_UNHASHED,
+            handshake->tls13_eku_salt, hash_len);
+        if (ret != 0) {
+            return ret;
+        }
+
+        handshake->tls13_eku_salt_len = hash_len;
+        handshake->tls13_eku_hash_len = hash_len;
+        memcpy(handshake->tls13_eku_transcript_hash, transcript, transcript_len);
+        handshake->tls13_eku_transcript_hash_len = transcript_len;
+
+    }
+#endif /* MBEDTLS_EXTENDED_KEY_UPDATE */
 
     /* Erase master secrets */
     mbedtls_platform_zeroize(&handshake->tls13_master_secrets,

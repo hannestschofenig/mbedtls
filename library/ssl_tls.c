@@ -599,6 +599,11 @@ uint32_t mbedtls_ssl_get_extension_id(unsigned int extension_type)
         case MBEDTLS_TLS_EXT_SESSION_TICKET:
             return MBEDTLS_SSL_EXT_ID_SESSION_TICKET;
 
+#if defined(MBEDTLS_EXTENDED_KEY_UPDATE)
+        case MBEDTLS_TLS_EXT_TLS_FLAGS:
+            return MBEDTLS_SSL_EXT_ID_TLS_FLAGS;
+#endif
+
     }
 
     return MBEDTLS_SSL_EXT_ID_UNRECOGNIZED;
@@ -639,7 +644,10 @@ static const char *extension_name_table[] = {
     [MBEDTLS_SSL_EXT_ID_ENCRYPT_THEN_MAC] = "encrypt_then_mac",
     [MBEDTLS_SSL_EXT_ID_EXTENDED_MASTER_SECRET] = "extended_master_secret",
     [MBEDTLS_SSL_EXT_ID_SESSION_TICKET] = "session_ticket",
-    [MBEDTLS_SSL_EXT_ID_RECORD_SIZE_LIMIT] = "record_size_limit"
+    [MBEDTLS_SSL_EXT_ID_RECORD_SIZE_LIMIT] = "record_size_limit",
+#if defined(MBEDTLS_EXTENDED_KEY_UPDATE)
+    [MBEDTLS_SSL_EXT_ID_TLS_FLAGS] = "tls_flags"
+#endif
 };
 
 static const unsigned int extension_type_table[] = {
@@ -671,7 +679,10 @@ static const unsigned int extension_type_table[] = {
     [MBEDTLS_SSL_EXT_ID_ENCRYPT_THEN_MAC] = MBEDTLS_TLS_EXT_ENCRYPT_THEN_MAC,
     [MBEDTLS_SSL_EXT_ID_EXTENDED_MASTER_SECRET] = MBEDTLS_TLS_EXT_EXTENDED_MASTER_SECRET,
     [MBEDTLS_SSL_EXT_ID_SESSION_TICKET] = MBEDTLS_TLS_EXT_SESSION_TICKET,
-    [MBEDTLS_SSL_EXT_ID_RECORD_SIZE_LIMIT] = MBEDTLS_TLS_EXT_RECORD_SIZE_LIMIT
+    [MBEDTLS_SSL_EXT_ID_RECORD_SIZE_LIMIT] = MBEDTLS_TLS_EXT_RECORD_SIZE_LIMIT,
+#if defined(MBEDTLS_EXTENDED_KEY_UPDATE)
+    [MBEDTLS_SSL_EXT_ID_TLS_FLAGS] = MBEDTLS_TLS_EXT_TLS_FLAGS
+#endif
 };
 
 const char *mbedtls_ssl_get_extension_name(unsigned int extension_type)
@@ -1051,6 +1062,11 @@ static int ssl_handshake_init(mbedtls_ssl_context *ssl)
     defined(MBEDTLS_SSL_SESSION_TICKETS)
     ssl->handshake->new_session_tickets_count =
         ssl->conf->new_session_tickets_count;
+#if defined(MBEDTLS_EXTENDED_KEY_UPDATE)
+    if (ssl->conf->tls13_extended_key_update) {
+        ssl->handshake->new_session_tickets_count = 0;
+    }
+#endif
 #endif
 
 #if defined(MBEDTLS_SSL_PROTO_DTLS)
@@ -1413,6 +1429,9 @@ int mbedtls_ssl_session_reset_int(mbedtls_ssl_context *ssl, int partial)
     mbedtls_ssl_handshake_set_state(ssl, MBEDTLS_SSL_HELLO_REQUEST);
     ssl->flags &= MBEDTLS_SSL_CONTEXT_FLAGS_KEEP_AT_SESSION;
     ssl->tls_version = ssl->conf->max_tls_version;
+#if defined(MBEDTLS_SSL_PROTO_TLS1_3) && defined(MBEDTLS_EXTENDED_KEY_UPDATE)
+    ssl->tls13_eku_negotiated = 0;
+#endif
 
     mbedtls_ssl_session_reset_msg_layer(ssl, partial);
 
@@ -1643,6 +1662,14 @@ void mbedtls_ssl_conf_tls13_key_exchange_modes(mbedtls_ssl_config *conf,
 {
     conf->tls13_kex_modes = kex_modes & MBEDTLS_SSL_TLS1_3_KEY_EXCHANGE_MODE_ALL;
 }
+
+#if defined(MBEDTLS_EXTENDED_KEY_UPDATE)
+void mbedtls_ssl_conf_tls13_extended_key_update(mbedtls_ssl_config *conf,
+                                                int enable)
+{
+    conf->tls13_extended_key_update = (enable != 0);
+}
+#endif /* MBEDTLS_EXTENDED_KEY_UPDATE */
 
 #if defined(MBEDTLS_SSL_EARLY_DATA)
 void mbedtls_ssl_conf_early_data(mbedtls_ssl_config *conf,
@@ -4457,6 +4484,105 @@ int mbedtls_ssl_renegotiate(mbedtls_ssl_context *ssl)
 }
 #endif /* MBEDTLS_SSL_RENEGOTIATION */
 
+#if defined(MBEDTLS_SSL_PROTO_TLS1_3)
+#if defined(MBEDTLS_KEY_UPDATE)
+int mbedtls_ssl_tls13_key_update(mbedtls_ssl_context *ssl, int request_update)
+{
+    int ret = MBEDTLS_ERR_ERROR_CORRUPTION_DETECTED;
+
+    if (ssl == NULL || ssl->conf == NULL) {
+        return MBEDTLS_ERR_SSL_BAD_INPUT_DATA;
+    }
+
+    if (ssl->conf->transport != MBEDTLS_SSL_TRANSPORT_STREAM) {
+        return MBEDTLS_ERR_SSL_FEATURE_UNAVAILABLE;
+    }
+
+    if (ssl->tls_version != MBEDTLS_SSL_VERSION_TLS1_3 ||
+        mbedtls_ssl_is_handshake_over(ssl) == 0 ||
+        ssl->handshake == NULL) {
+        return MBEDTLS_ERR_SSL_BAD_INPUT_DATA;
+    }
+
+#if defined(MBEDTLS_EXTENDED_KEY_UPDATE)
+    if (ssl->tls13_eku_negotiated) {
+        return MBEDTLS_ERR_SSL_FEATURE_UNAVAILABLE;
+    }
+#endif
+
+    if (request_update != 0 && request_update != 1) {
+        return MBEDTLS_ERR_SSL_BAD_INPUT_DATA;
+    }
+
+    if (ssl->state == MBEDTLS_SSL_TLS1_3_KEY_UPDATE_SEND ||
+        ssl->state == MBEDTLS_SSL_TLS1_3_KEY_UPDATE_SEND_FLUSH) {
+        return mbedtls_ssl_handshake(ssl);
+    }
+
+    if (ssl->out_left != 0) {
+        ret = mbedtls_ssl_flush_output(ssl);
+        if (ret != 0) {
+            return ret;
+        }
+    }
+
+    ssl->handshake->tls13_key_update_out_request = (uint8_t) request_update;
+    mbedtls_ssl_handshake_set_state(ssl, MBEDTLS_SSL_TLS1_3_KEY_UPDATE_SEND);
+
+    return mbedtls_ssl_handshake(ssl);
+}
+#endif /* MBEDTLS_KEY_UPDATE */
+
+#if defined(MBEDTLS_EXTENDED_KEY_UPDATE)
+int mbedtls_ssl_tls13_extended_key_update(mbedtls_ssl_context *ssl)
+{
+    int ret = MBEDTLS_ERR_ERROR_CORRUPTION_DETECTED;
+
+    if (ssl == NULL || ssl->conf == NULL) {
+        return MBEDTLS_ERR_SSL_BAD_INPUT_DATA;
+    }
+
+    if (ssl->conf->transport != MBEDTLS_SSL_TRANSPORT_STREAM) {
+        return MBEDTLS_ERR_SSL_FEATURE_UNAVAILABLE;
+    }
+
+    if (!ssl->tls13_eku_negotiated) {
+        return MBEDTLS_ERR_SSL_FEATURE_UNAVAILABLE;
+    }
+
+    if (ssl->tls_version != MBEDTLS_SSL_VERSION_TLS1_3 ||
+        mbedtls_ssl_is_handshake_over(ssl) == 0 ||
+        ssl->handshake == NULL) {
+        return MBEDTLS_ERR_SSL_BAD_INPUT_DATA;
+    }
+
+    if (ssl->state == MBEDTLS_SSL_TLS1_3_EKU_SEND_REQUEST ||
+        ssl->state == MBEDTLS_SSL_TLS1_3_EKU_SEND_REQUEST_FLUSH ||
+        ssl->state == MBEDTLS_SSL_TLS1_3_EKU_SEND_NKU ||
+        ssl->state == MBEDTLS_SSL_TLS1_3_EKU_SEND_NKU_FLUSH) {
+        return mbedtls_ssl_handshake(ssl);
+    }
+
+    if (ssl->out_left != 0) {
+        ret = mbedtls_ssl_flush_output(ssl);
+        if (ret != 0) {
+            return ret;
+        }
+    }
+
+    if (ssl->handshake->tls13_eku_state != MBEDTLS_SSL_TLS1_3_EKU_IDLE) {
+        return MBEDTLS_ERR_SSL_BAD_INPUT_DATA;
+    }
+
+    ssl->handshake->tls13_eku_outgoing_type =
+        MBEDTLS_SSL_TLS1_3_EKU_TYPE_KEY_UPDATE_REQUEST;
+    mbedtls_ssl_handshake_set_state(ssl, MBEDTLS_SSL_TLS1_3_EKU_SEND_REQUEST);
+
+    return mbedtls_ssl_handshake(ssl);
+}
+#endif /* MBEDTLS_EXTENDED_KEY_UPDATE */
+#endif /* MBEDTLS_SSL_PROTO_TLS1_3 */
+
 void mbedtls_ssl_handshake_free(mbedtls_ssl_context *ssl)
 {
     mbedtls_ssl_handshake_params *handshake = ssl->handshake;
@@ -5602,6 +5728,9 @@ int mbedtls_ssl_config_defaults(mbedtls_ssl_config *conf,
      * Allow all TLS 1.3 key exchange modes by default.
      */
     conf->tls13_kex_modes = MBEDTLS_SSL_TLS1_3_KEY_EXCHANGE_MODE_ALL;
+#if defined(MBEDTLS_EXTENDED_KEY_UPDATE)
+    conf->tls13_extended_key_update = 0;
+#endif
 #endif /* MBEDTLS_SSL_PROTO_TLS1_3 */
 
     if (transport == MBEDTLS_SSL_TRANSPORT_DATAGRAM) {
@@ -9038,18 +9167,18 @@ static int mbedtls_ssl_tls12_export_keying_material(const mbedtls_ssl_context *s
 #endif /* defined(MBEDTLS_SSL_PROTO_TLS1_2) */
 
 #if defined(MBEDTLS_SSL_PROTO_TLS1_3)
-static int mbedtls_ssl_tls13_export_keying_material(mbedtls_ssl_context *ssl,
-                                                    const mbedtls_md_type_t hash_alg,
-                                                    uint8_t *out,
-                                                    const size_t key_len,
-                                                    const char *label,
-                                                    const size_t label_len,
-                                                    const unsigned char *context,
-                                                    const size_t context_len)
+static int mbedtls_ssl_tls13_export_keying_material_from_secret(
+    const mbedtls_md_type_t hash_alg,
+    const unsigned char *secret,
+    uint8_t *out,
+    const size_t key_len,
+    const char *label,
+    const size_t label_len,
+    const unsigned char *context,
+    const size_t context_len)
 {
     const psa_algorithm_t psa_hash_alg = mbedtls_md_psa_alg_from_type(hash_alg);
-    const size_t hash_len = PSA_HASH_LENGTH(hash_alg);
-    const unsigned char *secret = ssl->session->app_secrets.exporter_master_secret;
+    const size_t hash_len = PSA_HASH_LENGTH(psa_hash_alg);
 
     /* The length of the label must be at most 249 bytes to fit into the HkdfLabel
      * struct as defined in RFC 8446, Section 7.1.
@@ -9066,6 +9195,60 @@ static int mbedtls_ssl_tls13_export_keying_material(mbedtls_ssl_context *ssl,
                                       context, context_len, out, key_len);
 }
 #endif /* defined(MBEDTLS_SSL_PROTO_TLS1_3) */
+
+#if defined(MBEDTLS_SSL_PROTO_TLS1_3) && defined(MBEDTLS_EXTENDED_KEY_UPDATE)
+int mbedtls_ssl_tls13_get_exporter_epoch(const mbedtls_ssl_context *ssl,
+                                         uint64_t *epoch)
+{
+    if (ssl == NULL || epoch == NULL || ssl->session == NULL ||
+        ssl->state < MBEDTLS_SSL_HANDSHAKE_OVER ||
+        ssl->tls_version != MBEDTLS_SSL_VERSION_TLS1_3) {
+        return MBEDTLS_ERR_SSL_BAD_INPUT_DATA;
+    }
+
+    *epoch = ssl->session->app_secrets.eku_current_exporter_epoch;
+    return 0;
+}
+
+int mbedtls_ssl_tls13_export_keying_material_for_epoch(
+    mbedtls_ssl_context *ssl,
+    uint64_t epoch,
+    uint8_t *out, const size_t key_len,
+    const char *label, const size_t label_len,
+    const unsigned char *context, const size_t context_len)
+{
+    const mbedtls_ssl_ciphersuite_t *ciphersuite = NULL;
+    const unsigned char *secret = NULL;
+
+    if (ssl == NULL || ssl->session == NULL || !mbedtls_ssl_is_handshake_over(ssl) ||
+        ssl->tls_version != MBEDTLS_SSL_VERSION_TLS1_3) {
+        return MBEDTLS_ERR_SSL_BAD_INPUT_DATA;
+    }
+
+    if (key_len > MBEDTLS_SSL_EXPORT_MAX_KEY_LEN) {
+        return MBEDTLS_ERR_SSL_BAD_INPUT_DATA;
+    }
+
+    ciphersuite = mbedtls_ssl_ciphersuite_from_id(
+        mbedtls_ssl_get_ciphersuite_id_from_ssl(ssl));
+    if (ciphersuite == NULL) {
+        return MBEDTLS_ERR_SSL_INTERNAL_ERROR;
+    }
+
+    if (epoch == ssl->session->app_secrets.eku_current_exporter_epoch) {
+        secret = ssl->session->app_secrets.eku_current_exporter_master_secret;
+    } else if (ssl->session->app_secrets.eku_previous_exporter_valid &&
+               epoch == ssl->session->app_secrets.eku_previous_exporter_epoch) {
+        secret = ssl->session->app_secrets.eku_previous_exporter_master_secret;
+    } else {
+        return MBEDTLS_ERR_SSL_FEATURE_UNAVAILABLE;
+    }
+
+    return mbedtls_ssl_tls13_export_keying_material_from_secret(
+        ciphersuite->mac, secret, out, key_len,
+        label, label_len, context, context_len);
+}
+#endif /* MBEDTLS_SSL_PROTO_TLS1_3 && MBEDTLS_EXTENDED_KEY_UPDATE */
 
 int mbedtls_ssl_export_keying_material(mbedtls_ssl_context *ssl,
                                        uint8_t *out, const size_t key_len,
@@ -9095,14 +9278,15 @@ int mbedtls_ssl_export_keying_material(mbedtls_ssl_context *ssl,
 #endif
 #if defined(MBEDTLS_SSL_PROTO_TLS1_3)
         case MBEDTLS_SSL_VERSION_TLS1_3:
-            return mbedtls_ssl_tls13_export_keying_material(ssl,
-                                                            hash_alg,
-                                                            out,
-                                                            key_len,
-                                                            label,
-                                                            label_len,
-                                                            use_context ? context : NULL,
-                                                            use_context ? context_len : 0);
+            return mbedtls_ssl_tls13_export_keying_material_from_secret(
+                hash_alg,
+                ssl->session->app_secrets.exporter_master_secret,
+                out,
+                key_len,
+                label,
+                label_len,
+                use_context ? context : NULL,
+                use_context ? context_len : 0);
 #endif
         default:
             return MBEDTLS_ERR_SSL_BAD_PROTOCOL_VERSION;

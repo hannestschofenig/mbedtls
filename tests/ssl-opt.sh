@@ -3035,6 +3035,115 @@ requires_config_enabled MBEDTLS_SSL_TLS1_3_KEY_EXCHANGE_MODE_EPHEMERAL_ENABLED
 requires_openssl_tls1_3_with_compatible_ephemeral
 run_test_export_keying_material_openssl_compat tls13
 
+requires_config_enabled MBEDTLS_SSL_PROTO_TLS1_3
+requires_protocol_version tls13
+run_test    "TLS 1.3 KeyUpdate: request peer update" \
+            "$P_SRV debug_level=3 force_version=tls13 exchanges=2" \
+            "$P_CLI debug_level=3 force_version=tls13 exchanges=2 key_update=2" \
+            0 \
+            -s "KeyUpdate: request_update=1" \
+            -c "KeyUpdate: request_update=0"
+
+requires_config_enabled MBEDTLS_SSL_PROTO_TLS1_3
+requires_protocol_version tls13
+run_test    "TLS 1.3 KeyUpdate: no peer update requested" \
+            "$P_SRV debug_level=3 force_version=tls13 exchanges=2" \
+            "$P_CLI debug_level=3 force_version=tls13 exchanges=2 key_update=1" \
+            0 \
+            -s "KeyUpdate: request_update=0" \
+            -C "KeyUpdate received"
+
+requires_config_enabled MBEDTLS_SSL_PROTO_TLS1_3
+requires_protocol_version tls13
+run_test    "TLS 1.3 KeyUpdate: server initiates (no peer update requested)" \
+            "$P_SRV debug_level=3 force_version=tls13 exchanges=2 key_update=1" \
+            "$P_CLI debug_level=3 force_version=tls13 exchanges=2" \
+            0 \
+            -c "KeyUpdate: request_update=0" \
+            -S "KeyUpdate received"
+
+requires_config_enabled MBEDTLS_SSL_PROTO_TLS1_3
+requires_protocol_version tls13
+run_test    "TLS 1.3 KeyUpdate: server initiates (request peer update)" \
+            "$P_SRV debug_level=3 force_version=tls13 exchanges=2 key_update=2" \
+            "$P_CLI debug_level=3 force_version=tls13 exchanges=2" \
+            0 \
+            -c "KeyUpdate: request_update=1" \
+            -s "KeyUpdate: request_update=0"
+
+requires_config_enabled MBEDTLS_SSL_PROTO_TLS1_3
+requires_protocol_version tls13
+run_test    "TLS 1.3 KeyUpdate: both sides initiate" \
+            "$P_SRV debug_level=3 force_version=tls13 exchanges=2 key_update=2" \
+            "$P_CLI debug_level=3 force_version=tls13 exchanges=2 key_update=2" \
+            0 \
+            -c "KeyUpdate received" \
+            -s "KeyUpdate received"
+
+requires_config_enabled MBEDTLS_SSL_PROTO_TLS1_3
+requires_config_enabled MBEDTLS_SSL_TLS1_3_KEY_EXCHANGE_MODE_EPHEMERAL_ENABLED
+requires_protocol_version tls13
+run_test    "TLS 1.3 EKU: client initiates" \
+            "$P_SRV debug_level=3 force_version=tls13 exchanges=2 eku=1" \
+            "$P_CLI debug_level=3 force_version=tls13 exchanges=2 eku=1 eku_updates=1" \
+            0 \
+            -s "EKU: type=0" \
+            -s "EKU: type=2" \
+            -c "EKU: type=1"
+
+requires_config_enabled MBEDTLS_SSL_PROTO_TLS1_3
+requires_config_enabled MBEDTLS_SSL_TLS1_3_KEY_EXCHANGE_MODE_EPHEMERAL_ENABLED
+requires_protocol_version tls13
+run_test    "TLS 1.3 EKU: both sides initiate" \
+            "$P_SRV debug_level=3 force_version=tls13 exchanges=2 eku=1 eku_updates=1" \
+            "$P_CLI debug_level=3 force_version=tls13 exchanges=2 eku=1 eku_updates=1" \
+            0 \
+            -s "EKU: type=" \
+            -c "EKU: type="
+
+requires_config_enabled MBEDTLS_SSL_PROTO_TLS1_3
+requires_config_enabled MBEDTLS_SSL_TLS1_3_KEY_EXCHANGE_MODE_EPHEMERAL_ENABLED
+requires_protocol_version tls13
+run_test    "TLS 1.3 EKU: client initiates (tickets disabled)" \
+            "$P_SRV debug_level=3 force_version=tls13 exchanges=2 eku=1 tickets=0" \
+            "$P_CLI debug_level=3 force_version=tls13 exchanges=2 eku=1 eku_updates=1" \
+            0 \
+            -s "EKU: type=0" \
+            -s "EKU: type=2" \
+            -c "EKU: type=1"
+
+requires_config_enabled MBEDTLS_SSL_PROTO_TLS1_3
+requires_config_enabled MBEDTLS_SSL_TLS1_3_KEY_EXCHANGE_MODE_EPHEMERAL_ENABLED
+requires_protocol_version tls13
+run_test    "TLS 1.3 EKU: client initiates twice" \
+            "$P_SRV debug_level=3 force_version=tls13 exchanges=2 eku=1" \
+            "$P_CLI debug_level=3 force_version=tls13 exchanges=2 eku=1 eku_updates=2" \
+            0 \
+            -s "EKU: type=0" \
+            -s "EKU: type=2" \
+            -c "EKU: type=1"
+
+requires_config_enabled MBEDTLS_SSL_PROTO_TLS1_3
+requires_config_enabled MBEDTLS_SSL_TLS1_3_KEY_EXCHANGE_MODE_EPHEMERAL_ENABLED
+requires_protocol_version tls13
+run_test    "TLS 1.3 EKU: server initiates (after exchange)" \
+            "$P_SRV debug_level=3 force_version=tls13 exchanges=2 eku=1 eku_updates=1 eku_after=1" \
+            "$P_CLI debug_level=3 force_version=tls13 exchanges=2 eku=1" \
+            0 \
+            -s "EKU: type=1" \
+            -c "EKU: type=0" \
+            -c "EKU: type=2"
+
+requires_config_enabled MBEDTLS_SSL_PROTO_TLS1_3
+requires_config_enabled MBEDTLS_SSL_TLS1_3_KEY_EXCHANGE_MODE_EPHEMERAL_ENABLED
+requires_protocol_version tls13
+run_test    "TLS 1.3 EKU: timed appdata exchanges" \
+            "$P_SRV debug_level=3 force_version=tls13 exchanges=0 appdata_seconds=1 eku=1 eku_updates=1 eku_after=1" \
+            "$P_CLI debug_level=3 force_version=tls13 exchanges=0 appdata_seconds=1 eku=1 eku_after=1" \
+            0 \
+            -s "EKU: type=" \
+            -c "EKU: type="
+
 rm -f context_srv.txt
 rm -f context_cli.txt
 

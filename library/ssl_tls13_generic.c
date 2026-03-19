@@ -81,6 +81,1019 @@ cleanup:
     return ret;
 }
 
+#if defined(MBEDTLS_KEY_UPDATE)
+/* TLS 1.3 KeyUpdate (RFC 8446, Section 4.6.3). */
+#define MBEDTLS_SSL_TLS1_3_KEY_UPDATE_NOT_REQUESTED 0
+#define MBEDTLS_SSL_TLS1_3_KEY_UPDATE_REQUESTED     1
+
+MBEDTLS_CHECK_RETURN_CRITICAL
+static int ssl_tls13_parse_key_update(const unsigned char *buf,
+                                      const unsigned char *end,
+                                      uint8_t *request_update)
+{
+    if ((size_t) (end - buf) != 1) {
+        return MBEDTLS_ERR_SSL_DECODE_ERROR;
+    }
+
+    if (buf[0] != MBEDTLS_SSL_TLS1_3_KEY_UPDATE_NOT_REQUESTED &&
+        buf[0] != MBEDTLS_SSL_TLS1_3_KEY_UPDATE_REQUESTED) {
+        return MBEDTLS_ERR_SSL_ILLEGAL_PARAMETER;
+    }
+
+    *request_update = buf[0];
+    return 0;
+}
+
+int mbedtls_ssl_tls13_process_key_update(mbedtls_ssl_context *ssl)
+{
+    int ret = MBEDTLS_ERR_ERROR_CORRUPTION_DETECTED;
+    unsigned char *buf = NULL;
+    size_t buf_len = 0;
+    uint8_t request_update = 0;
+
+    MBEDTLS_SSL_DEBUG_MSG(2, ("=> process KeyUpdate"));
+
+    if (mbedtls_ssl_is_handshake_over(ssl) == 0) {
+        MBEDTLS_SSL_PEND_FATAL_ALERT(MBEDTLS_SSL_ALERT_MSG_UNEXPECTED_MESSAGE,
+                                     MBEDTLS_ERR_SSL_UNEXPECTED_MESSAGE);
+        return MBEDTLS_ERR_SSL_UNEXPECTED_MESSAGE;
+    }
+
+    MBEDTLS_SSL_PROC_CHK(mbedtls_ssl_tls13_fetch_handshake_msg(
+                             ssl, MBEDTLS_SSL_HS_KEY_UPDATE, &buf, &buf_len));
+
+    MBEDTLS_SSL_PROC_CHK(ssl_tls13_parse_key_update(buf, buf + buf_len,
+                                                    &request_update));
+
+    MBEDTLS_SSL_DEBUG_MSG(3, ("KeyUpdate: request_update=%u",
+                              (unsigned) request_update));
+
+    MBEDTLS_SSL_PROC_CHK(mbedtls_ssl_tls13_update_application_keys(
+                             ssl, MBEDTLS_SSL_TLS1_3_KEY_UPDATE_RX));
+
+    if (request_update == MBEDTLS_SSL_TLS1_3_KEY_UPDATE_REQUESTED) {
+        ssl->handshake->tls13_key_update_out_request =
+            MBEDTLS_SSL_TLS1_3_KEY_UPDATE_NOT_REQUESTED;
+        mbedtls_ssl_handshake_set_state(ssl, MBEDTLS_SSL_TLS1_3_KEY_UPDATE_SEND);
+    } else {
+        mbedtls_ssl_handshake_set_state(ssl, MBEDTLS_SSL_HANDSHAKE_OVER);
+    }
+
+cleanup:
+    if (ret != 0) {
+        if (ret == MBEDTLS_ERR_SSL_DECODE_ERROR) {
+            MBEDTLS_SSL_PEND_FATAL_ALERT(MBEDTLS_SSL_ALERT_MSG_DECODE_ERROR, ret);
+        } else if (ret == MBEDTLS_ERR_SSL_ILLEGAL_PARAMETER) {
+            MBEDTLS_SSL_PEND_FATAL_ALERT(MBEDTLS_SSL_ALERT_MSG_ILLEGAL_PARAMETER, ret);
+        }
+    }
+
+    MBEDTLS_SSL_DEBUG_MSG(2, ("<= process KeyUpdate"));
+    return ret;
+}
+
+int mbedtls_ssl_tls13_write_key_update(mbedtls_ssl_context *ssl)
+{
+    int ret = MBEDTLS_ERR_ERROR_CORRUPTION_DETECTED;
+    unsigned char *buf;
+    size_t buf_len;
+
+    MBEDTLS_SSL_DEBUG_MSG(2, ("=> write KeyUpdate"));
+
+    if (mbedtls_ssl_is_handshake_over(ssl) == 0) {
+        return MBEDTLS_ERR_SSL_BAD_INPUT_DATA;
+    }
+
+    MBEDTLS_SSL_PROC_CHK(mbedtls_ssl_start_handshake_msg(
+                             ssl, MBEDTLS_SSL_HS_KEY_UPDATE,
+                             &buf, &buf_len));
+
+    MBEDTLS_SSL_CHK_BUF_PTR(buf, buf + buf_len, 1);
+    buf[0] = ssl->handshake->tls13_key_update_out_request;
+
+    MBEDTLS_SSL_PROC_CHK(mbedtls_ssl_finish_handshake_msg(
+                             ssl, buf_len, 1));
+
+    mbedtls_ssl_handshake_set_state(ssl, MBEDTLS_SSL_TLS1_3_KEY_UPDATE_SEND_FLUSH);
+
+cleanup:
+    MBEDTLS_SSL_DEBUG_MSG(2, ("<= write KeyUpdate"));
+    return ret;
+}
+
+int mbedtls_ssl_tls13_key_update_send_flush(mbedtls_ssl_context *ssl)
+{
+    int ret = MBEDTLS_ERR_ERROR_CORRUPTION_DETECTED;
+
+    MBEDTLS_SSL_DEBUG_MSG(2, ("=> KeyUpdate send flush"));
+
+    if (mbedtls_ssl_is_handshake_over(ssl) == 0) {
+        return MBEDTLS_ERR_SSL_BAD_INPUT_DATA;
+    }
+
+    MBEDTLS_SSL_PROC_CHK(mbedtls_ssl_tls13_update_application_keys(
+                             ssl, MBEDTLS_SSL_TLS1_3_KEY_UPDATE_TX));
+
+    mbedtls_ssl_handshake_set_state(ssl, MBEDTLS_SSL_HANDSHAKE_OVER);
+    ret = 0;
+
+cleanup:
+    MBEDTLS_SSL_DEBUG_MSG(2, ("<= KeyUpdate send flush"));
+    return ret;
+}
+#endif /* MBEDTLS_KEY_UPDATE */
+
+#if defined(MBEDTLS_SSL_TLS1_3_KEY_EXCHANGE_MODE_SOME_EPHEMERAL_ENABLED)
+#if defined(MBEDTLS_EXTENDED_KEY_UPDATE)
+/* TLS 1.3 Extended Key Update (EKU) (draft-ietf-tls-extended-key-update). */
+
+MBEDTLS_CHECK_RETURN_CRITICAL
+static int ssl_tls13_eku_parse_body(const unsigned char *buf,
+                                    const unsigned char *end,
+                                    uint8_t *eku_type,
+                                    uint16_t *group,
+                                    const unsigned char **key_exchange,
+                                    size_t *key_exchange_len)
+{
+    const unsigned char *p = buf;
+
+    if ((size_t) (end - p) < 1) {
+        return MBEDTLS_ERR_SSL_DECODE_ERROR;
+    }
+    *eku_type = p[0];
+    p += 1;
+
+    if (*eku_type == MBEDTLS_SSL_TLS1_3_EKU_TYPE_NEW_KEY_UPDATE) {
+        if (p != end) {
+            return MBEDTLS_ERR_SSL_DECODE_ERROR;
+        }
+        *group = 0;
+        *key_exchange = NULL;
+        *key_exchange_len = 0;
+        return 0;
+    }
+
+    if (*eku_type != MBEDTLS_SSL_TLS1_3_EKU_TYPE_KEY_UPDATE_REQUEST &&
+        *eku_type != MBEDTLS_SSL_TLS1_3_EKU_TYPE_KEY_UPDATE_RESPONSE) {
+        return MBEDTLS_ERR_SSL_ILLEGAL_PARAMETER;
+    }
+
+    if ((size_t) (end - p) < 4) {
+        return MBEDTLS_ERR_SSL_DECODE_ERROR;
+    }
+    *group = MBEDTLS_GET_UINT16_BE(p, 0);
+    *key_exchange_len = MBEDTLS_GET_UINT16_BE(p, 2);
+    p += 4;
+
+    if ((size_t) (end - p) < *key_exchange_len) {
+        return MBEDTLS_ERR_SSL_DECODE_ERROR;
+    }
+    if (p + *key_exchange_len != end) {
+        return MBEDTLS_ERR_SSL_DECODE_ERROR;
+    }
+
+    *key_exchange = p;
+    return 0;
+}
+
+MBEDTLS_CHECK_RETURN_CRITICAL
+static int ssl_tls13_eku_extract_secret(psa_algorithm_t hash_alg,
+                                        const unsigned char *salt,
+                                        size_t salt_len,
+                                        const unsigned char *ikm,
+                                        size_t ikm_len,
+                                        unsigned char *out,
+                                        size_t out_len)
+{
+    psa_status_t status = PSA_ERROR_CORRUPTION_DETECTED;
+    psa_status_t abort_status = PSA_ERROR_CORRUPTION_DETECTED;
+    psa_key_derivation_operation_t operation =
+        PSA_KEY_DERIVATION_OPERATION_INIT;
+
+    status = psa_key_derivation_setup(&operation,
+                                      PSA_ALG_HKDF_EXTRACT(hash_alg));
+    if (status != PSA_SUCCESS) {
+        goto cleanup;
+    }
+
+    status = psa_key_derivation_input_bytes(&operation,
+                                            PSA_KEY_DERIVATION_INPUT_SALT,
+                                            salt, salt_len);
+    if (status != PSA_SUCCESS) {
+        goto cleanup;
+    }
+
+    status = psa_key_derivation_input_bytes(&operation,
+                                            PSA_KEY_DERIVATION_INPUT_SECRET,
+                                            ikm, ikm_len);
+    if (status != PSA_SUCCESS) {
+        goto cleanup;
+    }
+
+    status = psa_key_derivation_output_bytes(&operation, out, out_len);
+
+cleanup:
+    abort_status = psa_key_derivation_abort(&operation);
+    status = (status == PSA_SUCCESS ? abort_status : status);
+    return PSA_TO_MBEDTLS_ERR(status);
+}
+
+MBEDTLS_CHECK_RETURN_CRITICAL
+static int ssl_tls13_eku_compute_shared_secret(mbedtls_ssl_context *ssl,
+                                              uint16_t named_group,
+                                              unsigned char **shared_secret,
+                                              size_t *shared_secret_len)
+{
+    int ret = MBEDTLS_ERR_ERROR_CORRUPTION_DETECTED;
+    psa_status_t status = PSA_ERROR_GENERIC_ERROR;
+    psa_key_attributes_t key_attributes = PSA_KEY_ATTRIBUTES_INIT;
+    psa_algorithm_t alg = PSA_ALG_NONE;
+
+    *shared_secret = NULL;
+    *shared_secret_len = 0;
+
+    if (mbedtls_ssl_tls13_named_group_is_ecdhe(named_group)) {
+        alg = PSA_ALG_ECDH;
+    } else if (mbedtls_ssl_tls13_named_group_is_ffdh(named_group)) {
+        alg = PSA_ALG_FFDH;
+    } else {
+        return MBEDTLS_ERR_SSL_FEATURE_UNAVAILABLE;
+    }
+
+    status = psa_get_key_attributes(ssl->handshake->xxdh_psa_privkey,
+                                    &key_attributes);
+    if (status != PSA_SUCCESS) {
+        return PSA_TO_MBEDTLS_ERR(status);
+    }
+
+    *shared_secret_len = PSA_BITS_TO_BYTES(psa_get_key_bits(&key_attributes));
+    *shared_secret = mbedtls_calloc(1, *shared_secret_len);
+    if (*shared_secret == NULL) {
+        return MBEDTLS_ERR_SSL_ALLOC_FAILED;
+    }
+
+    status = psa_raw_key_agreement(
+        alg, ssl->handshake->xxdh_psa_privkey,
+        ssl->handshake->xxdh_psa_peerkey, ssl->handshake->xxdh_psa_peerkey_len,
+        *shared_secret, *shared_secret_len, shared_secret_len);
+    if (status != PSA_SUCCESS) {
+        ret = PSA_TO_MBEDTLS_ERR(status);
+        goto cleanup;
+    }
+
+    status = psa_destroy_key(ssl->handshake->xxdh_psa_privkey);
+    if (status != PSA_SUCCESS) {
+        ret = PSA_TO_MBEDTLS_ERR(status);
+        goto cleanup;
+    }
+    ssl->handshake->xxdh_psa_privkey = MBEDTLS_SVC_KEY_ID_INIT;
+
+    ret = 0;
+
+cleanup:
+    if (ret != 0 && *shared_secret != NULL) {
+        mbedtls_zeroize_and_free(*shared_secret, *shared_secret_len);
+        *shared_secret = NULL;
+        *shared_secret_len = 0;
+    }
+    return ret;
+}
+
+MBEDTLS_CHECK_RETURN_CRITICAL
+static int ssl_tls13_eku_hash_message(psa_hash_operation_t *operation,
+                                      unsigned hs_type,
+                                      const unsigned char *msg,
+                                      size_t msg_len)
+{
+    unsigned char hs_hdr[4];
+    psa_status_t status;
+
+    hs_hdr[0] = MBEDTLS_BYTE_0(hs_type);
+    hs_hdr[1] = MBEDTLS_BYTE_2(msg_len);
+    hs_hdr[2] = MBEDTLS_BYTE_1(msg_len);
+    hs_hdr[3] = MBEDTLS_BYTE_0(msg_len);
+
+    status = psa_hash_update(operation, hs_hdr, sizeof(hs_hdr));
+    if (status != PSA_SUCCESS) {
+        return PSA_TO_MBEDTLS_ERR(status);
+    }
+
+    status = psa_hash_update(operation, msg, msg_len);
+    return PSA_TO_MBEDTLS_ERR(status);
+}
+
+MBEDTLS_CHECK_RETURN_CRITICAL
+static int ssl_tls13_eku_compute_transcript_hash_next(
+    psa_algorithm_t hash_alg,
+    const unsigned char *transcript_hash,
+    size_t transcript_hash_len,
+    const unsigned char *req,
+    size_t req_len,
+    const unsigned char *resp,
+    size_t resp_len,
+    unsigned char *out,
+    size_t out_size,
+    size_t *out_len)
+{
+    int ret = MBEDTLS_ERR_ERROR_CORRUPTION_DETECTED;
+    psa_status_t status = PSA_ERROR_CORRUPTION_DETECTED;
+    psa_status_t abort_status = PSA_ERROR_CORRUPTION_DETECTED;
+    psa_hash_operation_t operation = PSA_HASH_OPERATION_INIT;
+
+    if (transcript_hash == NULL || transcript_hash_len == 0 ||
+        req == NULL || req_len == 0 || resp == NULL || resp_len == 0 ||
+        out == NULL || out_len == NULL) {
+        return MBEDTLS_ERR_SSL_BAD_INPUT_DATA;
+    }
+
+    if (out_size < PSA_HASH_LENGTH(hash_alg)) {
+        return MBEDTLS_ERR_SSL_BAD_INPUT_DATA;
+    }
+
+    status = psa_hash_setup(&operation, hash_alg);
+    if (status != PSA_SUCCESS) {
+        ret = PSA_TO_MBEDTLS_ERR(status);
+        goto cleanup;
+    }
+
+    status = psa_hash_update(&operation, transcript_hash, transcript_hash_len);
+    if (status != PSA_SUCCESS) {
+        ret = PSA_TO_MBEDTLS_ERR(status);
+        goto cleanup;
+    }
+
+    ret = ssl_tls13_eku_hash_message(&operation, MBEDTLS_SSL_HS_EXTENDED_KEY_UPDATE,
+                                     req, req_len);
+    if (ret != 0) {
+        goto cleanup;
+    }
+
+    ret = ssl_tls13_eku_hash_message(&operation, MBEDTLS_SSL_HS_EXTENDED_KEY_UPDATE,
+                                     resp, resp_len);
+    if (ret != 0) {
+        goto cleanup;
+    }
+
+    status = psa_hash_finish(&operation, out, out_size, out_len);
+    ret = PSA_TO_MBEDTLS_ERR(status);
+
+cleanup:
+    abort_status = psa_hash_abort(&operation);
+    if (ret == 0 && abort_status != PSA_SUCCESS) {
+        ret = PSA_TO_MBEDTLS_ERR(abort_status);
+    }
+
+    return ret;
+}
+
+MBEDTLS_CHECK_RETURN_CRITICAL
+static int ssl_tls13_eku_derive_next_secrets(mbedtls_ssl_context *ssl)
+{
+    int ret = MBEDTLS_ERR_ERROR_CORRUPTION_DETECTED;
+    const mbedtls_ssl_ciphersuite_t *ciphersuite_info;
+    psa_algorithm_t hash_alg;
+    size_t hash_len;
+    unsigned char main_secret_next[MBEDTLS_TLS1_3_MD_MAX_SIZE];
+    unsigned char *shared_secret = NULL;
+    size_t shared_secret_len = 0;
+    unsigned char transcript_hash[MBEDTLS_TLS1_3_MD_MAX_SIZE];
+    size_t transcript_hash_len = 0;
+    size_t dump_len = 0;
+
+    if (ssl->handshake->tls13_eku_req_len == 0 ||
+        ssl->handshake->tls13_eku_resp_len == 0 ||
+        ssl->handshake->tls13_eku_salt_len == 0) {
+        return MBEDTLS_ERR_SSL_INTERNAL_ERROR;
+    }
+
+    ciphersuite_info = mbedtls_ssl_ciphersuite_from_id(ssl->session->ciphersuite);
+    if (ciphersuite_info == NULL) {
+        return MBEDTLS_ERR_SSL_INTERNAL_ERROR;
+    }
+
+    hash_alg = mbedtls_md_psa_alg_from_type((mbedtls_md_type_t) ciphersuite_info->mac);
+    hash_len = PSA_HASH_LENGTH(hash_alg);
+
+    if (hash_len > sizeof(main_secret_next) ||
+        ssl->handshake->tls13_eku_salt_len < hash_len ||
+        ssl->handshake->tls13_eku_transcript_hash_len != hash_len) {
+        return MBEDTLS_ERR_SSL_INTERNAL_ERROR;
+    }
+
+    ret = ssl_tls13_eku_compute_shared_secret(ssl, ssl->handshake->offered_group_id,
+                                              &shared_secret, &shared_secret_len);
+    if (ret != 0) {
+        return ret;
+    }
+    dump_len = shared_secret_len > 16 ? 16 : shared_secret_len;
+    MBEDTLS_SSL_DEBUG_MSG(3, ("EKU: shared_secret_len=%" MBEDTLS_PRINTF_SIZET,
+                              shared_secret_len));
+    MBEDTLS_SSL_DEBUG_BUF(4, "EKU: shared_secret prefix",
+                          shared_secret, dump_len);
+
+    ret = ssl_tls13_eku_extract_secret(hash_alg,
+                                       ssl->handshake->tls13_eku_salt, hash_len,
+                                       shared_secret, shared_secret_len,
+                                       main_secret_next, hash_len);
+    if (ret != 0) {
+        goto cleanup;
+    }
+
+    MBEDTLS_SSL_PROC_CHK(ssl_tls13_eku_compute_transcript_hash_next(
+                             hash_alg,
+                             ssl->handshake->tls13_eku_transcript_hash,
+                             ssl->handshake->tls13_eku_transcript_hash_len,
+                             ssl->handshake->tls13_eku_req,
+                             ssl->handshake->tls13_eku_req_len,
+                             ssl->handshake->tls13_eku_resp,
+                             ssl->handshake->tls13_eku_resp_len,
+                             transcript_hash, sizeof(transcript_hash),
+                             &transcript_hash_len));
+
+    MBEDTLS_SSL_DEBUG_MSG(3, ("EKU: req_len=%" MBEDTLS_PRINTF_SIZET
+                              " resp_len=%" MBEDTLS_PRINTF_SIZET,
+                              ssl->handshake->tls13_eku_req_len,
+                              ssl->handshake->tls13_eku_resp_len));
+    if (transcript_hash_len < hash_len) {
+        return MBEDTLS_ERR_SSL_INTERNAL_ERROR;
+    }
+    dump_len = transcript_hash_len > 16 ? 16 : transcript_hash_len;
+    MBEDTLS_SSL_DEBUG_BUF(4, "EKU: transcript hash prefix",
+                          transcript_hash, dump_len);
+
+    ret = mbedtls_ssl_tls13_derive_secret(
+        hash_alg, main_secret_next, hash_len,
+        MBEDTLS_SSL_TLS1_3_LBL_WITH_LEN(c_ap_traffic),
+        transcript_hash, transcript_hash_len,
+        MBEDTLS_SSL_TLS1_3_CONTEXT_HASHED,
+        ssl->handshake->tls13_eku_next_client_app_secret, hash_len);
+    if (ret != 0) {
+        goto cleanup;
+    }
+
+    ret = mbedtls_ssl_tls13_derive_secret(
+        hash_alg, main_secret_next, hash_len,
+        MBEDTLS_SSL_TLS1_3_LBL_WITH_LEN(s_ap_traffic),
+        transcript_hash, transcript_hash_len,
+        MBEDTLS_SSL_TLS1_3_CONTEXT_HASHED,
+        ssl->handshake->tls13_eku_next_server_app_secret, hash_len);
+    if (ret != 0) {
+        goto cleanup;
+    }
+
+    ret = mbedtls_ssl_tls13_derive_secret(
+        hash_alg, main_secret_next, hash_len,
+        MBEDTLS_SSL_TLS1_3_LBL_WITH_LEN(exp_master),
+        transcript_hash, transcript_hash_len,
+        MBEDTLS_SSL_TLS1_3_CONTEXT_HASHED,
+        ssl->handshake->tls13_eku_next_exporter_master_secret, hash_len);
+    if (ret != 0) {
+        goto cleanup;
+    }
+
+    ret = mbedtls_ssl_tls13_derive_secret(
+        hash_alg, main_secret_next, hash_len,
+        MBEDTLS_SSL_TLS1_3_LBL_WITH_LEN(res_master),
+        transcript_hash, transcript_hash_len,
+        MBEDTLS_SSL_TLS1_3_CONTEXT_HASHED,
+        ssl->handshake->tls13_eku_next_resumption_master_secret, hash_len);
+    if (ret != 0) {
+        goto cleanup;
+    }
+
+    /* Update EKU salt for the next generation: Derive-Secret(main_secret_next, "derived", ""). */
+    ret = mbedtls_ssl_tls13_derive_secret(
+        hash_alg, main_secret_next, hash_len,
+        MBEDTLS_SSL_TLS1_3_LBL_WITH_LEN(derived),
+        NULL, 0,
+        MBEDTLS_SSL_TLS1_3_CONTEXT_UNHASHED,
+        ssl->handshake->tls13_eku_salt, hash_len);
+    if (ret != 0) {
+        goto cleanup;
+    }
+
+    ssl->handshake->tls13_eku_salt_len = hash_len;
+    ssl->handshake->tls13_eku_hash_len = hash_len;
+    ssl->handshake->tls13_eku_secrets_ready = 1;
+    memcpy(ssl->handshake->tls13_eku_transcript_hash, transcript_hash, hash_len);
+    ssl->handshake->tls13_eku_transcript_hash_len = hash_len;
+    dump_len = hash_len > 16 ? 16 : hash_len;
+    MBEDTLS_SSL_DEBUG_BUF(4, "EKU: salt prefix",
+                          ssl->handshake->tls13_eku_salt, dump_len);
+    MBEDTLS_SSL_DEBUG_BUF(4, "EKU: next client app secret prefix",
+                          ssl->handshake->tls13_eku_next_client_app_secret, dump_len);
+    MBEDTLS_SSL_DEBUG_BUF(4, "EKU: next server app secret prefix",
+                          ssl->handshake->tls13_eku_next_server_app_secret, dump_len);
+    ret = 0;
+
+cleanup:
+    mbedtls_platform_zeroize(main_secret_next, sizeof(main_secret_next));
+    if (shared_secret != NULL) {
+        mbedtls_zeroize_and_free(shared_secret, shared_secret_len);
+    }
+    mbedtls_platform_zeroize(transcript_hash, sizeof(transcript_hash));
+    return ret;
+}
+
+static void ssl_tls13_eku_commit_exporter_and_resumption(mbedtls_ssl_context *ssl)
+{
+    size_t hash_len = ssl->handshake->tls13_eku_hash_len;
+
+    memcpy(ssl->session->app_secrets.eku_previous_exporter_master_secret,
+           ssl->session->app_secrets.eku_current_exporter_master_secret, hash_len);
+    ssl->session->app_secrets.eku_previous_exporter_epoch =
+        ssl->session->app_secrets.eku_current_exporter_epoch;
+    ssl->session->app_secrets.eku_previous_exporter_valid = 1;
+
+    memcpy(ssl->session->app_secrets.eku_current_exporter_master_secret,
+           ssl->handshake->tls13_eku_next_exporter_master_secret, hash_len);
+    ssl->session->app_secrets.eku_current_exporter_epoch++;
+    memcpy(ssl->session->app_secrets.resumption_master_secret,
+           ssl->handshake->tls13_eku_next_resumption_master_secret, hash_len);
+}
+
+static int ssl_tls13_eku_update_direction(mbedtls_ssl_context *ssl, int direction)
+{
+    const unsigned char *new_secret = NULL;
+    unsigned char *dst_secret = NULL;
+    size_t hash_len = ssl->handshake->tls13_eku_hash_len;
+
+    if (!ssl->handshake->tls13_eku_secrets_ready) {
+        return MBEDTLS_ERR_SSL_INTERNAL_ERROR;
+    }
+
+    MBEDTLS_SSL_DEBUG_MSG(2, ("EKU: update direction=%s endpoint=%s hash_len=%" MBEDTLS_PRINTF_SIZET,
+                              direction == MBEDTLS_SSL_TLS1_3_KEY_UPDATE_TX ? "TX" : "RX",
+                              ssl->conf->endpoint == MBEDTLS_SSL_IS_CLIENT ? "client" : "server",
+                              hash_len));
+
+    if (direction == MBEDTLS_SSL_TLS1_3_KEY_UPDATE_TX) {
+        if (ssl->conf->endpoint == MBEDTLS_SSL_IS_CLIENT) {
+            new_secret = ssl->handshake->tls13_eku_next_client_app_secret;
+            dst_secret = ssl->session->app_secrets.client_application_traffic_secret_N;
+        } else {
+            new_secret = ssl->handshake->tls13_eku_next_server_app_secret;
+            dst_secret = ssl->session->app_secrets.server_application_traffic_secret_N;
+        }
+    } else if (direction == MBEDTLS_SSL_TLS1_3_KEY_UPDATE_RX) {
+        if (ssl->conf->endpoint == MBEDTLS_SSL_IS_CLIENT) {
+            new_secret = ssl->handshake->tls13_eku_next_server_app_secret;
+            dst_secret = ssl->session->app_secrets.server_application_traffic_secret_N;
+        } else {
+            new_secret = ssl->handshake->tls13_eku_next_client_app_secret;
+            dst_secret = ssl->session->app_secrets.client_application_traffic_secret_N;
+        }
+    } else {
+        return MBEDTLS_ERR_SSL_BAD_INPUT_DATA;
+    }
+
+    /* Install keys first, then commit the secret to the session state. */
+    int ret = mbedtls_ssl_tls13_set_application_keys_from_secret(ssl, direction,
+                                                                  new_secret, hash_len);
+    if (ret != 0) {
+        return ret;
+    }
+
+    MBEDTLS_SSL_DEBUG_BUF(4, "EKU: new traffic secret (first 16 bytes)",
+                          new_secret, hash_len > 16 ? 16 : hash_len);
+
+    memcpy(dst_secret, new_secret, hash_len);
+    return 0;
+}
+
+int mbedtls_ssl_tls13_process_extended_key_update(mbedtls_ssl_context *ssl)
+{
+    int ret = MBEDTLS_ERR_ERROR_CORRUPTION_DETECTED;
+    unsigned char *buf = NULL;
+    size_t buf_len = 0;
+    uint8_t eku_type = 0;
+    uint16_t group = 0;
+    const unsigned char *key_exchange = NULL;
+    size_t key_exchange_len = 0;
+
+    MBEDTLS_SSL_DEBUG_MSG(2, ("=> process ExtendedKeyUpdate"));
+
+    if (mbedtls_ssl_is_handshake_over(ssl) == 0) {
+        MBEDTLS_SSL_PEND_FATAL_ALERT(MBEDTLS_SSL_ALERT_MSG_UNEXPECTED_MESSAGE,
+                                     MBEDTLS_ERR_SSL_UNEXPECTED_MESSAGE);
+        return MBEDTLS_ERR_SSL_UNEXPECTED_MESSAGE;
+    }
+
+    if (!ssl->tls13_eku_negotiated) {
+        MBEDTLS_SSL_PEND_FATAL_ALERT(MBEDTLS_SSL_ALERT_MSG_UNEXPECTED_MESSAGE,
+                                     MBEDTLS_ERR_SSL_UNEXPECTED_MESSAGE);
+        return MBEDTLS_ERR_SSL_UNEXPECTED_MESSAGE;
+    }
+
+    while (1) {
+        if ((ret = mbedtls_ssl_read_record(ssl, 0)) != 0) {
+            MBEDTLS_SSL_DEBUG_RET(1, "mbedtls_ssl_read_record", ret);
+            goto cleanup;
+        }
+
+        if (ssl->in_msgtype != MBEDTLS_SSL_MSG_HANDSHAKE ||
+            ssl->in_hslen == mbedtls_ssl_hs_hdr_len(ssl)) {
+            MBEDTLS_SSL_DEBUG_MSG(1, ("Receive unexpected post-handshake message."));
+            MBEDTLS_SSL_PEND_FATAL_ALERT(MBEDTLS_SSL_ALERT_MSG_UNEXPECTED_MESSAGE,
+                                         MBEDTLS_ERR_SSL_UNEXPECTED_MESSAGE);
+            ret = MBEDTLS_ERR_SSL_UNEXPECTED_MESSAGE;
+            goto cleanup;
+        }
+
+#if defined(MBEDTLS_SSL_CLI_C)
+        /*
+         * NewSessionTicket is a legal post-handshake message and can be
+         * interleaved with EKU. We currently ignore tickets while an EKU
+         * exchange is in progress.
+         */
+        if (ssl->conf->endpoint == MBEDTLS_SSL_IS_CLIENT &&
+            ssl->in_msg[0] == MBEDTLS_SSL_HS_NEW_SESSION_TICKET) {
+            MBEDTLS_SSL_DEBUG_MSG(3, ("EKU: ignoring NewSessionTicket"));
+            continue;
+        }
+#endif /* MBEDTLS_SSL_CLI_C */
+
+        if (ssl->in_msg[0] != MBEDTLS_SSL_HS_EXTENDED_KEY_UPDATE) {
+            MBEDTLS_SSL_DEBUG_MSG(1, ("Receive unexpected handshake message."));
+            MBEDTLS_SSL_PEND_FATAL_ALERT(MBEDTLS_SSL_ALERT_MSG_UNEXPECTED_MESSAGE,
+                                         MBEDTLS_ERR_SSL_UNEXPECTED_MESSAGE);
+            ret = MBEDTLS_ERR_SSL_UNEXPECTED_MESSAGE;
+            goto cleanup;
+        }
+
+        buf = ssl->in_msg + 4;
+        buf_len = ssl->in_hslen - 4;
+        break;
+    }
+
+    MBEDTLS_SSL_PROC_CHK(ssl_tls13_eku_parse_body(buf, buf + buf_len,
+                                                  &eku_type, &group,
+                                                  &key_exchange, &key_exchange_len));
+
+    MBEDTLS_SSL_DEBUG_MSG(3, ("EKU: type=%u state=%u group=%u kx_len=%" MBEDTLS_PRINTF_SIZET,
+                              (unsigned) eku_type,
+                              (unsigned) ssl->handshake->tls13_eku_state,
+                              (unsigned) group,
+                              key_exchange_len));
+    if (key_exchange_len > 0 && key_exchange != NULL) {
+        size_t dump_len = key_exchange_len > 16 ? 16 : key_exchange_len;
+        MBEDTLS_SSL_DEBUG_BUF(4, "EKU: key_exchange prefix", key_exchange, dump_len);
+    }
+
+    if (eku_type == MBEDTLS_SSL_TLS1_3_EKU_TYPE_KEY_UPDATE_REQUEST) {
+        /* Tie-break if we also initiated and requests crossed. */
+        if (ssl->handshake->tls13_eku_state == MBEDTLS_SSL_TLS1_3_EKU_INITIATOR_WAIT_RESP) {
+            int cmp;
+
+            if (ssl->handshake->tls13_eku_own_req_key_exchange_len != key_exchange_len) {
+                size_t min_len = ssl->handshake->tls13_eku_own_req_key_exchange_len;
+                if (key_exchange_len < min_len) {
+                    min_len = key_exchange_len;
+                }
+                cmp = memcmp(ssl->handshake->tls13_eku_own_req_key_exchange,
+                             key_exchange, min_len);
+                if (cmp == 0) {
+                    cmp = (ssl->handshake->tls13_eku_own_req_key_exchange_len < key_exchange_len) ?
+                          -1 : 1;
+                }
+            } else {
+                cmp = memcmp(ssl->handshake->tls13_eku_own_req_key_exchange,
+                             key_exchange, key_exchange_len);
+            }
+
+            if (cmp == 0) {
+                MBEDTLS_SSL_PEND_FATAL_ALERT(MBEDTLS_SSL_ALERT_MSG_UNEXPECTED_MESSAGE,
+                                             MBEDTLS_ERR_SSL_UNEXPECTED_MESSAGE);
+                return MBEDTLS_ERR_SSL_UNEXPECTED_MESSAGE;
+            }
+
+            /* Lower key_exchange MUST be ignored. */
+            if (cmp < 0) {
+                MBEDTLS_SSL_DEBUG_MSG(3, ("EKU: ignoring own request (tie-break)"));
+                /*
+                 * No EKU transcript rollback is needed here: transcript_hash_N
+                 * is only advanced when an accepted req/resp pair is processed
+                 * in ssl_tls13_eku_derive_next_secrets().
+                 */
+                psa_destroy_key(ssl->handshake->xxdh_psa_privkey);
+                ssl->handshake->xxdh_psa_privkey = MBEDTLS_SVC_KEY_ID_INIT;
+                ssl->handshake->tls13_eku_state = MBEDTLS_SSL_TLS1_3_EKU_IDLE;
+            } else {
+                MBEDTLS_SSL_DEBUG_MSG(3, ("EKU: ignoring peer request (tie-break)"));
+                mbedtls_ssl_handshake_set_state(ssl, MBEDTLS_SSL_TLS1_3_EKU);
+                return 0;
+            }
+        }
+
+        if (ssl->handshake->tls13_eku_state != MBEDTLS_SSL_TLS1_3_EKU_IDLE) {
+            MBEDTLS_SSL_PEND_FATAL_ALERT(MBEDTLS_SSL_ALERT_MSG_UNEXPECTED_MESSAGE,
+                                         MBEDTLS_ERR_SSL_UNEXPECTED_MESSAGE);
+            return MBEDTLS_ERR_SSL_UNEXPECTED_MESSAGE;
+        }
+
+        if (group != ssl->handshake->offered_group_id) {
+            MBEDTLS_SSL_PEND_FATAL_ALERT(MBEDTLS_SSL_ALERT_MSG_ILLEGAL_PARAMETER,
+                                         MBEDTLS_ERR_SSL_ILLEGAL_PARAMETER);
+            return MBEDTLS_ERR_SSL_ILLEGAL_PARAMETER;
+        }
+
+        if (buf_len > sizeof(ssl->handshake->tls13_eku_req)) {
+            return MBEDTLS_ERR_SSL_INTERNAL_ERROR;
+        }
+        memcpy(ssl->handshake->tls13_eku_req, buf, buf_len);
+        ssl->handshake->tls13_eku_req_len = buf_len;
+
+        MBEDTLS_SSL_DEBUG_MSG(3, ("EKU: stored request len=%" MBEDTLS_PRINTF_SIZET, buf_len));
+
+        /* Store peer key_exchange bytes. */
+        MBEDTLS_SSL_PROC_CHK(mbedtls_ssl_tls13_read_public_xxdhe_share(
+                                 ssl,
+                                 (const unsigned char *) (key_exchange - 2),
+                                 2 + key_exchange_len));
+
+        /* Build response body: type + KeyShareEntry. */
+        {
+            unsigned char *p = ssl->handshake->tls13_eku_resp;
+            unsigned char *end = ssl->handshake->tls13_eku_resp + sizeof(ssl->handshake->tls13_eku_resp);
+            size_t kx_len = 0;
+
+            *p++ = MBEDTLS_SSL_TLS1_3_EKU_TYPE_KEY_UPDATE_RESPONSE;
+            MBEDTLS_SSL_CHK_BUF_PTR(p, end, 4);
+            MBEDTLS_PUT_UINT16_BE(group, p, 0);
+            p += 4;
+
+            ret = mbedtls_ssl_tls13_generate_and_write_xxdh_key_exchange(
+                ssl, group, p, end, &kx_len);
+            if (ret != 0) {
+                goto cleanup;
+            }
+            MBEDTLS_PUT_UINT16_BE(kx_len, p - 2, 0);
+            p += kx_len;
+
+            ssl->handshake->tls13_eku_resp_len = p - ssl->handshake->tls13_eku_resp;
+        }
+
+        MBEDTLS_SSL_DEBUG_MSG(3, ("EKU: built response len=%" MBEDTLS_PRINTF_SIZET,
+                                  ssl->handshake->tls13_eku_resp_len));
+
+        /* Derive secrets and commit exporter/resumption. */
+        MBEDTLS_SSL_PROC_CHK(ssl_tls13_eku_derive_next_secrets(ssl));
+        ssl_tls13_eku_commit_exporter_and_resumption(ssl);
+
+        ssl->handshake->tls13_eku_outgoing_type =
+            MBEDTLS_SSL_TLS1_3_EKU_TYPE_KEY_UPDATE_RESPONSE;
+        ssl->handshake->tls13_eku_outgoing_updates_tx = 1;
+        ssl->handshake->tls13_eku_state = MBEDTLS_SSL_TLS1_3_EKU_RESPONDER_WAIT_NKU;
+
+        mbedtls_ssl_handshake_set_state(ssl, MBEDTLS_SSL_TLS1_3_EKU_SEND_RESPONSE);
+        ret = 0;
+        goto cleanup;
+    }
+
+    if (eku_type == MBEDTLS_SSL_TLS1_3_EKU_TYPE_KEY_UPDATE_RESPONSE) {
+        if (ssl->handshake->tls13_eku_state != MBEDTLS_SSL_TLS1_3_EKU_INITIATOR_WAIT_RESP) {
+            MBEDTLS_SSL_PEND_FATAL_ALERT(MBEDTLS_SSL_ALERT_MSG_UNEXPECTED_MESSAGE,
+                                         MBEDTLS_ERR_SSL_UNEXPECTED_MESSAGE);
+            return MBEDTLS_ERR_SSL_UNEXPECTED_MESSAGE;
+        }
+
+        if (group != ssl->handshake->offered_group_id) {
+            MBEDTLS_SSL_PEND_FATAL_ALERT(MBEDTLS_SSL_ALERT_MSG_ILLEGAL_PARAMETER,
+                                         MBEDTLS_ERR_SSL_ILLEGAL_PARAMETER);
+            return MBEDTLS_ERR_SSL_ILLEGAL_PARAMETER;
+        }
+
+        if (buf_len > sizeof(ssl->handshake->tls13_eku_resp)) {
+            return MBEDTLS_ERR_SSL_INTERNAL_ERROR;
+        }
+        memcpy(ssl->handshake->tls13_eku_resp, buf, buf_len);
+        ssl->handshake->tls13_eku_resp_len = buf_len;
+
+        MBEDTLS_SSL_DEBUG_MSG(3, ("EKU: stored response len=%" MBEDTLS_PRINTF_SIZET, buf_len));
+
+        /* Store peer key_exchange bytes. */
+        MBEDTLS_SSL_PROC_CHK(mbedtls_ssl_tls13_read_public_xxdhe_share(
+                                 ssl,
+                                 (const unsigned char *) (key_exchange - 2),
+                                 2 + key_exchange_len));
+
+        /* Derive secrets and update RX. */
+        MBEDTLS_SSL_PROC_CHK(ssl_tls13_eku_derive_next_secrets(ssl));
+        ssl_tls13_eku_commit_exporter_and_resumption(ssl);
+
+        MBEDTLS_SSL_PROC_CHK(ssl_tls13_eku_update_direction(ssl,
+                                                            MBEDTLS_SSL_TLS1_3_KEY_UPDATE_RX));
+
+        ssl->handshake->tls13_eku_outgoing_type =
+            MBEDTLS_SSL_TLS1_3_EKU_TYPE_NEW_KEY_UPDATE;
+        ssl->handshake->tls13_eku_outgoing_updates_tx = 1;
+
+        mbedtls_ssl_handshake_set_state(ssl, MBEDTLS_SSL_TLS1_3_EKU_SEND_NKU);
+        ret = 0;
+        goto cleanup;
+    }
+
+    /* NKU */
+    if (ssl->handshake->tls13_eku_state != MBEDTLS_SSL_TLS1_3_EKU_RESPONDER_WAIT_NKU) {
+        MBEDTLS_SSL_PEND_FATAL_ALERT(MBEDTLS_SSL_ALERT_MSG_UNEXPECTED_MESSAGE,
+                                     MBEDTLS_ERR_SSL_UNEXPECTED_MESSAGE);
+        return MBEDTLS_ERR_SSL_UNEXPECTED_MESSAGE;
+    }
+
+    MBEDTLS_SSL_PROC_CHK(ssl_tls13_eku_update_direction(ssl,
+                                                        MBEDTLS_SSL_TLS1_3_KEY_UPDATE_RX));
+
+    ssl->handshake->tls13_eku_state = MBEDTLS_SSL_TLS1_3_EKU_IDLE;
+    ssl->handshake->tls13_eku_secrets_ready = 0;
+    ssl->handshake->tls13_eku_req_len = 0;
+    ssl->handshake->tls13_eku_resp_len = 0;
+    ssl->handshake->tls13_eku_own_req_key_exchange_len = 0;
+    mbedtls_ssl_handshake_set_state(ssl, MBEDTLS_SSL_HANDSHAKE_OVER);
+    ret = 0;
+
+cleanup:
+    if (ret != 0) {
+        if (ret == MBEDTLS_ERR_SSL_DECODE_ERROR) {
+            MBEDTLS_SSL_PEND_FATAL_ALERT(MBEDTLS_SSL_ALERT_MSG_DECODE_ERROR, ret);
+        } else if (ret == MBEDTLS_ERR_SSL_ILLEGAL_PARAMETER) {
+            MBEDTLS_SSL_PEND_FATAL_ALERT(MBEDTLS_SSL_ALERT_MSG_ILLEGAL_PARAMETER, ret);
+        }
+    }
+
+    MBEDTLS_SSL_DEBUG_MSG(2, ("<= process ExtendedKeyUpdate"));
+    return ret;
+}
+
+int mbedtls_ssl_tls13_write_extended_key_update_request(mbedtls_ssl_context *ssl)
+{
+    int ret = MBEDTLS_ERR_ERROR_CORRUPTION_DETECTED;
+    unsigned char *buf;
+    size_t buf_len;
+    uint16_t group;
+    unsigned char *p;
+    unsigned char *end;
+    size_t kx_len = 0;
+
+    MBEDTLS_SSL_DEBUG_MSG(2, ("=> write EKU request"));
+
+    if (mbedtls_ssl_is_handshake_over(ssl) == 0) {
+        return MBEDTLS_ERR_SSL_BAD_INPUT_DATA;
+    }
+
+    if (ssl->handshake->tls13_eku_state != MBEDTLS_SSL_TLS1_3_EKU_IDLE) {
+        return MBEDTLS_ERR_SSL_BAD_INPUT_DATA;
+    }
+
+    group = ssl->handshake->offered_group_id;
+    if (!mbedtls_ssl_tls13_named_group_is_ecdhe(group) &&
+        !mbedtls_ssl_tls13_named_group_is_ffdh(group)) {
+        return MBEDTLS_ERR_SSL_FEATURE_UNAVAILABLE;
+    }
+
+    MBEDTLS_SSL_PROC_CHK(mbedtls_ssl_start_handshake_msg(
+                             ssl, MBEDTLS_SSL_HS_EXTENDED_KEY_UPDATE,
+                             &buf, &buf_len));
+
+    p = buf;
+    end = buf + buf_len;
+
+    MBEDTLS_SSL_CHK_BUF_PTR(p, end, 1 + 4);
+    *p++ = MBEDTLS_SSL_TLS1_3_EKU_TYPE_KEY_UPDATE_REQUEST;
+    MBEDTLS_PUT_UINT16_BE(group, p, 0);
+    p += 4; /* group + key_exchange_length */
+
+    ret = mbedtls_ssl_tls13_generate_and_write_xxdh_key_exchange(
+        ssl, group, p, end, &kx_len);
+    if (ret != 0) {
+        goto cleanup;
+    }
+
+    /* Backfill key_exchange_length. */
+    MBEDTLS_PUT_UINT16_BE(kx_len, p - 2, 0);
+
+    /* Cache request body and tie-break material. */
+    if ((size_t) (1 + 4 + kx_len) > sizeof(ssl->handshake->tls13_eku_req)) {
+        ret = MBEDTLS_ERR_SSL_INTERNAL_ERROR;
+        goto cleanup;
+    }
+    memcpy(ssl->handshake->tls13_eku_req, buf, 1 + 4 + kx_len);
+    ssl->handshake->tls13_eku_req_len = 1 + 4 + kx_len;
+    memcpy(ssl->handshake->tls13_eku_own_req_key_exchange, p, kx_len);
+    ssl->handshake->tls13_eku_own_req_key_exchange_len = kx_len;
+
+    ssl->handshake->tls13_eku_state = MBEDTLS_SSL_TLS1_3_EKU_INITIATOR_WAIT_RESP;
+
+    p += kx_len;
+
+    MBEDTLS_SSL_PROC_CHK(mbedtls_ssl_finish_handshake_msg(
+                             ssl, buf_len, (size_t) (p - buf)));
+
+    mbedtls_ssl_handshake_set_state(ssl, MBEDTLS_SSL_TLS1_3_EKU_SEND_REQUEST_FLUSH);
+
+cleanup:
+    MBEDTLS_SSL_DEBUG_MSG(2, ("<= write EKU request"));
+    return ret;
+}
+
+int mbedtls_ssl_tls13_write_extended_key_update_response(mbedtls_ssl_context *ssl)
+{
+    int ret = MBEDTLS_ERR_ERROR_CORRUPTION_DETECTED;
+    unsigned char *buf;
+    size_t buf_len;
+
+    MBEDTLS_SSL_DEBUG_MSG(2, ("=> write EKU response"));
+
+    if (mbedtls_ssl_is_handshake_over(ssl) == 0) {
+        return MBEDTLS_ERR_SSL_BAD_INPUT_DATA;
+    }
+
+    if (ssl->handshake->tls13_eku_resp_len == 0) {
+        return MBEDTLS_ERR_SSL_INTERNAL_ERROR;
+    }
+
+    MBEDTLS_SSL_PROC_CHK(mbedtls_ssl_start_handshake_msg(
+                             ssl, MBEDTLS_SSL_HS_EXTENDED_KEY_UPDATE,
+                             &buf, &buf_len));
+
+    MBEDTLS_SSL_CHK_BUF_PTR(buf, buf + buf_len, ssl->handshake->tls13_eku_resp_len);
+    memcpy(buf, ssl->handshake->tls13_eku_resp, ssl->handshake->tls13_eku_resp_len);
+
+    MBEDTLS_SSL_PROC_CHK(mbedtls_ssl_finish_handshake_msg(
+                             ssl, buf_len, ssl->handshake->tls13_eku_resp_len));
+
+    mbedtls_ssl_handshake_set_state(ssl, MBEDTLS_SSL_TLS1_3_EKU_SEND_RESPONSE_FLUSH);
+
+cleanup:
+    MBEDTLS_SSL_DEBUG_MSG(2, ("<= write EKU response"));
+    return ret;
+}
+
+int mbedtls_ssl_tls13_write_extended_key_update_nku(mbedtls_ssl_context *ssl)
+{
+    int ret = MBEDTLS_ERR_ERROR_CORRUPTION_DETECTED;
+    unsigned char *buf;
+    size_t buf_len;
+
+    MBEDTLS_SSL_DEBUG_MSG(2, ("=> write EKU NKU"));
+
+    MBEDTLS_SSL_PROC_CHK(mbedtls_ssl_start_handshake_msg(
+                             ssl, MBEDTLS_SSL_HS_EXTENDED_KEY_UPDATE,
+                             &buf, &buf_len));
+
+    MBEDTLS_SSL_CHK_BUF_PTR(buf, buf + buf_len, 1);
+    buf[0] = MBEDTLS_SSL_TLS1_3_EKU_TYPE_NEW_KEY_UPDATE;
+
+    MBEDTLS_SSL_PROC_CHK(mbedtls_ssl_finish_handshake_msg(
+                             ssl, buf_len, 1));
+
+    mbedtls_ssl_handshake_set_state(ssl, MBEDTLS_SSL_TLS1_3_EKU_SEND_NKU_FLUSH);
+
+cleanup:
+    MBEDTLS_SSL_DEBUG_MSG(2, ("<= write EKU NKU"));
+    return ret;
+}
+
+int mbedtls_ssl_tls13_eku_send_flush(mbedtls_ssl_context *ssl)
+{
+    int ret = MBEDTLS_ERR_ERROR_CORRUPTION_DETECTED;
+
+    MBEDTLS_SSL_DEBUG_MSG(2, ("=> EKU send flush"));
+
+    if (mbedtls_ssl_is_handshake_over(ssl) == 0) {
+        return MBEDTLS_ERR_SSL_BAD_INPUT_DATA;
+    }
+
+    if (ssl->state == MBEDTLS_SSL_TLS1_3_EKU_SEND_RESPONSE_FLUSH ||
+        ssl->state == MBEDTLS_SSL_TLS1_3_EKU_SEND_NKU_FLUSH) {
+        if (ssl->handshake->tls13_eku_outgoing_updates_tx) {
+            MBEDTLS_SSL_PROC_CHK(ssl_tls13_eku_update_direction(ssl,
+                                                                MBEDTLS_SSL_TLS1_3_KEY_UPDATE_TX));
+            ssl->handshake->tls13_eku_outgoing_updates_tx = 0;
+        }
+    }
+
+    if (ssl->state == MBEDTLS_SSL_TLS1_3_EKU_SEND_NKU_FLUSH) {
+        ssl->handshake->tls13_eku_state = MBEDTLS_SSL_TLS1_3_EKU_IDLE;
+        ssl->handshake->tls13_eku_secrets_ready = 0;
+        ssl->handshake->tls13_eku_req_len = 0;
+        ssl->handshake->tls13_eku_resp_len = 0;
+        ssl->handshake->tls13_eku_own_req_key_exchange_len = 0;
+        mbedtls_ssl_handshake_set_state(ssl, MBEDTLS_SSL_HANDSHAKE_OVER);
+    } else if (ssl->state == MBEDTLS_SSL_TLS1_3_EKU_SEND_RESPONSE_FLUSH) {
+        mbedtls_ssl_handshake_set_state(ssl, MBEDTLS_SSL_HANDSHAKE_OVER);
+    } else { /* request flush */
+        mbedtls_ssl_handshake_set_state(ssl, MBEDTLS_SSL_TLS1_3_EKU);
+    }
+
+    ret = 0;
+
+cleanup:
+    MBEDTLS_SSL_DEBUG_MSG(2, ("<= EKU send flush"));
+    return ret;
+}
+#endif /* MBEDTLS_EXTENDED_KEY_UPDATE */
+#endif /* MBEDTLS_SSL_TLS1_3_KEY_EXCHANGE_MODE_SOME_EPHEMERAL_ENABLED */
+
 int mbedtls_ssl_tls13_is_supported_versions_ext_present_in_exts(
     mbedtls_ssl_context *ssl,
     const unsigned char *buf, const unsigned char *end,

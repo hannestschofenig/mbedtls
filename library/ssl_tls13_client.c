@@ -93,6 +93,40 @@ static int ssl_tls13_write_supported_versions_ext(mbedtls_ssl_context *ssl,
     return 0;
 }
 
+#if defined(MBEDTLS_EXTENDED_KEY_UPDATE)
+MBEDTLS_CHECK_RETURN_CRITICAL
+static int ssl_tls13_write_tls_flags_ext(mbedtls_ssl_context *ssl,
+                                         unsigned char *buf,
+                                         unsigned char *end,
+                                         size_t *out_len)
+{
+    unsigned char *p = buf;
+
+    *out_len = 0;
+
+    if (!ssl->conf->tls13_extended_key_update) {
+        return 0;
+    }
+
+    MBEDTLS_SSL_DEBUG_MSG(3, ("client hello, adding tls_flags extension"));
+
+    /* Extension header (4) + 1 byte flags */
+    MBEDTLS_SSL_CHK_BUF_PTR(p, end, 5);
+
+    MBEDTLS_PUT_UINT16_BE(MBEDTLS_TLS_EXT_TLS_FLAGS, p, 0);
+    MBEDTLS_PUT_UINT16_BE(1, p, 2);
+    p += 4;
+
+    *p++ = 0x01; /* extended_key_update flag */
+
+    *out_len = 5;
+
+    mbedtls_ssl_tls13_set_hs_sent_ext_mask(ssl, MBEDTLS_TLS_EXT_TLS_FLAGS);
+
+    return 0;
+}
+#endif /* MBEDTLS_EXTENDED_KEY_UPDATE */
+
 MBEDTLS_CHECK_RETURN_CRITICAL
 static int ssl_tls13_parse_supported_versions_ext(mbedtls_ssl_context *ssl,
                                                   const unsigned char *buf,
@@ -682,6 +716,11 @@ static psa_algorithm_t ssl_tls13_get_ciphersuite_hash_alg(int ciphersuite)
 static int ssl_tls13_has_configured_ticket(mbedtls_ssl_context *ssl)
 {
     mbedtls_ssl_session *session = ssl->session_negotiate;
+#if defined(MBEDTLS_EXTENDED_KEY_UPDATE)
+    if (ssl->conf->tls13_extended_key_update) {
+        return 0;
+    }
+#endif
     return ssl->handshake->resume &&
            session != NULL && session->ticket != NULL &&
            mbedtls_ssl_conf_tls13_is_kex_mode_enabled(
@@ -1159,6 +1198,14 @@ int mbedtls_ssl_tls13_write_client_hello_exts(mbedtls_ssl_context *ssl,
         return ret;
     }
     p += ext_len;
+
+#if defined(MBEDTLS_EXTENDED_KEY_UPDATE)
+    ret = ssl_tls13_write_tls_flags_ext(ssl, p, end, &ext_len);
+    if (ret != 0) {
+        return ret;
+    }
+    p += ext_len;
+#endif
 
 #if defined(MBEDTLS_SSL_RECORD_SIZE_LIMIT)
     ret = mbedtls_ssl_tls13_write_record_size_limit_ext(
@@ -2118,6 +2165,31 @@ static int ssl_tls13_parse_encrypted_extensions(mbedtls_ssl_context *ssl,
                 break;
 #endif /* MBEDTLS_SSL_ALPN */
 
+#if defined(MBEDTLS_EXTENDED_KEY_UPDATE)
+            case MBEDTLS_TLS_EXT_TLS_FLAGS:
+                MBEDTLS_SSL_DEBUG_MSG(3, ("found tls_flags extension"));
+
+                if ((ssl->handshake->sent_extensions &
+                     MBEDTLS_SSL_EXT_MASK(TLS_FLAGS)) == 0) {
+                    MBEDTLS_SSL_PEND_FATAL_ALERT(
+                        MBEDTLS_SSL_ALERT_MSG_ILLEGAL_PARAMETER,
+                        MBEDTLS_ERR_SSL_ILLEGAL_PARAMETER);
+                    return MBEDTLS_ERR_SSL_ILLEGAL_PARAMETER;
+                }
+
+                if (extension_data_len < 1) {
+                    MBEDTLS_SSL_PEND_FATAL_ALERT(
+                        MBEDTLS_SSL_ALERT_MSG_DECODE_ERROR,
+                        MBEDTLS_ERR_SSL_DECODE_ERROR);
+                    return MBEDTLS_ERR_SSL_DECODE_ERROR;
+                }
+
+                if ((p[0] & 0x01) != 0) {
+                    ssl->tls13_eku_negotiated = 1;
+                }
+                break;
+#endif /* MBEDTLS_EXTENDED_KEY_UPDATE */
+
 #if defined(MBEDTLS_SSL_EARLY_DATA)
             case MBEDTLS_TLS_EXT_EARLY_DATA:
 
@@ -2943,6 +3015,13 @@ static int ssl_tls13_postprocess_new_session_ticket(mbedtls_ssl_context *ssl,
         return POSTPROCESS_NEW_SESSION_TICKET_DISCARD;
     }
 
+#if defined(MBEDTLS_EXTENDED_KEY_UPDATE)
+    if (ssl->conf->tls13_extended_key_update || ssl->tls13_eku_negotiated) {
+        MBEDTLS_SSL_DEBUG_MSG(3, ("Discard NewSessionTicket: EKU disables resumption"));
+        return POSTPROCESS_NEW_SESSION_TICKET_DISCARD;
+    }
+#endif
+
 #if defined(MBEDTLS_HAVE_TIME)
     /* Store ticket creation time */
     session->ticket_reception_time = mbedtls_ms_time();
@@ -3169,6 +3248,44 @@ int mbedtls_ssl_tls13_handshake_client_step(mbedtls_ssl_context *ssl)
             ret = ssl_tls13_process_new_session_ticket(ssl);
             break;
 #endif /* MBEDTLS_SSL_SESSION_TICKETS */
+
+#if defined(MBEDTLS_KEY_UPDATE)
+        case MBEDTLS_SSL_TLS1_3_KEY_UPDATE:
+            ret = mbedtls_ssl_tls13_process_key_update(ssl);
+            break;
+
+        case MBEDTLS_SSL_TLS1_3_KEY_UPDATE_SEND:
+            ret = mbedtls_ssl_tls13_write_key_update(ssl);
+            break;
+
+        case MBEDTLS_SSL_TLS1_3_KEY_UPDATE_SEND_FLUSH:
+            ret = mbedtls_ssl_tls13_key_update_send_flush(ssl);
+            break;
+#endif /* MBEDTLS_KEY_UPDATE */
+
+#if defined(MBEDTLS_EXTENDED_KEY_UPDATE)
+        case MBEDTLS_SSL_TLS1_3_EKU:
+            ret = mbedtls_ssl_tls13_process_extended_key_update(ssl);
+            break;
+
+        case MBEDTLS_SSL_TLS1_3_EKU_SEND_REQUEST:
+            ret = mbedtls_ssl_tls13_write_extended_key_update_request(ssl);
+            break;
+
+        case MBEDTLS_SSL_TLS1_3_EKU_SEND_REQUEST_FLUSH:
+        case MBEDTLS_SSL_TLS1_3_EKU_SEND_RESPONSE_FLUSH:
+        case MBEDTLS_SSL_TLS1_3_EKU_SEND_NKU_FLUSH:
+            ret = mbedtls_ssl_tls13_eku_send_flush(ssl);
+            break;
+
+        case MBEDTLS_SSL_TLS1_3_EKU_SEND_RESPONSE:
+            ret = mbedtls_ssl_tls13_write_extended_key_update_response(ssl);
+            break;
+
+        case MBEDTLS_SSL_TLS1_3_EKU_SEND_NKU:
+            ret = mbedtls_ssl_tls13_write_extended_key_update_nku(ssl);
+            break;
+#endif /* MBEDTLS_EXTENDED_KEY_UPDATE */
 
         default:
             MBEDTLS_SSL_DEBUG_MSG(1, ("invalid state %d", ssl->state));

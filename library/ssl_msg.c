@@ -5416,6 +5416,62 @@ static int ssl_tls13_handle_hs_message_post_handshake(mbedtls_ssl_context *ssl)
 
     MBEDTLS_SSL_DEBUG_MSG(3, ("received post-handshake message"));
 
+#if defined(MBEDTLS_SSL_PROTO_TLS1_3)
+#if defined(MBEDTLS_KEY_UPDATE)
+    if (ssl->in_hslen != mbedtls_ssl_hs_hdr_len(ssl) &&
+        ssl->in_msg[0] == MBEDTLS_SSL_HS_KEY_UPDATE) {
+#if defined(MBEDTLS_EXTENDED_KEY_UPDATE)
+        if (ssl->tls13_eku_negotiated) {
+            MBEDTLS_SSL_PEND_FATAL_ALERT(
+                MBEDTLS_SSL_ALERT_MSG_UNEXPECTED_MESSAGE,
+                MBEDTLS_ERR_SSL_UNEXPECTED_MESSAGE);
+            return MBEDTLS_ERR_SSL_UNEXPECTED_MESSAGE;
+        }
+#endif
+
+        MBEDTLS_SSL_DEBUG_MSG(3, ("KeyUpdate received"));
+        ssl->keep_current_message = 1;
+
+        mbedtls_ssl_handshake_set_state(ssl, MBEDTLS_SSL_TLS1_3_KEY_UPDATE);
+        return MBEDTLS_ERR_SSL_WANT_READ;
+    }
+#else
+    if (ssl->in_hslen != mbedtls_ssl_hs_hdr_len(ssl) &&
+        ssl->in_msg[0] == MBEDTLS_SSL_HS_KEY_UPDATE) {
+        MBEDTLS_SSL_PEND_FATAL_ALERT(
+            MBEDTLS_SSL_ALERT_MSG_UNEXPECTED_MESSAGE,
+            MBEDTLS_ERR_SSL_UNEXPECTED_MESSAGE);
+        return MBEDTLS_ERR_SSL_UNEXPECTED_MESSAGE;
+    }
+#endif /* MBEDTLS_KEY_UPDATE */
+
+#if defined(MBEDTLS_EXTENDED_KEY_UPDATE)
+    if (ssl->in_hslen != mbedtls_ssl_hs_hdr_len(ssl) &&
+        ssl->in_msg[0] == MBEDTLS_SSL_HS_EXTENDED_KEY_UPDATE) {
+        if (!ssl->tls13_eku_negotiated) {
+            MBEDTLS_SSL_PEND_FATAL_ALERT(
+                MBEDTLS_SSL_ALERT_MSG_UNEXPECTED_MESSAGE,
+                MBEDTLS_ERR_SSL_UNEXPECTED_MESSAGE);
+            return MBEDTLS_ERR_SSL_UNEXPECTED_MESSAGE;
+        }
+
+        MBEDTLS_SSL_DEBUG_MSG(3, ("ExtendedKeyUpdate received"));
+        ssl->keep_current_message = 1;
+
+        mbedtls_ssl_handshake_set_state(ssl, MBEDTLS_SSL_TLS1_3_EKU);
+        return MBEDTLS_ERR_SSL_WANT_READ;
+    }
+#else
+    if (ssl->in_hslen != mbedtls_ssl_hs_hdr_len(ssl) &&
+        ssl->in_msg[0] == MBEDTLS_SSL_HS_EXTENDED_KEY_UPDATE) {
+        MBEDTLS_SSL_PEND_FATAL_ALERT(
+            MBEDTLS_SSL_ALERT_MSG_UNEXPECTED_MESSAGE,
+            MBEDTLS_ERR_SSL_UNEXPECTED_MESSAGE);
+        return MBEDTLS_ERR_SSL_UNEXPECTED_MESSAGE;
+    }
+#endif /* MBEDTLS_EXTENDED_KEY_UPDATE */
+#endif /* MBEDTLS_SSL_PROTO_TLS1_3 */
+
 #if defined(MBEDTLS_SSL_CLI_C)
     if (ssl->conf->endpoint == MBEDTLS_SSL_IS_CLIENT) {
         if (ssl_tls13_is_new_session_ticket(ssl)) {

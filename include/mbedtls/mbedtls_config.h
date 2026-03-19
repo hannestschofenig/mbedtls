@@ -384,6 +384,24 @@
 #define MBEDTLS_SSL_ALPN
 
 /**
+ * \def MBEDTLS_KEY_UPDATE
+ *
+ * Enable TLS 1.3 standard KeyUpdate (RFC 8446).
+ *
+ * Comment this macro to disable support for standard KeyUpdate.
+ */
+#define MBEDTLS_KEY_UPDATE
+
+/**
+ * \def MBEDTLS_EXTENDED_KEY_UPDATE
+ *
+ * Enable TLS 1.3 Extended Key Update (EKU) (draft-ietf-tls-extended-key-update).
+ *
+ * Comment this macro to disable support for Extended Key Update.
+ */
+#define MBEDTLS_EXTENDED_KEY_UPDATE
+
+/**
  * \def MBEDTLS_SSL_ASYNC_PRIVATE
  *
  * Enable asynchronous external private key operations in SSL. This allows

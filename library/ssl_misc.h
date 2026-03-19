@@ -112,6 +112,9 @@ typedef enum {
 #define MBEDTLS_SSL_EXT_ID_EXTENDED_MASTER_SECRET     26
 #define MBEDTLS_SSL_EXT_ID_SESSION_TICKET             27
 #define MBEDTLS_SSL_EXT_ID_RECORD_SIZE_LIMIT          28
+#if defined(MBEDTLS_EXTENDED_KEY_UPDATE)
+#define MBEDTLS_SSL_EXT_ID_TLS_FLAGS                  29
+#endif
 
 /* Utility for translating IANA extension type. */
 uint32_t mbedtls_ssl_get_extension_id(unsigned int extension_type);
@@ -150,6 +153,33 @@ uint32_t mbedtls_ssl_get_extension_mask(unsigned int extension_type);
      MBEDTLS_SSL_EXT_MASK(UNRECOGNIZED))
 
 /* RFC 8446 section 4.2. Allowed extensions for ClientHello */
+#if defined(MBEDTLS_EXTENDED_KEY_UPDATE)
+#define MBEDTLS_SSL_TLS1_3_ALLOWED_EXTS_OF_CH                                  \
+    (MBEDTLS_SSL_EXT_MASK(SERVERNAME)                             | \
+     MBEDTLS_SSL_EXT_MASK(MAX_FRAGMENT_LENGTH)                    | \
+     MBEDTLS_SSL_EXT_MASK(STATUS_REQUEST)                         | \
+     MBEDTLS_SSL_EXT_MASK(SUPPORTED_GROUPS)                       | \
+     MBEDTLS_SSL_EXT_MASK(SIG_ALG)                                | \
+     MBEDTLS_SSL_EXT_MASK(USE_SRTP)                               | \
+     MBEDTLS_SSL_EXT_MASK(HEARTBEAT)                              | \
+     MBEDTLS_SSL_EXT_MASK(ALPN)                                   | \
+     MBEDTLS_SSL_EXT_MASK(SCT)                                    | \
+     MBEDTLS_SSL_EXT_MASK(CLI_CERT_TYPE)                          | \
+     MBEDTLS_SSL_EXT_MASK(SERV_CERT_TYPE)                         | \
+     MBEDTLS_SSL_EXT_MASK(PADDING)                                | \
+     MBEDTLS_SSL_EXT_MASK(KEY_SHARE)                              | \
+     MBEDTLS_SSL_EXT_MASK(PRE_SHARED_KEY)                         | \
+     MBEDTLS_SSL_EXT_MASK(PSK_KEY_EXCHANGE_MODES)                 | \
+     MBEDTLS_SSL_EXT_MASK(EARLY_DATA)                             | \
+     MBEDTLS_SSL_EXT_MASK(COOKIE)                                 | \
+     MBEDTLS_SSL_EXT_MASK(SUPPORTED_VERSIONS)                     | \
+     MBEDTLS_SSL_EXT_MASK(CERT_AUTH)                              | \
+     MBEDTLS_SSL_EXT_MASK(POST_HANDSHAKE_AUTH)                    | \
+     MBEDTLS_SSL_EXT_MASK(SIG_ALG_CERT)                           | \
+     MBEDTLS_SSL_EXT_MASK(RECORD_SIZE_LIMIT)                      | \
+     MBEDTLS_SSL_EXT_MASK(TLS_FLAGS)                              | \
+     MBEDTLS_SSL_TLS1_3_EXT_MASK_UNRECOGNIZED)
+#else
 #define MBEDTLS_SSL_TLS1_3_ALLOWED_EXTS_OF_CH                                  \
     (MBEDTLS_SSL_EXT_MASK(SERVERNAME)                             | \
      MBEDTLS_SSL_EXT_MASK(MAX_FRAGMENT_LENGTH)                    | \
@@ -174,8 +204,23 @@ uint32_t mbedtls_ssl_get_extension_mask(unsigned int extension_type);
      MBEDTLS_SSL_EXT_MASK(SIG_ALG_CERT)                           | \
      MBEDTLS_SSL_EXT_MASK(RECORD_SIZE_LIMIT)                      | \
      MBEDTLS_SSL_TLS1_3_EXT_MASK_UNRECOGNIZED)
+#endif
 
 /* RFC 8446 section 4.2. Allowed extensions for EncryptedExtensions */
+#if defined(MBEDTLS_EXTENDED_KEY_UPDATE)
+#define MBEDTLS_SSL_TLS1_3_ALLOWED_EXTS_OF_EE                                  \
+    (MBEDTLS_SSL_EXT_MASK(SERVERNAME)                             | \
+     MBEDTLS_SSL_EXT_MASK(MAX_FRAGMENT_LENGTH)                    | \
+     MBEDTLS_SSL_EXT_MASK(SUPPORTED_GROUPS)                       | \
+     MBEDTLS_SSL_EXT_MASK(USE_SRTP)                               | \
+     MBEDTLS_SSL_EXT_MASK(HEARTBEAT)                              | \
+     MBEDTLS_SSL_EXT_MASK(ALPN)                                   | \
+     MBEDTLS_SSL_EXT_MASK(CLI_CERT_TYPE)                          | \
+     MBEDTLS_SSL_EXT_MASK(SERV_CERT_TYPE)                         | \
+     MBEDTLS_SSL_EXT_MASK(EARLY_DATA)                             | \
+     MBEDTLS_SSL_EXT_MASK(RECORD_SIZE_LIMIT)                      | \
+     MBEDTLS_SSL_EXT_MASK(TLS_FLAGS))
+#else
 #define MBEDTLS_SSL_TLS1_3_ALLOWED_EXTS_OF_EE                                  \
     (MBEDTLS_SSL_EXT_MASK(SERVERNAME)                             | \
      MBEDTLS_SSL_EXT_MASK(MAX_FRAGMENT_LENGTH)                    | \
@@ -187,6 +232,7 @@ uint32_t mbedtls_ssl_get_extension_mask(unsigned int extension_type);
      MBEDTLS_SSL_EXT_MASK(SERV_CERT_TYPE)                         | \
      MBEDTLS_SSL_EXT_MASK(EARLY_DATA)                             | \
      MBEDTLS_SSL_EXT_MASK(RECORD_SIZE_LIMIT))
+#endif
 
 /* RFC 8446 section 4.2. Allowed extensions for CertificateRequest */
 #define MBEDTLS_SSL_TLS1_3_ALLOWED_EXTS_OF_CR                                  \
@@ -771,6 +817,11 @@ struct mbedtls_ssl_handshake_params {
 #endif
 #endif /* MBEDTLS_SSL_SRV_C */
 
+#if defined(MBEDTLS_KEY_UPDATE)
+    /* TLS 1.3 post-handshake KeyUpdate (RFC 8446). */
+    uint8_t tls13_key_update_out_request; /*!< KeyUpdateRequest to send (0/1). */
+#endif /* MBEDTLS_KEY_UPDATE */
+
 #endif /* MBEDTLS_SSL_PROTO_TLS1_3 */
 
 #if defined(MBEDTLS_SSL_HANDSHAKE_WITH_CERT_ENABLED)
@@ -980,6 +1031,40 @@ struct mbedtls_ssl_handshake_params {
 #if defined(MBEDTLS_SSL_PROTO_TLS1_3)
     uint32_t sent_extensions;       /*!< extensions sent by endpoint */
     uint32_t received_extensions;   /*!< extensions received by endpoint */
+
+    /* TLS 1.3 Extended Key Update (EKU) state. */
+#if defined(MBEDTLS_EXTENDED_KEY_UPDATE)
+    uint8_t tls13_eku_peer_support; /*!< peer offered EKU via TLS Flags */
+    uint8_t tls13_eku_state;
+    uint8_t tls13_eku_outgoing_type;
+    uint8_t tls13_eku_outgoing_updates_tx; /* Update TX keys after flush */
+    uint8_t tls13_eku_secrets_ready;
+    size_t tls13_eku_hash_len;
+
+    /* EKU key schedule salt: Derive-Secret(main_secret_N, "derived", ""). */
+    unsigned char tls13_eku_salt[MBEDTLS_TLS1_3_MD_MAX_SIZE];
+    size_t tls13_eku_salt_len;
+
+    /* transcript_hash_N in draft-ietf-tls-extended-key-update */
+    unsigned char tls13_eku_transcript_hash[MBEDTLS_TLS1_3_MD_MAX_SIZE];
+    size_t tls13_eku_transcript_hash_len;
+
+    /* Cached EKU request/response bodies for key derivation and transcript update. */
+    unsigned char tls13_eku_req[1 + 4 + PSA_EXPORT_PUBLIC_KEY_MAX_SIZE];
+    size_t tls13_eku_req_len;
+    unsigned char tls13_eku_resp[1 + 4 + PSA_EXPORT_PUBLIC_KEY_MAX_SIZE];
+    size_t tls13_eku_resp_len;
+
+    /* EKU initiator tie-break: own request key_exchange bytes. */
+    unsigned char tls13_eku_own_req_key_exchange[PSA_EXPORT_PUBLIC_KEY_MAX_SIZE];
+    size_t tls13_eku_own_req_key_exchange_len;
+
+    /* EKU derived secrets for generation N+1 (pending until applied). */
+    unsigned char tls13_eku_next_client_app_secret[MBEDTLS_TLS1_3_MD_MAX_SIZE];
+    unsigned char tls13_eku_next_server_app_secret[MBEDTLS_TLS1_3_MD_MAX_SIZE];
+    unsigned char tls13_eku_next_exporter_master_secret[MBEDTLS_TLS1_3_MD_MAX_SIZE];
+    unsigned char tls13_eku_next_resumption_master_secret[MBEDTLS_TLS1_3_MD_MAX_SIZE];
+#endif /* MBEDTLS_EXTENDED_KEY_UPDATE */
 
 #if defined(MBEDTLS_SSL_HANDSHAKE_WITH_CERT_ENABLED)
     unsigned char certificate_request_context_len;
@@ -1887,6 +1972,20 @@ static inline int mbedtls_ssl_conf_is_hybrid_tls12_tls13(const mbedtls_ssl_confi
 #if defined(MBEDTLS_SSL_PROTO_TLS1_3)
 extern const uint8_t mbedtls_ssl_tls13_hello_retry_request_magic[
     MBEDTLS_SERVER_HELLO_RANDOM_LEN];
+
+/* TLS 1.3 KeyUpdate direction. */
+#define MBEDTLS_SSL_TLS1_3_KEY_UPDATE_RX 0
+#define MBEDTLS_SSL_TLS1_3_KEY_UPDATE_TX 1
+
+/* TLS 1.3 Extended Key Update (EKU) subtypes (draft-ietf-tls-extended-key-update). */
+#define MBEDTLS_SSL_TLS1_3_EKU_TYPE_KEY_UPDATE_REQUEST  0
+#define MBEDTLS_SSL_TLS1_3_EKU_TYPE_KEY_UPDATE_RESPONSE 1
+#define MBEDTLS_SSL_TLS1_3_EKU_TYPE_NEW_KEY_UPDATE      2
+
+/* EKU internal roles/states. */
+#define MBEDTLS_SSL_TLS1_3_EKU_IDLE                 0
+#define MBEDTLS_SSL_TLS1_3_EKU_INITIATOR_WAIT_RESP  1
+#define MBEDTLS_SSL_TLS1_3_EKU_RESPONDER_WAIT_NKU   2
 MBEDTLS_CHECK_RETURN_CRITICAL
 int mbedtls_ssl_tls13_process_finished_message(mbedtls_ssl_context *ssl);
 MBEDTLS_CHECK_RETURN_CRITICAL
@@ -1923,6 +2022,38 @@ int mbedtls_ssl_tls13_handshake_client_step(mbedtls_ssl_context *ssl);
  */
 MBEDTLS_CHECK_RETURN_CRITICAL
 int mbedtls_ssl_tls13_handshake_server_step(mbedtls_ssl_context *ssl);
+
+#if defined(MBEDTLS_KEY_UPDATE)
+/* TLS 1.3 post-handshake KeyUpdate (RFC 8446). */
+MBEDTLS_CHECK_RETURN_CRITICAL
+int mbedtls_ssl_tls13_process_key_update(mbedtls_ssl_context *ssl);
+MBEDTLS_CHECK_RETURN_CRITICAL
+int mbedtls_ssl_tls13_write_key_update(mbedtls_ssl_context *ssl);
+MBEDTLS_CHECK_RETURN_CRITICAL
+int mbedtls_ssl_tls13_key_update_send_flush(mbedtls_ssl_context *ssl);
+#endif /* MBEDTLS_KEY_UPDATE */
+MBEDTLS_CHECK_RETURN_CRITICAL
+int mbedtls_ssl_tls13_update_application_keys(mbedtls_ssl_context *ssl,
+                                              int direction);
+MBEDTLS_CHECK_RETURN_CRITICAL
+int mbedtls_ssl_tls13_set_application_keys_from_secret(mbedtls_ssl_context *ssl,
+                                                       int direction,
+                                                       const unsigned char *traffic_secret,
+                                                       size_t traffic_secret_len);
+
+#if defined(MBEDTLS_EXTENDED_KEY_UPDATE)
+/* TLS 1.3 post-handshake Extended Key Update (EKU). */
+MBEDTLS_CHECK_RETURN_CRITICAL
+int mbedtls_ssl_tls13_process_extended_key_update(mbedtls_ssl_context *ssl);
+MBEDTLS_CHECK_RETURN_CRITICAL
+int mbedtls_ssl_tls13_write_extended_key_update_request(mbedtls_ssl_context *ssl);
+MBEDTLS_CHECK_RETURN_CRITICAL
+int mbedtls_ssl_tls13_write_extended_key_update_response(mbedtls_ssl_context *ssl);
+MBEDTLS_CHECK_RETURN_CRITICAL
+int mbedtls_ssl_tls13_write_extended_key_update_nku(mbedtls_ssl_context *ssl);
+MBEDTLS_CHECK_RETURN_CRITICAL
+int mbedtls_ssl_tls13_eku_send_flush(mbedtls_ssl_context *ssl);
+#endif /* MBEDTLS_EXTENDED_KEY_UPDATE */
 
 
 /*

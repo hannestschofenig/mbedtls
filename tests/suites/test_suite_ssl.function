@@ -4163,6 +4163,78 @@ exit:
 }
 /* END_CASE */
 
+/* BEGIN_CASE depends_on:MBEDTLS_SSL_PROTO_TLS1_3:MBEDTLS_SSL_CLI_C:MBEDTLS_SSL_SRV_C:MBEDTLS_TEST_AT_LEAST_ONE_TLS1_3_CIPHERSUITE:MBEDTLS_SSL_TLS1_3_KEY_EXCHANGE_MODE_EPHEMERAL_ENABLED:MBEDTLS_SSL_TLS1_3_KEY_EXCHANGE_MODE_PSK_EPHEMERAL_ENABLED:PSA_WANT_ALG_SHA_256:PSA_WANT_ECC_SECP_R1_256:PSA_WANT_ECC_SECP_R1_384:PSA_HAVE_ALG_ECDSA_VERIFY:MBEDTLS_SSL_SESSION_TICKETS:MBEDTLS_EXTENDED_KEY_UPDATE */
+void tls13_resume_session_with_ticket_eku_disables_resumption()
+{
+    int ret = -1;
+    mbedtls_test_ssl_endpoint client_ep, server_ep;
+    memset(&client_ep, 0, sizeof(client_ep));
+    memset(&server_ep, 0, sizeof(server_ep));
+    mbedtls_test_handshake_test_options client_options;
+    mbedtls_test_handshake_test_options server_options;
+    mbedtls_ssl_session saved_session;
+
+    mbedtls_test_init_handshake_options(&client_options);
+    mbedtls_test_init_handshake_options(&server_options);
+    mbedtls_ssl_session_init(&saved_session);
+
+    PSA_INIT();
+
+    client_options.pk_alg = MBEDTLS_PK_ECDSA;
+    server_options.pk_alg = MBEDTLS_PK_ECDSA;
+
+    ret = mbedtls_test_get_tls13_ticket(&client_options, &server_options,
+                                        &saved_session);
+    TEST_EQUAL(ret, 0);
+
+    ret = mbedtls_test_ssl_endpoint_init_conf(&client_ep, MBEDTLS_SSL_IS_CLIENT,
+                                              &client_options);
+    TEST_EQUAL(ret, 0);
+
+    ret = mbedtls_test_ssl_endpoint_init_conf(&server_ep, MBEDTLS_SSL_IS_SERVER,
+                                              &server_options);
+    TEST_EQUAL(ret, 0);
+
+    mbedtls_ssl_conf_tls13_extended_key_update(&client_ep.conf, 1);
+    mbedtls_ssl_conf_tls13_extended_key_update(&server_ep.conf, 1);
+    mbedtls_ssl_conf_session_tickets_cb(&server_ep.conf,
+                                        mbedtls_test_ticket_write,
+                                        mbedtls_test_ticket_parse,
+                                        NULL);
+
+    ret = mbedtls_test_ssl_endpoint_init_ssl(&client_ep, &client_options);
+    TEST_EQUAL(ret, 0);
+    ret = mbedtls_test_ssl_endpoint_init_ssl(&server_ep, &server_options);
+    TEST_EQUAL(ret, 0);
+
+    ret = mbedtls_test_mock_socket_connect(&(client_ep.socket),
+                                           &(server_ep.socket), 1024);
+    TEST_EQUAL(ret, 0);
+
+    ret = mbedtls_ssl_set_session(&(client_ep.ssl), &saved_session);
+    TEST_EQUAL(ret, 0);
+
+    TEST_EQUAL(mbedtls_test_move_handshake_to_state(
+                   &(server_ep.ssl), &(client_ep.ssl),
+                   MBEDTLS_SSL_HANDSHAKE_WRAPUP), 0);
+
+    TEST_EQUAL(client_ep.ssl.tls13_eku_negotiated, 1);
+    TEST_EQUAL(server_ep.ssl.tls13_eku_negotiated, 1);
+    TEST_EQUAL(server_ep.ssl.handshake->resume, 0);
+    TEST_EQUAL(server_ep.ssl.handshake->new_session_tickets_count, 0);
+    TEST_EQUAL(server_ep.ssl.handshake->key_exchange_mode,
+               MBEDTLS_SSL_TLS1_3_KEY_EXCHANGE_MODE_EPHEMERAL);
+
+exit:
+    mbedtls_test_ssl_endpoint_free(&client_ep);
+    mbedtls_test_ssl_endpoint_free(&server_ep);
+    mbedtls_test_free_handshake_options(&client_options);
+    mbedtls_test_free_handshake_options(&server_options);
+    mbedtls_ssl_session_free(&saved_session);
+    PSA_DONE();
+}
+/* END_CASE */
+
 /*
  * The !MBEDTLS_SSL_PROTO_TLS1_2 dependency of tls13_read_early_data() below is
  * a temporary workaround to not run the test in Windows-2013 where there is
@@ -5953,6 +6025,80 @@ exit:
     mbedtls_test_ssl_endpoint_free(&server_ep);
     mbedtls_test_ssl_endpoint_free(&client_ep);
     mbedtls_test_free_handshake_options(&options);
+    MD_OR_USE_PSA_DONE();
+}
+/* END_CASE */
+
+/* BEGIN_CASE depends_on:MBEDTLS_SSL_PROTO_TLS1_3:MBEDTLS_TEST_AT_LEAST_ONE_TLS1_3_CIPHERSUITE:MBEDTLS_SSL_KEYING_MATERIAL_EXPORT:MBEDTLS_EXTENDED_KEY_UPDATE:PSA_WANT_ALG_SHA_256 */
+void ssl_tls13_exporter_epochs()
+{
+    int ret = -1;
+    uint8_t legacy_out[24] = { 0 };
+    uint8_t current_out[24] = { 0 };
+    uint8_t previous_out[24] = { 0 };
+    uint64_t epoch = 0;
+    char label[] = "test-label";
+    unsigned char context[8] = { 1, 2, 3, 4, 5, 6, 7, 8 };
+    mbedtls_ssl_context ssl;
+    mbedtls_ssl_session session;
+
+    mbedtls_ssl_init(&ssl);
+    mbedtls_ssl_session_init(&session);
+    MD_OR_USE_PSA_INIT();
+
+    ssl.state = MBEDTLS_SSL_HANDSHAKE_OVER;
+    ssl.tls_version = MBEDTLS_SSL_VERSION_TLS1_3;
+    ssl.session = &session;
+
+    session.ciphersuite = MBEDTLS_TLS1_3_AES_128_GCM_SHA256;
+    memset(session.app_secrets.exporter_master_secret, 0x11,
+           sizeof(session.app_secrets.exporter_master_secret));
+    memset(session.app_secrets.eku_current_exporter_master_secret, 0x22,
+           sizeof(session.app_secrets.eku_current_exporter_master_secret));
+    memset(session.app_secrets.eku_previous_exporter_master_secret, 0x33,
+           sizeof(session.app_secrets.eku_previous_exporter_master_secret));
+    session.app_secrets.eku_current_exporter_epoch = 7;
+    session.app_secrets.eku_previous_exporter_epoch = 6;
+    session.app_secrets.eku_previous_exporter_valid = 1;
+
+    ret = mbedtls_ssl_tls13_get_exporter_epoch(&ssl, &epoch);
+    TEST_EQUAL(ret, 0);
+    TEST_EQUAL(epoch, 7);
+
+    ret = mbedtls_ssl_export_keying_material(&ssl,
+                                             legacy_out, sizeof(legacy_out),
+                                             label, sizeof(label),
+                                             context, sizeof(context), 1);
+    TEST_EQUAL(ret, 0);
+
+    ret = mbedtls_ssl_tls13_export_keying_material_for_epoch(
+        &ssl, 7, current_out, sizeof(current_out),
+        label, sizeof(label), context, sizeof(context));
+    TEST_EQUAL(ret, 0);
+
+    ret = mbedtls_ssl_tls13_export_keying_material_for_epoch(
+        &ssl, 6, previous_out, sizeof(previous_out),
+        label, sizeof(label), context, sizeof(context));
+    TEST_EQUAL(ret, 0);
+
+    TEST_ASSERT(memcmp(legacy_out, current_out, sizeof(legacy_out)) != 0);
+    TEST_ASSERT(memcmp(legacy_out, previous_out, sizeof(legacy_out)) != 0);
+    TEST_ASSERT(memcmp(current_out, previous_out, sizeof(current_out)) != 0);
+
+    ret = mbedtls_ssl_tls13_export_keying_material_for_epoch(
+        &ssl, 5, current_out, sizeof(current_out),
+        label, sizeof(label), context, sizeof(context));
+    TEST_EQUAL(ret, MBEDTLS_ERR_SSL_FEATURE_UNAVAILABLE);
+
+    session.app_secrets.eku_previous_exporter_valid = 0;
+    ret = mbedtls_ssl_tls13_export_keying_material_for_epoch(
+        &ssl, 6, previous_out, sizeof(previous_out),
+        label, sizeof(label), context, sizeof(context));
+    TEST_EQUAL(ret, MBEDTLS_ERR_SSL_FEATURE_UNAVAILABLE);
+
+exit:
+    mbedtls_ssl_session_free(&session);
+    mbedtls_ssl_free(&ssl);
     MD_OR_USE_PSA_DONE();
 }
 /* END_CASE */

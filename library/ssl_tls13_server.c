@@ -1651,6 +1651,23 @@ static int ssl_tls13_parse_client_hello(mbedtls_ssl_context *ssl,
                 break;
 #endif /* MBEDTLS_SSL_RECORD_SIZE_LIMIT */
 
+#if defined(MBEDTLS_EXTENDED_KEY_UPDATE)
+            case MBEDTLS_TLS_EXT_TLS_FLAGS:
+                MBEDTLS_SSL_DEBUG_MSG(3, ("found tls_flags extension"));
+
+                if (extension_data_len < 1) {
+                    MBEDTLS_SSL_PEND_FATAL_ALERT(
+                        MBEDTLS_SSL_ALERT_MSG_DECODE_ERROR,
+                        MBEDTLS_ERR_SSL_DECODE_ERROR);
+                    return MBEDTLS_ERR_SSL_DECODE_ERROR;
+                }
+
+                if ((p[0] & 0x01) != 0) {
+                    ssl->handshake->tls13_eku_peer_support = 1;
+                }
+                break;
+#endif /* MBEDTLS_EXTENDED_KEY_UPDATE */
+
             default:
                 MBEDTLS_SSL_PRINT_EXT(
                     3, MBEDTLS_SSL_HS_CLIENT_HELLO,
@@ -2561,6 +2578,23 @@ static int ssl_tls13_write_encrypted_extensions_body(mbedtls_ssl_context *ssl,
     }
 #endif /* MBEDTLS_SSL_EARLY_DATA */
 
+#if defined(MBEDTLS_EXTENDED_KEY_UPDATE)
+    if (ssl->conf->tls13_extended_key_update &&
+        ssl->handshake->tls13_eku_peer_support) {
+        MBEDTLS_SSL_DEBUG_MSG(3, ("encrypted extensions, adding tls_flags extension"));
+
+        /* Extension header (4) + 1 byte flags */
+        MBEDTLS_SSL_CHK_BUF_PTR(p, end, 5);
+        MBEDTLS_PUT_UINT16_BE(MBEDTLS_TLS_EXT_TLS_FLAGS, p, 0);
+        MBEDTLS_PUT_UINT16_BE(1, p, 2);
+        p += 4;
+        *p++ = 0x01; /* extended_key_update flag */
+
+        mbedtls_ssl_tls13_set_hs_sent_ext_mask(ssl, MBEDTLS_TLS_EXT_TLS_FLAGS);
+        ssl->tls13_eku_negotiated = 1;
+    }
+#endif /* MBEDTLS_EXTENDED_KEY_UPDATE */
+
 #if defined(MBEDTLS_SSL_RECORD_SIZE_LIMIT)
     if (ssl->handshake->received_extensions & MBEDTLS_SSL_EXT_MASK(RECORD_SIZE_LIMIT)) {
         ret = mbedtls_ssl_tls13_write_record_size_limit_ext(
@@ -3109,6 +3143,13 @@ static int ssl_tls13_handshake_wrapup(mbedtls_ssl_context *ssl)
 MBEDTLS_CHECK_RETURN_CRITICAL
 static int ssl_tls13_write_new_session_ticket_coordinate(mbedtls_ssl_context *ssl)
 {
+#if defined(MBEDTLS_EXTENDED_KEY_UPDATE)
+    if (ssl->conf->tls13_extended_key_update) {
+        MBEDTLS_SSL_DEBUG_MSG(2, ("NewSessionTicket: disabled while EKU is enabled"));
+        return SSL_NEW_SESSION_TICKET_SKIP;
+    }
+#endif
+
     /* Check whether the use of session tickets is enabled */
     if (ssl->conf->f_ticket_write == NULL) {
         MBEDTLS_SSL_DEBUG_MSG(2, ("NewSessionTicket: disabled,"
@@ -3577,6 +3618,44 @@ int mbedtls_ssl_tls13_handshake_server_step(mbedtls_ssl_context *ssl)
             break;
 
 #endif /* MBEDTLS_SSL_SESSION_TICKETS */
+
+#if defined(MBEDTLS_KEY_UPDATE)
+        case MBEDTLS_SSL_TLS1_3_KEY_UPDATE:
+            ret = mbedtls_ssl_tls13_process_key_update(ssl);
+            break;
+
+        case MBEDTLS_SSL_TLS1_3_KEY_UPDATE_SEND:
+            ret = mbedtls_ssl_tls13_write_key_update(ssl);
+            break;
+
+        case MBEDTLS_SSL_TLS1_3_KEY_UPDATE_SEND_FLUSH:
+            ret = mbedtls_ssl_tls13_key_update_send_flush(ssl);
+            break;
+#endif /* MBEDTLS_KEY_UPDATE */
+
+#if defined(MBEDTLS_EXTENDED_KEY_UPDATE)
+        case MBEDTLS_SSL_TLS1_3_EKU:
+            ret = mbedtls_ssl_tls13_process_extended_key_update(ssl);
+            break;
+
+        case MBEDTLS_SSL_TLS1_3_EKU_SEND_REQUEST:
+            ret = mbedtls_ssl_tls13_write_extended_key_update_request(ssl);
+            break;
+
+        case MBEDTLS_SSL_TLS1_3_EKU_SEND_REQUEST_FLUSH:
+        case MBEDTLS_SSL_TLS1_3_EKU_SEND_RESPONSE_FLUSH:
+        case MBEDTLS_SSL_TLS1_3_EKU_SEND_NKU_FLUSH:
+            ret = mbedtls_ssl_tls13_eku_send_flush(ssl);
+            break;
+
+        case MBEDTLS_SSL_TLS1_3_EKU_SEND_RESPONSE:
+            ret = mbedtls_ssl_tls13_write_extended_key_update_response(ssl);
+            break;
+
+        case MBEDTLS_SSL_TLS1_3_EKU_SEND_NKU:
+            ret = mbedtls_ssl_tls13_write_extended_key_update_nku(ssl);
+            break;
+#endif /* MBEDTLS_EXTENDED_KEY_UPDATE */
 
         default:
             MBEDTLS_SSL_DEBUG_MSG(1, ("invalid state %d", ssl->state));

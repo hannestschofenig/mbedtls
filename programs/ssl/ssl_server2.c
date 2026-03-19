@@ -100,6 +100,11 @@ int main(void)
 #define DFL_RENEGO_DELAY        -2
 #define DFL_RENEGO_PERIOD       ((uint64_t) -1)
 #define DFL_EXCHANGES           1
+#define DFL_APPDATA_SECONDS     0
+#define DFL_KEY_UPDATE          0
+#define DFL_EKU_ENABLED         0
+#define DFL_EKU_UPDATES         0
+#define DFL_EKU_AFTER           0
 #define DFL_MIN_VERSION         -1
 #define DFL_MAX_VERSION         -1
 #define DFL_SHA1                -1
@@ -504,8 +509,23 @@ int main(void)
     "    tls13_kex_modes=%%s   default: all\n"     \
     "                          options: psk, psk_ephemeral, psk_all, ephemeral,\n"  \
     "                                   ephemeral_all, all, psk_or_ephemeral\n"
+#define USAGE_TLS1_3_KEY_UPDATE \
+    "    key_update=%%d        default: 0 (disabled)\n"                 \
+    "                        options:\n"                                \
+    "                        - 0: no KeyUpdate\n"                       \
+    "                        - 1: send KeyUpdate (request_update=0)\n"  \
+    "                        - 2: send KeyUpdate (request_update=1)\n"
+#define USAGE_TLS1_3_EKU \
+    "    eku=%%d              default: 0 (disabled)\n"                      \
+    "                        Enable TLS 1.3 Extended Key Update (EKU).\n"  \
+    "    eku_updates=%%d      default: 0 (disabled)\n"                      \
+    "                        Number of EKU exchanges to run after the handshake.\n" \
+    "    eku_after=%%d        default: 0\n"                                  \
+    "                        Run EKU every N data exchanges (0 = immediately).\n"
 #else
 #define USAGE_TLS1_3_KEY_EXCHANGE_MODES ""
+#define USAGE_TLS1_3_KEY_UPDATE ""
+#define USAGE_TLS1_3_EKU ""
 #endif /* MBEDTLS_SSL_PROTO_TLS1_3 */
 
 
@@ -553,6 +573,10 @@ int main(void)
     "    allow_legacy=%%d     default: (library default: no)\n"      \
     USAGE_RENEGO                                            \
     "    exchanges=%%d        default: 1\n"                 \
+    "    appdata_seconds=%%d  default: 0 (disabled)\n"      \
+    "                        Exchange application data for this many seconds.\n" \
+    USAGE_TLS1_3_KEY_UPDATE                                 \
+    USAGE_TLS1_3_EKU                                        \
     "\n"                                                    \
     USAGE_TICKETS                                           \
     USAGE_EAP_TLS                                           \
@@ -662,6 +686,13 @@ struct options {
     int renego_delay;           /* delay before enforcing renegotiation     */
     uint64_t renego_period;     /* period for automatic renegotiation       */
     int exchanges;              /* number of data exchanges                 */
+    int appdata_seconds;        /* exchange application data for N seconds  */
+#if defined(MBEDTLS_SSL_PROTO_TLS1_3)
+    int key_update;             /* TLS 1.3 KeyUpdate after handshake        */
+    int eku_enabled;            /* enable TLS 1.3 EKU                        */
+    int eku_updates;            /* number of EKU exchanges                   */
+    int eku_after;              /* run EKU every N data exchanges            */
+#endif /* MBEDTLS_SSL_PROTO_TLS1_3 */
     int min_version;            /* minimum protocol version accepted        */
     int max_version;            /* maximum protocol version accepted        */
     int allow_sha1;             /* flag for SHA-1 support                   */
@@ -1536,6 +1567,7 @@ static int parse_cipher(char *buf)
 int main(int argc, char *argv[])
 {
     int ret = 0, len, written, frags, exchanges_left;
+    int exchanges_done = 0;
     int query_config_ret = 0;
     io_ctx_t io_ctx;
     unsigned char *buf = 0;
@@ -1559,6 +1591,7 @@ int main(int argc, char *argv[])
     mbedtls_ssl_config conf;
 #if defined(MBEDTLS_TIMING_C)
     mbedtls_timing_delay_context timer;
+    struct mbedtls_timing_hr_time appdata_timer;
 #endif
 #if defined(MBEDTLS_SSL_RENEGOTIATION)
     unsigned char renego_period[8] = { 0 };
@@ -1751,6 +1784,13 @@ int main(int argc, char *argv[])
     opt.renego_delay        = DFL_RENEGO_DELAY;
     opt.renego_period       = DFL_RENEGO_PERIOD;
     opt.exchanges           = DFL_EXCHANGES;
+    opt.appdata_seconds     = DFL_APPDATA_SECONDS;
+#if defined(MBEDTLS_SSL_PROTO_TLS1_3)
+    opt.key_update          = DFL_KEY_UPDATE;
+    opt.eku_enabled         = DFL_EKU_ENABLED;
+    opt.eku_updates         = DFL_EKU_UPDATES;
+    opt.eku_after           = DFL_EKU_AFTER;
+#endif /* MBEDTLS_SSL_PROTO_TLS1_3 */
     opt.min_version         = DFL_MIN_VERSION;
     opt.max_version         = DFL_MAX_VERSION;
     opt.allow_sha1          = DFL_SHA1;
@@ -2065,6 +2105,11 @@ usage:
             if (opt.exchanges < 0) {
                 goto usage;
             }
+        } else if (strcmp(p, "appdata_seconds") == 0) {
+            opt.appdata_seconds = atoi(q);
+            if (opt.appdata_seconds < 0) {
+                goto usage;
+            }
         }
 #if defined(MBEDTLS_SSL_PROTO_TLS1_3)
         else if (strcmp(p, "tls13_kex_modes") == 0) {
@@ -2092,6 +2137,26 @@ usage:
                 opt.tls13_kex_modes = MBEDTLS_SSL_TLS1_3_KEY_EXCHANGE_MODE_PSK |
                                       MBEDTLS_SSL_TLS1_3_KEY_EXCHANGE_MODE_EPHEMERAL;
             } else {
+                goto usage;
+            }
+        } else if (strcmp(p, "key_update") == 0) {
+            opt.key_update = atoi(q);
+            if (opt.key_update < 0 || opt.key_update > 2) {
+                goto usage;
+            }
+        } else if (strcmp(p, "eku") == 0) {
+            opt.eku_enabled = atoi(q);
+            if (opt.eku_enabled < 0 || opt.eku_enabled > 1) {
+                goto usage;
+            }
+        } else if (strcmp(p, "eku_updates") == 0) {
+            opt.eku_updates = atoi(q);
+            if (opt.eku_updates < 0) {
+                goto usage;
+            }
+        } else if (strcmp(p, "eku_after") == 0) {
+            opt.eku_after = atoi(q);
+            if (opt.eku_after < 0) {
                 goto usage;
             }
         }
@@ -3046,6 +3111,9 @@ usage:
 
 #if defined(MBEDTLS_SSL_PROTO_TLS1_3)
     mbedtls_ssl_conf_tls13_key_exchange_modes(&conf, opt.tls13_kex_modes);
+    if (opt.eku_enabled) {
+        mbedtls_ssl_conf_tls13_extended_key_update(&conf, 1);
+    }
 #endif /* MBEDTLS_SSL_PROTO_TLS1_3 */
 
     if (opt.allow_legacy != DFL_ALLOW_LEGACY) {
@@ -3704,6 +3772,87 @@ handshake:
     }
 #endif /* MBEDTLS_SSL_DTLS_SRTP */
 
+#if defined(MBEDTLS_SSL_PROTO_TLS1_3)
+    if (ssl.tls_version == MBEDTLS_SSL_VERSION_TLS1_3 &&
+        opt.eku_updates > 0 &&
+        opt.eku_after == 0) {
+        int i_update;
+
+        for (i_update = 0; i_update < opt.eku_updates; i_update++) {
+            mbedtls_printf("  . Performing TLS 1.3 Extended Key Update...");
+            fflush(stdout);
+
+            while ((ret = mbedtls_ssl_tls13_extended_key_update(&ssl)) != 0) {
+                if (ret != MBEDTLS_ERR_SSL_WANT_READ &&
+                    ret != MBEDTLS_ERR_SSL_WANT_WRITE &&
+                    ret != MBEDTLS_ERR_SSL_CRYPTO_IN_PROGRESS) {
+                    mbedtls_printf(" failed\n  ! mbedtls_ssl_tls13_extended_key_update returned -0x%x\n\n",
+                                   (unsigned int) -ret);
+                    goto exit;
+                }
+
+#if defined(MBEDTLS_ECP_RESTARTABLE)
+                if (ret == MBEDTLS_ERR_SSL_CRYPTO_IN_PROGRESS) {
+                    continue;
+                }
+#endif
+
+                /* For event-driven IO, wait for socket to become available */
+                if (opt.event == 1 /* level triggered IO */) {
+#if defined(MBEDTLS_TIMING_C)
+                    ret = idle(&client_fd, &timer, ret);
+#else
+                    ret = idle(&client_fd, ret);
+#endif
+                    if (ret != 0) {
+                        goto exit;
+                    }
+                }
+            }
+
+            mbedtls_printf(" ok\n");
+        }
+
+    }
+
+    if (ssl.tls_version == MBEDTLS_SSL_VERSION_TLS1_3 &&
+        opt.key_update != 0) {
+        mbedtls_printf("  . Performing TLS 1.3 KeyUpdate...");
+        fflush(stdout);
+
+        while ((ret = mbedtls_ssl_tls13_key_update(
+                    &ssl, opt.key_update == 2)) != 0) {
+            if (ret != MBEDTLS_ERR_SSL_WANT_READ &&
+                ret != MBEDTLS_ERR_SSL_WANT_WRITE &&
+                ret != MBEDTLS_ERR_SSL_CRYPTO_IN_PROGRESS) {
+                mbedtls_printf(" failed\n  ! mbedtls_ssl_tls13_key_update returned -0x%x\n\n",
+                               (unsigned int) -ret);
+                goto exit;
+            }
+
+#if defined(MBEDTLS_ECP_RESTARTABLE)
+            if (ret == MBEDTLS_ERR_SSL_CRYPTO_IN_PROGRESS) {
+                continue;
+            }
+#endif
+
+            /* For event-driven IO, wait for socket to become available */
+            if (opt.event == 1 /* level triggered IO */) {
+#if defined(MBEDTLS_TIMING_C)
+                ret = idle(&client_fd, &timer, ret);
+#else
+                ret = idle(&client_fd, ret);
+#endif
+                if (ret != 0) {
+                    goto exit;
+                }
+            }
+        }
+
+        mbedtls_printf(" ok\n");
+    }
+#endif /* MBEDTLS_SSL_PROTO_TLS1_3 */
+
 #if defined(MBEDTLS_SSL_DTLS_CONNECTION_ID)
     ret = report_cid_usage(&ssl, "initial handshake");
     if (ret != 0) {
@@ -3727,9 +3876,20 @@ handshake:
                    (unsigned long) current_heap_memory, (unsigned long) peak_heap_memory);
 #endif  /* MBEDTLS_MEMORY_DEBUG */
 
-    if (opt.exchanges == 0) {
+    if (opt.exchanges == 0 && opt.appdata_seconds == 0) {
         goto close_notify;
     }
+
+#if defined(MBEDTLS_TIMING_C)
+    if (opt.appdata_seconds > 0) {
+        mbedtls_timing_get_timer(&appdata_timer, 1);
+    }
+#else
+    if (opt.appdata_seconds > 0) {
+        mbedtls_printf("  ! appdata_seconds requires MBEDTLS_TIMING_C\n");
+        goto exit;
+    }
+#endif
 
     exchanges_left = opt.exchanges;
 data_exchange:
@@ -3922,6 +4082,50 @@ data_exchange:
     }
 #endif /* MBEDTLS_SSL_DTLS_CONNECTION_ID */
 
+#if defined(MBEDTLS_SSL_PROTO_TLS1_3)
+    if (ssl.tls_version == MBEDTLS_SSL_VERSION_TLS1_3 &&
+        opt.eku_updates > 0 &&
+        opt.eku_after > 0 &&
+        ((exchanges_done + 1) % opt.eku_after) == 0) {
+        int i_update;
+
+        for (i_update = 0; i_update < opt.eku_updates; i_update++) {
+            mbedtls_printf("  . Performing TLS 1.3 Extended Key Update...");
+            fflush(stdout);
+
+            while ((ret = mbedtls_ssl_tls13_extended_key_update(&ssl)) != 0) {
+                if (ret != MBEDTLS_ERR_SSL_WANT_READ &&
+                    ret != MBEDTLS_ERR_SSL_WANT_WRITE &&
+                    ret != MBEDTLS_ERR_SSL_CRYPTO_IN_PROGRESS) {
+                    mbedtls_printf(" failed\n  ! mbedtls_ssl_tls13_extended_key_update returned -0x%x\n\n",
+                                   (unsigned int) -ret);
+                    goto reset;
+                }
+
+#if defined(MBEDTLS_ECP_RESTARTABLE)
+                if (ret == MBEDTLS_ERR_SSL_CRYPTO_IN_PROGRESS) {
+                    continue;
+                }
+#endif
+
+                /* For event-driven IO, wait for socket to become available */
+                if (opt.event == 1 /* level triggered IO */) {
+#if defined(MBEDTLS_TIMING_C)
+                    ret = idle(&client_fd, &timer, ret);
+#else
+                    ret = idle(&client_fd, ret);
+#endif
+                    if (ret != 0) {
+                        goto reset;
+                    }
+                }
+            }
+
+            mbedtls_printf(" ok\n");
+        }
+    }
+#endif /* MBEDTLS_SSL_PROTO_TLS1_3 */
+
     /*
      * 7. Write the 200 Response
      */
@@ -4008,6 +4212,8 @@ data_exchange:
     buf[written] = '\0';
     mbedtls_printf(" %d bytes written in %d fragments\n\n%s\n", written, frags, (char *) buf);
     ret = 0;
+    exchanges_done++;
+
 
     /*
      * 7b. Simulate serialize/deserialize and go back to data exchange
@@ -4167,7 +4373,14 @@ data_exchange:
     /*
      * 7c. Continue doing data exchanges?
      */
-    if (--exchanges_left > 0) {
+    if (opt.appdata_seconds > 0) {
+#if defined(MBEDTLS_TIMING_C)
+        if (mbedtls_timing_get_timer(&appdata_timer, 0) <
+            (unsigned long) opt.appdata_seconds * 1000UL) {
+            goto data_exchange;
+        }
+#endif
+    } else if (--exchanges_left > 0) {
         goto data_exchange;
     }
 

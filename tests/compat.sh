@@ -77,6 +77,10 @@ guess_config_name() {
         echo "unknown"
     fi
 }
+
+is_config_enabled() {
+    grep -q "^#define[[:space:]]\\+$1\\b" ../include/mbedtls/mbedtls_config.h
+}
 : ${MBEDTLS_TEST_OUTCOME_FILE=}
 : ${MBEDTLS_TEST_CONFIGURATION:="$(guess_config_name)"}
 : ${MBEDTLS_TEST_PLATFORM:="$(uname -s | tr -c \\n0-9A-Za-z _)-$(uname -m | tr -c \\n0-9A-Za-z _)"}
@@ -956,6 +960,156 @@ run_client() {
     rm -f $CLI_OUT
 }
 
+run_tls13_key_update_openssl() {
+    TITLE="m->O tls13 KeyUpdate"
+    TESTS=$(( $TESTS + 1 ))
+    DOTS72="........................................................................"
+    printf "%s %.*s " "$TITLE" "$((71 - ${#TITLE}))" "$DOTS72"
+
+    if ! echo "$PEERS" | grep -i openssl >/dev/null; then
+        record_outcome "SKIP"
+        SKIPPED=$(( $SKIPPED + 1 ))
+        return
+    fi
+
+    if ! is_config_enabled MBEDTLS_SSL_PROTO_TLS1_3; then
+        record_outcome "SKIP"
+        SKIPPED=$(( $SKIPPED + 1 ))
+        return
+    fi
+
+    if ! $OPENSSL s_server -help 2>&1 | grep -q "tls1_3"; then
+        record_outcome "SKIP"
+        SKIPPED=$(( $SKIPPED + 1 ))
+        return
+    fi
+
+    TLS13_PORT="2$(echo $PORT | tail -c 5)"
+    DATA_FILES_PATH="../framework/data_files"
+
+    SERVER_CMD="$OPENSSL s_server -accept $TLS13_PORT -tls1_3 -www -cert $DATA_FILES_PATH/server2-sha256.crt -key $DATA_FILES_PATH/server2.key"
+
+    log "$SERVER_CMD"
+    echo "$SERVER_CMD" > $SRV_OUT
+    while :; do echo bla; sleep 1; done | $SERVER_CMD >> $SRV_OUT 2>&1 &
+    SRV_PID=$!
+
+    if type lsof >/dev/null 2>/dev/null; then
+        START_TIME=$(date +%s)
+        while ! lsof -a -n -b -i "TCP:$TLS13_PORT" -p "$SRV_PID" >/dev/null 2>/dev/null; do
+            if [ $(( $(date +%s) - $START_TIME )) -gt $DOG_DELAY ]; then
+                echo "SERVERSTART TIMEOUT" >> $SRV_OUT
+                break
+            fi
+            sleep 0.1 2>/dev/null || true
+        done
+    else
+        sleep 2
+    fi
+
+    CLIENT_CMD="$M_CLI server_addr=127.0.0.1 server_port=$TLS13_PORT force_version=tls13 ca_file=$DATA_FILES_PATH/test-ca_cat12.crt auth_mode=required debug_level=3 exchanges=2 key_update=2"
+
+    if [ "$MEMCHECK" -gt 0 ]; then
+        CLIENT_CMD="valgrind --leak-check=full $CLIENT_CMD"
+    fi
+
+    log "$CLIENT_CMD"
+    echo "$CLIENT_CMD" > $CLI_OUT
+    $CLIENT_CMD >> $CLI_OUT 2>&1 &
+    wait_client_done
+
+    # terminate the server
+    kill $SRV_PID >/dev/null 2>&1
+    wait $SRV_PID >> $SRV_OUT 2>&1
+
+    RESULT=2
+    if [ "$EXIT" -eq 0 ] && grep -F "KeyUpdate received" $CLI_OUT >/dev/null 2>&1; then
+        RESULT=0
+    fi
+
+    case $RESULT in
+        "0")
+            record_outcome "PASS"
+            if [ "$PRESERVE_LOGS" -gt 0 ]; then
+                save_logs
+            fi
+            ;;
+        *)
+            report_fail
+            FAILED=$(( $FAILED + 1 ))
+            ;;
+    esac
+
+    rm -f $SRV_OUT $CLI_OUT
+}
+
+run_tls13_eku_mbedtls() {
+    TITLE="m<->m tls13 EKU (client initiates)"
+    TESTS=$(( $TESTS + 1 ))
+    DOTS72="........................................................................"
+    printf "%s %.*s " "$TITLE" "$((71 - ${#TITLE}))" "$DOTS72"
+
+    if ! is_config_enabled MBEDTLS_SSL_PROTO_TLS1_3; then
+        record_outcome "SKIP"
+        SKIPPED=$(( $SKIPPED + 1 ))
+        return
+    fi
+
+    if ! is_config_enabled MBEDTLS_SSL_TLS1_3_KEY_EXCHANGE_MODE_SOME_EPHEMERAL_ENABLED; then
+        record_outcome "SKIP"
+        SKIPPED=$(( $SKIPPED + 1 ))
+        return
+    fi
+
+    TLS13_PORT="3$(echo $PORT | tail -c 5)"
+    DATA_FILES_PATH="../framework/data_files"
+
+    SERVER_CMD="$M_SRV server_addr=127.0.0.1 server_port=$TLS13_PORT force_version=tls13 ca_file=$DATA_FILES_PATH/test-ca_cat12.crt auth_mode=required debug_level=3 exchanges=2 eku=1"
+    CLIENT_CMD="$M_CLI server_addr=127.0.0.1 server_port=$TLS13_PORT force_version=tls13 ca_file=$DATA_FILES_PATH/test-ca_cat12.crt auth_mode=required debug_level=3 exchanges=2 eku=1 eku_updates=1"
+
+    if [ "$MEMCHECK" -gt 0 ]; then
+        SERVER_CMD="valgrind --leak-check=full $SERVER_CMD"
+        CLIENT_CMD="valgrind --leak-check=full $CLIENT_CMD"
+    fi
+
+    log "$SERVER_CMD"
+    echo "$SERVER_CMD" > $SRV_OUT
+    while :; do echo bla; sleep 1; done | $SERVER_CMD >> $SRV_OUT 2>&1 &
+    SRV_PID=$!
+    wait_server_start "$TLS13_PORT" "$SRV_PID"
+
+    log "$CLIENT_CMD"
+    echo "$CLIENT_CMD" > $CLI_OUT
+    $CLIENT_CMD >> $CLI_OUT 2>&1 &
+    wait_client_done
+
+    kill $SRV_PID >/dev/null 2>&1
+    wait $SRV_PID >> $SRV_OUT 2>&1
+
+    RESULT=2
+    if [ "$EXIT" -eq 0 ] && \
+       grep -F "EKU: type=1" $CLI_OUT >/dev/null 2>&1 && \
+       grep -F "EKU: type=0" $SRV_OUT >/dev/null 2>&1 && \
+       grep -F "EKU: type=2" $SRV_OUT >/dev/null 2>&1; then
+        RESULT=0
+    fi
+
+    case $RESULT in
+        "0")
+            record_outcome "PASS"
+            if [ "$PRESERVE_LOGS" -gt 0 ]; then
+                save_logs
+            fi
+            ;;
+        *)
+            report_fail
+            FAILED=$(( $FAILED + 1 ))
+            ;;
+    esac
+
+    rm -f $SRV_OUT $CLI_OUT
+}
+
 #
 # MAIN
 #
@@ -1129,9 +1283,12 @@ for MODE in $MODES; do
                 esac
 
             done
-        done
-    done
 done
+done
+done
+
+run_tls13_key_update_openssl
+run_tls13_eku_mbedtls
 
 echo "------------------------------------------------------------------------"
 

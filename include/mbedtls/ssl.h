@@ -604,6 +604,11 @@
 #define MBEDTLS_SSL_HS_CERTIFICATE_VERIFY      15
 #define MBEDTLS_SSL_HS_CLIENT_KEY_EXCHANGE     16
 #define MBEDTLS_SSL_HS_FINISHED                20
+/* RFC 8446 */
+#define MBEDTLS_SSL_HS_KEY_UPDATE              24
+/* Provisional value for the ExtendedKeyUpdate handshake message
+ * (draft-ietf-tls-extended-key-update). IANA value is TBD. */
+#define MBEDTLS_SSL_HS_EXTENDED_KEY_UPDATE     27
 #define MBEDTLS_SSL_HS_MESSAGE_HASH           254
 
 /*
@@ -634,6 +639,9 @@
 #define MBEDTLS_TLS_EXT_EXTENDED_MASTER_SECRET  0x0017 /* 23 */
 
 #define MBEDTLS_TLS_EXT_RECORD_SIZE_LIMIT           28 /* RFC 8449 (implemented for TLS 1.3 only) */
+#if defined(MBEDTLS_EXTENDED_KEY_UPDATE)
+#define MBEDTLS_TLS_EXT_TLS_FLAGS                0x003e /* TLS Flags extension (draft) */
+#endif
 
 #define MBEDTLS_TLS_EXT_SESSION_TICKET              35
 
@@ -755,6 +763,16 @@ typedef enum {
     MBEDTLS_SSL_HANDSHAKE_OVER,
     MBEDTLS_SSL_TLS1_3_NEW_SESSION_TICKET,
     MBEDTLS_SSL_TLS1_3_NEW_SESSION_TICKET_FLUSH,
+    MBEDTLS_SSL_TLS1_3_KEY_UPDATE,
+    MBEDTLS_SSL_TLS1_3_KEY_UPDATE_SEND,
+    MBEDTLS_SSL_TLS1_3_KEY_UPDATE_SEND_FLUSH,
+    MBEDTLS_SSL_TLS1_3_EKU,
+    MBEDTLS_SSL_TLS1_3_EKU_SEND_REQUEST,
+    MBEDTLS_SSL_TLS1_3_EKU_SEND_REQUEST_FLUSH,
+    MBEDTLS_SSL_TLS1_3_EKU_SEND_RESPONSE,
+    MBEDTLS_SSL_TLS1_3_EKU_SEND_RESPONSE_FLUSH,
+    MBEDTLS_SSL_TLS1_3_EKU_SEND_NKU,
+    MBEDTLS_SSL_TLS1_3_EKU_SEND_NKU_FLUSH,
 }
 mbedtls_ssl_states;
 
@@ -1121,6 +1139,11 @@ typedef struct {
     unsigned char client_application_traffic_secret_N[MBEDTLS_TLS1_3_MD_MAX_SIZE];
     unsigned char server_application_traffic_secret_N[MBEDTLS_TLS1_3_MD_MAX_SIZE];
     unsigned char exporter_master_secret[MBEDTLS_TLS1_3_MD_MAX_SIZE];
+    unsigned char eku_current_exporter_master_secret[MBEDTLS_TLS1_3_MD_MAX_SIZE];
+    unsigned char eku_previous_exporter_master_secret[MBEDTLS_TLS1_3_MD_MAX_SIZE];
+    uint64_t eku_current_exporter_epoch;
+    uint64_t eku_previous_exporter_epoch;
+    uint8_t eku_previous_exporter_valid;
     unsigned char resumption_master_secret[MBEDTLS_TLS1_3_MD_MAX_SIZE];
 } mbedtls_ssl_tls13_application_secrets;
 
@@ -1430,6 +1453,10 @@ struct mbedtls_ssl_config {
 #if defined(MBEDTLS_SSL_PROTO_TLS1_3)
     /** Allowed TLS 1.3 key exchange modes.                                 */
     int MBEDTLS_PRIVATE(tls13_kex_modes);
+#if defined(MBEDTLS_EXTENDED_KEY_UPDATE)
+    /** Enable TLS 1.3 Extended Key Update (EKU).                           */
+    uint8_t MBEDTLS_PRIVATE(tls13_extended_key_update);
+#endif /* MBEDTLS_EXTENDED_KEY_UPDATE */
 #endif /* MBEDTLS_SSL_PROTO_TLS1_3 */
 
     /** Callback for printing debug output                                  */
@@ -1645,6 +1672,13 @@ struct mbedtls_ssl_context {
      * the handshake when the ClientHello is received.
      */
     mbedtls_ssl_protocol_version MBEDTLS_PRIVATE(tls_version);
+
+#if defined(MBEDTLS_SSL_PROTO_TLS1_3)
+    /** Whether TLS 1.3 Extended Key Update was negotiated. */
+#if defined(MBEDTLS_EXTENDED_KEY_UPDATE)
+    uint8_t MBEDTLS_PRIVATE(tls13_eku_negotiated);
+#endif /* MBEDTLS_EXTENDED_KEY_UPDATE */
+#endif
 
 #if defined(MBEDTLS_SSL_EARLY_DATA) && defined(MBEDTLS_SSL_CLI_C)
     /**
@@ -2269,6 +2303,65 @@ int mbedtls_ssl_set_cid(mbedtls_ssl_context *ssl,
                         int enable,
                         unsigned char const *own_cid,
                         size_t own_cid_len);
+
+#if defined(MBEDTLS_KEY_UPDATE)
+/**
+ * \brief          Initiate a TLS 1.3 KeyUpdate (RFC 8446).
+ *
+ *                 This function starts sending a KeyUpdate handshake message
+ *                 protected under the current application traffic keys, then
+ *                 updates the outgoing (send) traffic keys.
+ *
+ *                 If \p request_update is non-zero, this requests the peer to
+ *                 also update its sending keys, which causes it to respond with
+ *                 a KeyUpdate message.
+ *
+ * \param ssl          The SSL context to operate on. This must be initialized
+ *                     and the handshake must be complete.
+ * \param request_update  Either 0 (update_not_requested) or 1 (update_requested).
+ *
+ * \return         \c 0 on success.
+ * \return         #MBEDTLS_ERR_SSL_WANT_READ or #MBEDTLS_ERR_SSL_WANT_WRITE on
+ *                 non-blocking I/O.
+ * \return         Another negative error code on failure.
+ */
+int mbedtls_ssl_tls13_key_update(mbedtls_ssl_context *ssl, int request_update);
+#endif /* MBEDTLS_KEY_UPDATE */
+
+#if defined(MBEDTLS_EXTENDED_KEY_UPDATE)
+/**
+ * \brief          Initiate a TLS 1.3 Extended Key Update (EKU).
+ *
+ * \note           This is an experimental feature based on an IETF Internet-Draft.
+ *
+ * \param ssl      The SSL context to operate on. This must be initialized
+ *                 and the handshake must be complete.
+ *
+ * \return         \c 0 on success.
+ * \return         #MBEDTLS_ERR_SSL_WANT_READ or #MBEDTLS_ERR_SSL_WANT_WRITE on
+ *                 non-blocking I/O.
+ * \return         Another negative error code on failure.
+ */
+int mbedtls_ssl_tls13_extended_key_update(mbedtls_ssl_context *ssl);
+
+/**
+ * \brief          Get the current TLS 1.3 exporter epoch.
+ *
+ * \note           Epoch 0 is the exporter secret from the initial handshake.
+ *                 The value increases by one after each successful EKU.
+ *
+ * \param ssl      The SSL context to query. This must be initialized and the
+ *                 handshake must be complete.
+ * \param epoch    The address at which to store the current exporter epoch.
+ *
+ * \return         \c 0 on success.
+ * \return         #MBEDTLS_ERR_SSL_BAD_INPUT_DATA on invalid input or if the
+ *                 handshake has not completed.
+ * \return         Another negative error code on failure.
+ */
+int mbedtls_ssl_tls13_get_exporter_epoch(const mbedtls_ssl_context *ssl,
+                                         uint64_t *epoch);
+#endif /* MBEDTLS_EXTENDED_KEY_UPDATE */
 
 /**
  * \brief              Get information about our request for usage of the CID
@@ -3344,6 +3437,19 @@ void mbedtls_ssl_conf_ciphersuites(mbedtls_ssl_config *conf,
 
 void mbedtls_ssl_conf_tls13_key_exchange_modes(mbedtls_ssl_config *conf,
                                                const int kex_modes);
+
+#if defined(MBEDTLS_EXTENDED_KEY_UPDATE)
+/**
+ * \brief Enable or disable support for TLS 1.3 Extended Key Update (EKU).
+ *
+ * \note This is an experimental feature based on an IETF Internet-Draft.
+ *
+ * \param conf    The SSL configuration to modify.
+ * \param enable  0 to disable, 1 to enable.
+ */
+void mbedtls_ssl_conf_tls13_extended_key_update(mbedtls_ssl_config *conf,
+                                                int enable);
+#endif /* MBEDTLS_EXTENDED_KEY_UPDATE */
 #endif /* MBEDTLS_SSL_PROTO_TLS1_3 */
 
 #if defined(MBEDTLS_SSL_DTLS_CONNECTION_ID)
@@ -5486,6 +5592,41 @@ int mbedtls_ssl_export_keying_material(mbedtls_ssl_context *ssl,
                                        const char *label, const size_t label_len,
                                        const unsigned char *context, const size_t context_len,
                                        const int use_context);
+
+#if defined(MBEDTLS_SSL_PROTO_TLS1_3) && defined(MBEDTLS_EXTENDED_KEY_UPDATE)
+/**
+ * \brief             Export TLS 1.3 keying material for a specific exporter epoch.
+ *
+ * \note              This is the epoch-aware exporter interface for EKU-aware
+ *                    applications. Epoch 0 refers to the exporter secret from
+ *                    the initial handshake. For TLS, Mbed TLS retains the
+ *                    current and immediately previous exporter epochs.
+ *
+ * \param ssl         SSL context from which to export keys. Must have finished
+ *                    the handshake.
+ * \param epoch       Exporter epoch to use.
+ * \param out         Output buffer of length at least key_len bytes.
+ * \param key_len     Length of the key to generate in bytes, must be at most
+ *                    MBEDTLS_SSL_EXPORT_MAX_KEY_LEN (8160).
+ * \param label       Label for which to generate the key of length label_len.
+ * \param label_len   Length of label in bytes. Must be at most 249 in TLS 1.3.
+ * \param context     Context of the key. Can be NULL if context_len is 0.
+ * \param context_len Length of context.
+ *
+ * \return            \c 0 on success.
+ * \return            #MBEDTLS_ERR_SSL_BAD_INPUT_DATA on invalid input or if the
+ *                    handshake has not completed.
+ * \return            #MBEDTLS_ERR_SSL_FEATURE_UNAVAILABLE if the requested epoch
+ *                    is not retained by the implementation.
+ * \return            An SSL-specific error on failure.
+ */
+int mbedtls_ssl_tls13_export_keying_material_for_epoch(
+    mbedtls_ssl_context *ssl,
+    uint64_t epoch,
+    uint8_t *out, const size_t key_len,
+    const char *label, const size_t label_len,
+    const unsigned char *context, const size_t context_len);
+#endif /* MBEDTLS_SSL_PROTO_TLS1_3 && MBEDTLS_EXTENDED_KEY_UPDATE */
 #endif
 #ifdef __cplusplus
 }
