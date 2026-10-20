@@ -12,8 +12,8 @@ The tests primarily use the example applications `ssl_client2` and `ssl_server2`
   only 1/2/4-byte encodings are accepted and decoding rejects non-minimal encodings.
 - Record handling behavior (draft-03 alignment):
   invalid Jumbo extension values → `illegal_parameter`;
-  receiving a Jumbo record larger than the advertised limit → record is discarded;
-  malformed Jumbo record header varuint length encoding → treated as exceeding the advertised limit and record is discarded.
+  receiving a Jumbo record larger than the advertised limit → fatal `record_overflow` alert (TLS);
+  malformed Jumbo record header varuint length encoding → fatal `record_overflow` alert (TLS).
 
 ## Prerequisites
 
@@ -100,3 +100,53 @@ You can also test Jumbo and TLS 1.3 resumption directly with `ssl_server2`/`ssl_
 - **DTLS 1.3 parts**: the draft’s DTLS `unified_hdr` / “length present MUST use …” requirements are not implemented in this branch (the focus is TLS 1.3 over TCP).
 The main reason is that there is no DTLS 1.3 implementation for DTLS 1.3 in Mbed TLS.
 - **Interop coverage**: no third-party interop tests for Jumbo (e.g., GnuTLS does not implement the extension; if `gnutls-cli/gnutls-serv` are missing, related tests are skipped).
+
+
+## Functionality and interoperability status
+
+This is an experimental TLS 1.3 over TCP implementation targeting
+[draft-ietf-tls-super-jumbo-record-limit-03](https://datatracker.ietf.org/doc/html/draft-ietf-tls-super-jumbo-record-limit-03).
+Client and server roles support negotiation in ClientHello and
+EncryptedExtensions using the implementation's extension code point 100.
+The extension value is a four-byte network-order uint32. Each endpoint
+advertises its own receive limit independently; it covers TLSInnerPlaintext,
+including content type and padding, and excludes AEAD expansion.
+
+The draft permits limits from 64 through 2^30 - 256 bytes. This protocol
+range does not imply that the implementation can buffer records of every
+such size. Build-time buffer limits also apply. In particular, wolfSSL's
+WOLFSSL_MAX_RECORD_SIZE setting currently permits 128 through 65535 bytes.
+
+After negotiation, application-traffic records use TLSLargeCiphertext with
+canonical 1-, 2-, or 4-byte varuint lengths. Handshake and early-traffic
+records retain their standard TLS framing. TLS oversized records and invalid
+Jumbo length encodings require a fatal record_overflow alert.
+
+Previously successful cross-library tests covered both client/server role
+combinations with a 65535-byte advertised limit and 50000-byte application
+transfers. These tests do not establish full draft conformance. DTLS,
+cross-library resumption, 0-RTT, and KeyUpdate are outside the verified
+interoperability coverage. Mbed TLS additionally has local Jumbo test cases
+for small records, length boundaries, and session resumption; their presence
+does not establish cross-library support.
+
+### Record overflow regression tests
+
+After building both libraries with the interoperability script, run from the
+parent `super_jumbo` directory:
+
+```sh
+python3 run_jumbo_overflow_tests.py
+```
+
+`WOLF_BUILD` and `MBED_BUILD` select the CMake build directories (defaults:
+`/tmp/wolfssl_jumbo_build` and `/tmp/mbedtls_jumbo_build`). The tests require a
+C compiler and localhost TCP sockets. Logs are retained in a temporary directory
+printed by the runner. `JUMBO_TEST_PORT` overrides the default port 44550.
+
+For both servers, the tests check an exact-limit valid record, an authenticated
+record one byte over the limit, the reserved length prefix, non-minimal two- and
+four-byte lengths, and oversized header-only records. The peer verifies a fatal
+`record_overflow` alert (22); header-only cases also check that the receiver does
+not wait for the payload. Different advertised limits exercise the direction of
+the receive limit.
